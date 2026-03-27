@@ -9,6 +9,7 @@
   "dependencies": {
     "@bollard/engine": "workspace:*",
     "@bollard/llm": "workspace:*",
+    "yaml": "^2.8.3",
     "zod": "^3.24.2"
   }
 }
