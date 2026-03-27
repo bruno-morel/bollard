@@ -14,6 +14,7 @@ export class MockProvider implements LLMProvider {
         message: `MockProvider: no more canned responses (called ${this._callIndex + 1} times, have ${this._responses.length})`,
       })
     }
-    return this._responses[this._callIndex++]!
+    const response = this._responses[this._callIndex++]
+    return response as LLMResponse
   }
 }

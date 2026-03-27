@@ -9,10 +9,7 @@ const TEST_CONFIG: BollardConfig = {
   agent: { max_cost_usd: 10, max_duration_minutes: 30 },
 }
 
-function makeBlueprint(
-  nodes: BlueprintNode[],
-  overrides?: Partial<Blueprint>,
-): Blueprint {
+function makeBlueprint(nodes: BlueprintNode[], overrides?: Partial<Blueprint>): Blueprint {
   return {
     id: "test-bp",
     name: "Test Blueprint",
@@ -32,10 +29,7 @@ function okNode(id: string, data?: unknown): BlueprintNode {
   }
 }
 
-function failNode(
-  id: string,
-  overrides?: Partial<BlueprintNode>,
-): BlueprintNode {
+function failNode(id: string, overrides?: Partial<BlueprintNode>): BlueprintNode {
   return {
     id,
     name: id,
@@ -102,11 +96,7 @@ describe("runBlueprint", () => {
     const result = await runBlueprint(bp, "task", TEST_CONFIG)
 
     expect(result.status).toBe("failure")
-    expect(result.error).toBeDefined()
-    expect(BollardError.hasCode(
-      new BollardError({ code: result.error!.code, message: result.error!.message }),
-      "TIME_LIMIT_EXCEEDED",
-    )).toBe(true)
+    expect(result.error?.code).toBe("TIME_LIMIT_EXCEEDED")
   })
 
   it("enforces cost limit", async () => {
@@ -149,9 +139,7 @@ describe("runBlueprint", () => {
   })
 
   it("stops on retry exhaustion with default onFailure", async () => {
-    const bp = makeBlueprint([
-      failNode("always-fails", { maxRetries: 2 }),
-    ])
+    const bp = makeBlueprint([failNode("always-fails", { maxRetries: 2 })])
     const result = await runBlueprint(bp, "task", TEST_CONFIG)
 
     expect(result.status).toBe("failure")
@@ -159,10 +147,7 @@ describe("runBlueprint", () => {
   })
 
   it("skips failing node when onFailure is skip", async () => {
-    const bp = makeBlueprint([
-      failNode("skip-me", { onFailure: "skip" }),
-      okNode("after"),
-    ])
+    const bp = makeBlueprint([failNode("skip-me", { onFailure: "skip" }), okNode("after")])
     const result = await runBlueprint(bp, "task", TEST_CONFIG)
 
     expect(result.status).toBe("success")

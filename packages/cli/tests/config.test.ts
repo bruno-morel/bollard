@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { BollardError } from "@bollard/engine/src/errors.js"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { resolveConfig } from "../src/config.js"
 
 let tempDir: string
@@ -10,7 +10,6 @@ let tempDir: string
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "bollard-test-"))
   vi.stubEnv("ANTHROPIC_API_KEY", "sk-test-fake-key")
-  vi.unstubAllEnvs
 })
 
 afterEach(() => {
@@ -88,11 +87,7 @@ describe("resolveConfig", () => {
   })
 
   it("env var overrides .bollard.yml value", () => {
-    const yaml = [
-      "llm:",
-      "  default:",
-      "    model: yaml-model",
-    ].join("\n")
+    const yaml = ["llm:", "  default:", "    model: yaml-model"].join("\n")
     writeFileSync(join(tempDir, ".bollard.yml"), yaml)
     vi.stubEnv("BOLLARD_MODEL", "env-model")
 
@@ -103,8 +98,7 @@ describe("resolveConfig", () => {
 
   it("throws CONFIG_INVALID when no API key is set", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "")
-    delete process.env["ANTHROPIC_API_KEY"]
-    delete process.env["OPENAI_API_KEY"]
+    vi.stubEnv("OPENAI_API_KEY", "")
 
     expect(() => resolveConfig(undefined, tempDir)).toThrow(BollardError)
     try {

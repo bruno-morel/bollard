@@ -30,9 +30,7 @@ function mapContentBlock(block: Anthropic.ContentBlock): LLMContentBlock {
   return { type: "text", text: "" }
 }
 
-function mapStopReason(
-  reason: Anthropic.Message["stop_reason"],
-): LLMResponse["stopReason"] {
+function mapStopReason(reason: Anthropic.Message["stop_reason"]): LLMResponse["stopReason"] {
   if (reason === "tool_use") return "tool_use"
   if (reason === "max_tokens") return "max_tokens"
   return "end_turn"
@@ -50,26 +48,27 @@ export class AnthropicProvider implements LLMProvider {
     try {
       const messages: Anthropic.MessageParam[] = request.messages.map((m) => ({
         role: m.role,
-        content: typeof m.content === "string"
-          ? m.content
-          : m.content.map((b) => {
-              if (b.type === "tool_result") {
-                return {
-                  type: "tool_result" as const,
-                  tool_use_id: b.toolUseId ?? "",
-                  content: b.text ?? "",
+        content:
+          typeof m.content === "string"
+            ? m.content
+            : m.content.map((b) => {
+                if (b.type === "tool_result") {
+                  return {
+                    type: "tool_result" as const,
+                    tool_use_id: b.toolUseId ?? "",
+                    content: b.text ?? "",
+                  }
                 }
-              }
-              if (b.type === "tool_use") {
-                return {
-                  type: "tool_use" as const,
-                  id: b.toolUseId ?? "",
-                  name: b.toolName ?? "",
-                  input: b.toolInput ?? {},
+                if (b.type === "tool_use") {
+                  return {
+                    type: "tool_use" as const,
+                    id: b.toolUseId ?? "",
+                    name: b.toolName ?? "",
+                    input: b.toolInput ?? {},
+                  }
                 }
-              }
-              return { type: "text" as const, text: b.text ?? "" }
-            }),
+                return { type: "text" as const, text: b.text ?? "" }
+              }),
       }))
 
       const params: Anthropic.MessageCreateParamsNonStreaming = {
@@ -123,10 +122,16 @@ export class AnthropicProvider implements LLMProvider {
           cause: err,
         })
       }
+      if (err instanceof Error) {
+        throw new BollardError({
+          code: "LLM_PROVIDER_ERROR",
+          message: `Anthropic error: ${err.message}`,
+          cause: err,
+        })
+      }
       throw new BollardError({
         code: "LLM_PROVIDER_ERROR",
-        message: `Anthropic error: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err instanceof Error ? err : undefined,
+        message: `Anthropic error: ${String(err)}`,
       })
     }
   }

@@ -15,8 +15,16 @@ export interface RunResult {
 
 function executeNode(node: BlueprintNode, ctx: PipelineContext): Promise<NodeResult> {
   switch (node.type) {
-    case "deterministic":
-      return node.execute!(ctx)
+    case "deterministic": {
+      if (!node.execute) {
+        throw new BollardError({
+          code: "NODE_EXECUTION_FAILED",
+          message: `Deterministic node "${node.id}" has no execute function`,
+          context: { nodeId: node.id },
+        })
+      }
+      return node.execute(ctx)
+    }
     case "agentic":
       // TODO Stage 1: wire to LLMClient
       return Promise.resolve({
@@ -91,7 +99,7 @@ export async function runBlueprint(
         if (lastResult.status !== "fail") break
       }
 
-      const result = lastResult!
+      const result = lastResult as NodeResult
 
       if (result.status === "fail") {
         const policy = node.onFailure ?? "stop"

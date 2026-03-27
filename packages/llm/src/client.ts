@@ -25,9 +25,17 @@ export class LLMClient {
 
     let provider: LLMProvider
     switch (name) {
-      case "anthropic":
-        provider = new AnthropicProvider(process.env["ANTHROPIC_API_KEY"]!)
+      case "anthropic": {
+        const apiKey = process.env["ANTHROPIC_API_KEY"]
+        if (!apiKey) {
+          throw new BollardError({
+            code: "CONFIG_INVALID",
+            message: "ANTHROPIC_API_KEY environment variable is not set",
+          })
+        }
+        provider = new AnthropicProvider(apiKey)
         break
+      }
       case "mock":
         provider = new MockProvider(this.mockResponses ?? [])
         break

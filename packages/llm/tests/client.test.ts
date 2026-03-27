@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest"
 import type { BollardConfig } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
+import { describe, expect, it } from "vitest"
 import { LLMClient } from "../src/client.js"
 import { MockProvider } from "../src/mock.js"
 import { AnthropicProvider } from "../src/providers/anthropic.js"
@@ -33,10 +33,7 @@ function mockConfig(overrides?: Partial<BollardConfig>): BollardConfig {
 
 describe("MockProvider", () => {
   it("returns canned responses in order", async () => {
-    const provider = new MockProvider([
-      makeResponse("first"),
-      makeResponse("second"),
-    ])
+    const provider = new MockProvider([makeResponse("first"), makeResponse("second")])
 
     const r1 = await provider.chat(MOCK_REQUEST)
     const r2 = await provider.chat(MOCK_REQUEST)
@@ -118,7 +115,8 @@ describe("LLMClient", () => {
 
 describe.skipIf(!process.env["ANTHROPIC_API_KEY"])("AnthropicProvider (live)", () => {
   it("sends a message and gets a response", async () => {
-    const provider = new AnthropicProvider(process.env["ANTHROPIC_API_KEY"]!)
+    const apiKey = process.env["ANTHROPIC_API_KEY"] ?? ""
+    const provider = new AnthropicProvider(apiKey)
     const response = await provider.chat({
       system: "You are a test assistant. Reply with exactly: BOLLARD_TEST_OK",
       messages: [{ role: "user", content: "Reply now." }],

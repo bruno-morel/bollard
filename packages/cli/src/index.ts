@@ -28,7 +28,8 @@ const demoBlueprint: Blueprint = {
 }
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2)
+  const rawArgs = process.argv.slice(2)
+  const args = rawArgs[0] === "--" ? rawArgs.slice(1) : rawArgs
   const command = args[0]
 
   if (command === "run") {
