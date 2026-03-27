@@ -1,4 +1,6 @@
-import type { CostTracker } from "./cost-tracker.js"
+import { randomBytes } from "node:crypto"
+import type { NodeResult } from "./blueprint.js"
+import { CostTracker } from "./cost-tracker.js"
 
 export type LogLevel = "debug" | "info" | "warn" | "error"
 
@@ -28,7 +30,7 @@ export interface PipelineContext {
   blueprintId: string
   config: BollardConfig
   currentNode?: string
-  results: Record<string, unknown>
+  results: Record<string, NodeResult>
   changedFiles: string[]
   gitBranch?: string
   plan?: string
@@ -43,13 +45,85 @@ export interface PipelineContext {
     error: (message: string, data?: Record<string, unknown>) => void
   }
   upgradeRunId: (taskSlug: string) => void
+  startedAt: number
+}
+
+function rand4hex(): string {
+  return randomBytes(2).toString("hex")
+}
+
+function formatDatePrefix(): string {
+  const now = new Date()
+  const yyyy = now.getFullYear().toString()
+  const mm = (now.getMonth() + 1).toString().padStart(2, "0")
+  const dd = now.getDate().toString().padStart(2, "0")
+  const hh = now.getHours().toString().padStart(2, "0")
+  const min = now.getMinutes().toString().padStart(2, "0")
+  return `${yyyy}${mm}${dd}-${hh}${min}`
+}
+
+function generateTempRunId(): string {
+  return `${formatDatePrefix()}-run-${rand4hex()}`
+}
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 30)
+}
+
+function createLogger(ctx: PipelineContext): PipelineContext["log"] {
+  const emit = (level: LogLevel, message: string, data?: Record<string, unknown>) => {
+    const entry: LogEntry = {
+      level,
+      message,
+      runId: ctx.runId,
+      timestamp: new Date().toISOString(),
+      ...(ctx.currentNode !== undefined ? { node: ctx.currentNode } : {}),
+      ...(data !== undefined ? { data } : {}),
+    }
+    const json = JSON.stringify(entry)
+    if (level === "warn" || level === "error") {
+      process.stderr.write(`${json}\n`)
+    } else {
+      process.stdout.write(`${json}\n`)
+    }
+  }
+
+  return {
+    debug: (message, data) => emit("debug", message, data),
+    info: (message, data) => emit("info", message, data),
+    warn: (message, data) => emit("warn", message, data),
+    error: (message, data) => emit("error", message, data),
+  }
 }
 
 export function createContext(
-  _task: string,
-  _blueprintId: string,
-  _config: BollardConfig,
+  task: string,
+  blueprintId: string,
+  config: BollardConfig,
 ): PipelineContext {
-  const ctx = {} as PipelineContext
+  const ctx: PipelineContext = {
+    runId: generateTempRunId(),
+    task,
+    blueprintId,
+    config,
+    results: {},
+    changedFiles: [],
+    costTracker: new CostTracker(config.agent.max_cost_usd),
+    startedAt: Date.now(),
+    log: undefined as unknown as PipelineContext["log"],
+    upgradeRunId(taskSlug: string) {
+      const slug = slugify(taskSlug)
+      const prefix = blueprintId.slice(0, 8)
+      ctx.runId = `${formatDatePrefix()}-${prefix}-${slug}-${rand4hex()}`
+    },
+  }
+
+  ctx.log = createLogger(ctx)
   return ctx
 }
+
+export { slugify as _slugify, generateTempRunId as _generateTempRunId }

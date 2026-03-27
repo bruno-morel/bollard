@@ -1,3 +1,5 @@
+import type { PipelineContext } from "./context.js"
+
 export type NodeType = "deterministic" | "agentic" | "risk_gate" | "human_gate"
 
 export interface ProbeAssertion {
@@ -29,9 +31,9 @@ export interface BlueprintNode {
   id: string
   name: string
   type: NodeType
-  execute?: (ctx: unknown) => Promise<NodeResult>
+  execute?: (ctx: PipelineContext) => Promise<NodeResult>
   agent?: string
-  postconditions?: ((ctx: unknown) => boolean)[]
+  postconditions?: ((ctx: PipelineContext) => boolean)[]
   onFailure?: "stop" | "retry" | "skip" | "hand_to_human"
   maxRetries?: number
 }

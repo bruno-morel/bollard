@@ -11,10 +11,14 @@
     "typecheck": "tsc --build"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"]
+    "onlyBuiltDependencies": [
+      "@biomejs/biome",
+      "esbuild"
+    ]
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@types/node": "^25.5.0",
     "fast-check": "^3.23.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
