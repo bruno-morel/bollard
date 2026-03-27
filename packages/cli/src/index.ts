@@ -1,7 +1,44 @@
-import type { Blueprint } from "@bollard/engine/src/blueprint.js"
+import type { Blueprint, BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
+import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import { runBlueprint } from "@bollard/engine/src/runner.js"
+import { LLMClient } from "@bollard/llm/src/client.js"
 import { resolveConfig } from "./config.js"
+
+function createAgenticHandler(config: ReturnType<typeof resolveConfig>["config"]) {
+  const llmClient = new LLMClient(config)
+
+  return async (node: BlueprintNode, ctx: PipelineContext): Promise<NodeResult> => {
+    const agentRole = node.agent ?? "default"
+    const startMs = Date.now()
+
+    const { provider, model } = llmClient.forAgent(agentRole)
+    const response = await provider.chat({
+      system: `You are the "${agentRole}" agent in a Bollard pipeline run.`,
+      messages: [
+        {
+          role: "user",
+          content: `Task: ${ctx.task}\nNode: ${node.name}\nBlueprint: ${ctx.blueprintId}`,
+        },
+      ],
+      maxTokens: 1024,
+      temperature: 0.3,
+      model,
+    })
+
+    const text = response.content
+      .filter((b) => b.type === "text")
+      .map((b) => b.text ?? "")
+      .join("")
+
+    return {
+      status: "ok",
+      data: text,
+      cost_usd: response.costUsd,
+      duration_ms: Date.now() - startMs,
+    }
+  }
+}
 
 const demoBlueprint: Blueprint = {
   id: "demo",
@@ -48,7 +85,8 @@ async function main(): Promise<void> {
     }
 
     const { config } = resolveConfig()
-    const result = await runBlueprint(demoBlueprint, task, config)
+    const handler = createAgenticHandler(config)
+    const result = await runBlueprint(demoBlueprint, task, config, handler)
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
     process.exit(result.status === "success" ? 0 : 1)
   }

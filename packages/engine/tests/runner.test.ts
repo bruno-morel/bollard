@@ -192,7 +192,7 @@ describe("runBlueprint", () => {
     expect(result.error?.code).toBe("POSTCONDITION_FAILED")
   })
 
-  it("handles agentic node with placeholder response", async () => {
+  it("falls back to placeholder when no agentic handler provided", async () => {
     const bp = makeBlueprint([
       { id: "agent-node", name: "agent", type: "agentic" as const, agent: "default" },
     ])
@@ -200,7 +200,40 @@ describe("runBlueprint", () => {
 
     expect(result.status).toBe("success")
     expect(result.nodeResults["agent-node"]?.status).toBe("ok")
-    expect(result.nodeResults["agent-node"]?.data).toBe("agentic node placeholder")
+    expect(result.nodeResults["agent-node"]?.data).toContain("no LLM client provided")
+  })
+
+  it("uses agentic handler when provided", async () => {
+    const bp = makeBlueprint([
+      { id: "agent-node", name: "agent", type: "agentic" as const, agent: "default" },
+    ])
+    const handler = async () => ({
+      status: "ok" as const,
+      data: "mock llm response",
+      cost_usd: 0.002,
+      duration_ms: 100,
+    })
+    const result = await runBlueprint(bp, "task", TEST_CONFIG, handler)
+
+    expect(result.status).toBe("success")
+    expect(result.nodeResults["agent-node"]?.data).toBe("mock llm response")
+    expect(result.totalCostUsd).toBeCloseTo(0.002)
+  })
+
+  it("wraps agentic handler errors as failure", async () => {
+    const bp = makeBlueprint([
+      { id: "agent-node", name: "agent", type: "agentic" as const, agent: "default" },
+    ])
+    const handler = async () => {
+      throw new BollardError({
+        code: "LLM_PROVIDER_ERROR",
+        message: "mock error",
+      })
+    }
+    const result = await runBlueprint(bp, "task", TEST_CONFIG, handler)
+
+    expect(result.status).toBe("failure")
+    expect(result.error?.code).toBe("LLM_PROVIDER_ERROR")
   })
 
   it("returns immediate success for empty blueprint", async () => {

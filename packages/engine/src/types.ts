@@ -16,5 +16,5 @@ export type {
   BollardConfig,
 } from "./context.js"
 export { createContext } from "./context.js"
-export type { RunResult } from "./runner.js"
+export type { RunResult, AgenticHandler } from "./runner.js"
 export { runBlueprint } from "./runner.js"

@@ -13,7 +13,13 @@ export interface RunResult {
   error?: { code: BollardErrorCode; message: string }
 }
 
-function executeNode(node: BlueprintNode, ctx: PipelineContext): Promise<NodeResult> {
+export type AgenticHandler = (node: BlueprintNode, ctx: PipelineContext) => Promise<NodeResult>
+
+function executeNode(
+  node: BlueprintNode,
+  ctx: PipelineContext,
+  agenticHandler?: AgenticHandler,
+): Promise<NodeResult> {
   switch (node.type) {
     case "deterministic": {
       if (!node.execute) {
@@ -25,14 +31,17 @@ function executeNode(node: BlueprintNode, ctx: PipelineContext): Promise<NodeRes
       }
       return node.execute(ctx)
     }
-    case "agentic":
-      // TODO Stage 1: wire to LLMClient
+    case "agentic": {
+      if (agenticHandler) {
+        return agenticHandler(node, ctx)
+      }
       return Promise.resolve({
         status: "ok" as const,
-        data: "agentic node placeholder",
+        data: "agentic node placeholder (no LLM client provided)",
         cost_usd: 0,
         duration_ms: 0,
       })
+    }
     case "human_gate":
       return Promise.resolve({
         status: "ok" as const,
@@ -63,6 +72,7 @@ export async function runBlueprint(
   blueprint: Blueprint,
   task: string,
   config: BollardConfig,
+  agenticHandler?: AgenticHandler,
 ): Promise<RunResult> {
   const ctx = createContext(task, blueprint.id, config)
   let status: RunResult["status"] = "success"
@@ -92,7 +102,7 @@ export async function runBlueprint(
       let lastResult: NodeResult | undefined
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        lastResult = await executeNode(node, ctx)
+        lastResult = await executeNode(node, ctx, agenticHandler)
         if (lastResult.cost_usd) {
           ctx.costTracker.add(lastResult.cost_usd)
         }
