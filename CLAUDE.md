@@ -31,15 +31,15 @@ Bollard is currently at **Stage 0** (the kernel). We are building the minimum pi
 - No agent frameworks (LangChain, CrewAI, etc.) — Bollard IS the framework
 - No remote caching or build services
 
-## Development via Docker Compose
+## Development via Docker Compose (Mandatory)
 
-**All commands run through Docker Compose. Never install Node.js, pnpm, or any tooling locally.**
+**Every command — tests, lint, typecheck, format, running the CLI, installing deps — MUST go through `docker compose`. Never run bare `pnpm`, `node`, `npx`, `tsc`, `vitest`, or `biome` on the host machine. This keeps the host clean and ensures a reproducible environment for every contributor and every AI agent.**
 
 ```bash
 # Build the dev image (first time or after dependency changes)
 docker compose build dev
 
-# Run commands
+# Run commands (entrypoint is pnpm, so args go after "dev")
 docker compose run --rm dev run test          # run tests
 docker compose run --rm dev run typecheck     # type-check
 docker compose run --rm dev run lint          # lint + format check
@@ -48,9 +48,11 @@ docker compose run --rm dev run format        # auto-format
 # Run a specific package command
 docker compose run --rm dev --filter @bollard/cli run start -- run demo --task "Say hello"
 
-# Install new dependencies (rebuilds node_modules volume)
+# Install new dependencies
 docker compose run --rm dev add -Dw <package>
 docker compose run --rm dev add --filter @bollard/llm <package>
+# After adding deps, rebuild the image to bake them in:
+docker compose build dev
 
 # Interactive shell inside container
 docker compose run --rm --entrypoint sh dev
@@ -59,6 +61,13 @@ docker compose run --rm --entrypoint sh dev
 The `compose.yaml` mounts the workspace as a volume so edits are reflected immediately. Node modules live in named volumes to avoid polluting the host.
 
 Pass `ANTHROPIC_API_KEY` via a `.env` file or shell environment for LLM smoke tests and the demo blueprint.
+
+### Why Docker Compose?
+
+- **Zero local setup.** Only Docker required on the host.
+- **Reproducible.** Same Node.js, same pnpm, same native deps everywhere.
+- **Clean host.** No `node_modules` sprawl, no global installs, no version conflicts.
+- **AI-agent friendly.** Agents get a predictable environment without worrying about the host OS.
 
 ## Project Structure (Stage 0)
 
@@ -240,9 +249,11 @@ interface ProbeDefinition {
   - `zod` (for config/input validation at boundaries)
 - Dev deps: `typescript`, `vitest`, `@biomejs/biome`, `tsx`, `fast-check`
 - If you're about to add a dependency, think twice. Can it be done in 50 lines of TypeScript instead?
+- **Install deps via Docker:** `docker compose run --rm dev add <package>` (then `docker compose build dev` to bake into image).
 
 ### Testing
 
+- **Always run tests via Docker:** `docker compose run --rm dev run test`
 - Every source file gets a corresponding test file.
 - Tests use Vitest (`describe`, `it`, `expect`).
 - Use the `MockProvider` (from @bollard/llm) for all engine tests. No real LLM calls in unit tests.
