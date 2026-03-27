@@ -1,0 +1,21 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - engine_modules:/app/packages/engine/node_modules
+      - llm_modules:/app/packages/llm/node_modules
+      - cli_modules:/app/packages/cli/node_modules
+    working_dir: /app
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    entrypoint: ["pnpm"]
+
+volumes:
+  node_modules:
+  engine_modules:
+  llm_modules:
+  cli_modules:

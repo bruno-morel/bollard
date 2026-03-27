@@ -10,6 +10,7 @@ Bollard is currently at **Stage 0** (the kernel). We are building the minimum pi
 
 ## Tech Stack (Non-Negotiable)
 
+- **Dev environment:** Docker Compose — all tooling runs inside containers, nothing installed locally except Docker.
 - **Runtime:** Node.js 22+ (no experimental flags)
 - **Language:** TypeScript 5.x, strict mode ON (`strict: true` in tsconfig). Every `noUnchecked*` flag enabled.
 - **Package manager:** pnpm with workspaces. No npm, no yarn.
@@ -23,16 +24,48 @@ Bollard is currently at **Stage 0** (the kernel). We are building the minimum pi
 
 ### Explicitly NOT used
 
+- No local Node.js/pnpm install required (Docker handles it)
 - No Turborepo (pnpm workspaces + `--filter` is sufficient)
 - No ESLint + Prettier (Biome replaces both)
 - No Jest (Vitest is faster and TS-native)
 - No agent frameworks (LangChain, CrewAI, etc.) — Bollard IS the framework
 - No remote caching or build services
 
+## Development via Docker Compose
+
+**All commands run through Docker Compose. Never install Node.js, pnpm, or any tooling locally.**
+
+```bash
+# Build the dev image (first time or after dependency changes)
+docker compose build dev
+
+# Run commands
+docker compose run --rm dev run test          # run tests
+docker compose run --rm dev run typecheck     # type-check
+docker compose run --rm dev run lint          # lint + format check
+docker compose run --rm dev run format        # auto-format
+
+# Run a specific package command
+docker compose run --rm dev --filter @bollard/cli run start -- run demo --task "Say hello"
+
+# Install new dependencies (rebuilds node_modules volume)
+docker compose run --rm dev add -Dw <package>
+docker compose run --rm dev add --filter @bollard/llm <package>
+
+# Interactive shell inside container
+docker compose run --rm --entrypoint sh dev
+```
+
+The `compose.yaml` mounts the workspace as a volume so edits are reflected immediately. Node modules live in named volumes to avoid polluting the host.
+
+Pass `ANTHROPIC_API_KEY` via a `.env` file or shell environment for LLM smoke tests and the demo blueprint.
+
 ## Project Structure (Stage 0)
 
 ```
 bollard/
+├── Dockerfile                    # Node 22 + pnpm dev image
+├── compose.yaml                  # Docker Compose for all dev commands
 ├── package.json                  # root workspace
 ├── pnpm-workspace.yaml           # packages: ["packages/*"]
 ├── tsconfig.json                 # shared strict config (all packages extend this)
@@ -265,7 +298,7 @@ If you find yourself writing significantly more, you're probably over-engineerin
 Stage 0 is done when this works:
 
 ```bash
-pnpm --filter @bollard/cli run start -- run demo --task "Say hello"
+docker compose run --rm dev --filter @bollard/cli run start -- run demo --task "Say hello"
 ```
 
 This executes a trivial blueprint with one deterministic node and one agentic node (that calls Claude and gets a response). Tests pass. TypeScript compiles. Biome is clean. That's it.

@@ -51,11 +51,37 @@ Bollard is **open source** (Apache 2.0), **API-first** (library → CLI + MCP se
 
 ---
 
+## Getting Started
+
+**Prerequisites:** Docker and Docker Compose. That's it — no local Node.js, pnpm, or other tooling needed.
+
+```bash
+# Clone the repo
+git clone <repo-url> && cd bollard
+
+# Build the dev image
+docker compose build dev
+
+# Run tests
+docker compose run --rm dev run test
+
+# Type-check
+docker compose run --rm dev run typecheck
+
+# Lint
+docker compose run --rm dev run lint
+
+# Run the demo blueprint (requires ANTHROPIC_API_KEY)
+ANTHROPIC_API_KEY=sk-... docker compose run --rm dev --filter @bollard/cli run start -- run demo --task "Say hello"
+```
+
+---
+
 ## Tech Stack
 
-**Required:** Docker, Node.js 22+, pnpm, TypeScript (strict), an LLM API key.
-**Included:** Vitest, fast-check, Biome, Zod, Stryker, gitleaks.
-**Optional:** Pact, Playwright, OpenTelemetry, Sentry.
+**Required:** Docker (all tooling runs in containers).
+**Inside the container:** Node.js 22+, pnpm, TypeScript (strict), Vitest, fast-check, Biome, Zod, tsx.
+**Later stages:** Stryker, gitleaks, Pact, Playwright, OpenTelemetry, Sentry.
 **Explicitly excluded:** Turborepo, ESLint+Prettier, Jest, LangChain/CrewAI, remote caching services.
 
 ---
@@ -76,8 +102,8 @@ Bollard is **open source** (Apache 2.0), **API-first** (library → CLI + MCP se
 
 ## Status
 
-**Phase:** Design complete (v0.1 — March 2026)
-**Next:** Stage 0 implementation (the kernel: engine types, runner, LLM client, CLI skeleton, MCP server scaffold)
+**Phase:** Stage 0 in progress (the kernel: engine types, runner, LLM client, CLI skeleton)
+**Development:** All via Docker Compose — `docker compose run --rm dev run test`
 
 ---
 
