@@ -110,7 +110,25 @@ async function main(): Promise<void> {
     return
   }
 
-  process.stderr.write("Usage: bollard <run|config show|init> [options]\n")
+  if (command === "eval") {
+    const agentFilter = args[1]
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          command: "eval",
+          agent: agentFilter ?? "all",
+          status: "no_eval_sets",
+          message: "No eval sets found. Eval sets are added at Stage 1 alongside agent prompts.",
+          usage: "Place eval files in packages/agents/evals/{agent}/*.eval.ts",
+        },
+        null,
+        2,
+      )}\n`,
+    )
+    return
+  }
+
+  process.stderr.write("Usage: bollard <run|config show|init|eval> [options]\n")
   process.exit(1)
 }
 

@@ -18,3 +18,17 @@ export type {
 export { createContext } from "./context.js"
 export type { RunResult, AgenticHandler } from "./runner.js"
 export { runBlueprint } from "./runner.js"
+export type {
+  EvalCase,
+  EvalAssertion,
+  EvalAssertionType,
+  EvalAssertionResult,
+  EvalRunResult,
+  EvalRunDetail,
+  EvalOptions,
+  EvalProvider,
+  EvalMessage,
+  EvalTool,
+  EvalResponse,
+} from "./eval-runner.js"
+export { runEvals } from "./eval-runner.js"
