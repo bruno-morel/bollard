@@ -20,12 +20,12 @@ Bollard is **open source** (Apache 2.0), **API-first** (library → CLI + MCP se
 
 | # | Document | What It Covers |
 |---|----------|---------------|
-| [01](01-architecture.md) | **Architecture** | Universal artifact pattern, adversarial verification, blueprint engine, CLI + API-first + MCP interface, production feedback loop, resilience model, project structure |
-| [02](02-bootstrap.md) | **Bootstrap Roadmap** | How Bollard builds itself: 5 stages from hand-written kernel to self-hosting, prompt evaluation framework, dependency graph, time estimates |
-| [03](03-providers.md) | **Providers** | Cloud abstraction: the 4-method provider interface, 3 provider implementations (local, GitHub Actions, GCP), network isolation |
-| [04](04-configuration.md) | **Configuration** | Auto-detect everything, derive the rest: provider detection, env vars, convention over configuration, minimal `.bollard.yml` for overrides only |
-| [05](05-risk-model.md) | **Risk Model** | Trust but verify: 5 risk dimensions, risk scoring, graduated gating (auto-merge → notify → approve), escape hatches, meta-verification, notification model |
-| — | [ROADMAP.md](ROADMAP.md) | **Roadmap** | Features deferred from v0.1: SLO tracking, error budgets, progressive rollout, additional cloud providers, full prompt eval framework |
+| [01](spec/01-architecture.md) | **Architecture** | Universal artifact pattern, adversarial verification, blueprint engine, CLI + API-first + MCP interface, production feedback loop, resilience model, project structure |
+| [02](spec/02-bootstrap.md) | **Bootstrap Roadmap** | How Bollard builds itself: 5 stages from hand-written kernel to self-hosting, prompt evaluation framework, dependency graph, time estimates |
+| [03](spec/03-providers.md) | **Providers** | Cloud abstraction: the 4-method provider interface, 3 provider implementations (local, GitHub Actions, GCP), network isolation |
+| [04](spec/04-configuration.md) | **Configuration** | Auto-detect everything, derive the rest: provider detection, env vars, convention over configuration, minimal `.bollard.yml` for overrides only |
+| [05](spec/05-risk-model.md) | **Risk Model** | Trust but verify: 5 risk dimensions, risk scoring, graduated gating (auto-merge → notify → approve), escape hatches, meta-verification, notification model |
+| — | [spec/ROADMAP.md](ROADMAP.md) | **Roadmap** | Features deferred from v0.1: SLO tracking, error budgets, progressive rollout, additional cloud providers, full prompt eval framework |
 
 ### Reading Order
 
