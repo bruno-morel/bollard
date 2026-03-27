@@ -1,0 +1,13 @@
+{
+  "name": "@bollard/engine",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/types.ts",
+    "./src/*": "./src/*"
+  },
+  "dependencies": {
+    "zod": "^3.24.2"
+  }
+}

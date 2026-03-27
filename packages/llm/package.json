@@ -1,0 +1,14 @@
+{
+  "name": "@bollard/llm",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/types.ts",
+    "./src/*": "./src/*"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@bollard/engine": "workspace:*"
+  }
+}
