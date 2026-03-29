@@ -9,6 +9,9 @@ services:
       - engine_modules:/app/packages/engine/node_modules
       - llm_modules:/app/packages/llm/node_modules
       - cli_modules:/app/packages/cli/node_modules
+      - agents_modules:/app/packages/agents/node_modules
+      - verify_modules:/app/packages/verify/node_modules
+      - blueprints_modules:/app/packages/blueprints/node_modules
     working_dir: /app
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
@@ -19,3 +22,6 @@ volumes:
   engine_modules:
   llm_modules:
   cli_modules:
+  agents_modules:
+  verify_modules:
+  blueprints_modules:

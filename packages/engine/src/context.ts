@@ -33,7 +33,7 @@ export interface PipelineContext {
   results: Record<string, NodeResult>
   changedFiles: string[]
   gitBranch?: string
-  plan?: string
+  plan?: unknown
   mutationScore?: number
   generatedProbes?: unknown[]
   deploymentManifest?: unknown

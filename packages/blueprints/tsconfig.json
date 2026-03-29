@@ -9,9 +9,7 @@
   "exclude": ["node_modules", "dist", "tests"],
   "references": [
     { "path": "../engine" },
-    { "path": "../llm" },
     { "path": "../agents" },
-    { "path": "../verify" },
-    { "path": "../blueprints" }
+    { "path": "../verify" }
   ]
 }

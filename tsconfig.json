@@ -26,6 +26,9 @@
   "references": [
     { "path": "packages/engine" },
     { "path": "packages/llm" },
-    { "path": "packages/cli" }
+    { "path": "packages/cli" },
+    { "path": "packages/agents" },
+    { "path": "packages/verify" },
+    { "path": "packages/blueprints" }
   ]
 }

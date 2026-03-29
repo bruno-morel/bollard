@@ -27,7 +27,7 @@ importers:
         specifier: ^3.1.1
         version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)(yaml@2.8.3)
 
-  packages/cli:
+  packages/agents:
     dependencies:
       '@bollard/engine':
         specifier: workspace:*
@@ -35,6 +35,36 @@ importers:
       '@bollard/llm':
         specifier: workspace:*
         version: link:../llm
+
+  packages/blueprints:
+    dependencies:
+      '@bollard/agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@bollard/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@bollard/verify':
+        specifier: workspace:*
+        version: link:../verify
+
+  packages/cli:
+    dependencies:
+      '@bollard/agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@bollard/blueprints':
+        specifier: workspace:*
+        version: link:../blueprints
+      '@bollard/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@bollard/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@bollard/verify':
+        specifier: workspace:*
+        version: link:../verify
       yaml:
         specifier: ^2.8.3
         version: 2.8.3
@@ -53,6 +83,12 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.39.0
         version: 0.39.0
+      '@bollard/engine':
+        specifier: workspace:*
+        version: link:../engine
+
+  packages/verify:
+    dependencies:
       '@bollard/engine':
         specifier: workspace:*
         version: link:../engine

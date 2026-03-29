@@ -34,7 +34,10 @@ function failNode(id: string, overrides?: Partial<BlueprintNode>): BlueprintNode
     id,
     name: id,
     type: "deterministic",
-    execute: async () => ({ status: "fail", error: `${id} failed` }),
+    execute: async () => ({
+      status: "fail",
+      error: { code: "NODE_EXECUTION_FAILED", message: `${id} failed` },
+    }),
     ...overrides,
   }
 }
@@ -126,7 +129,8 @@ describe("runBlueprint", () => {
       maxRetries: 1,
       execute: async () => {
         calls++
-        if (calls === 1) return { status: "fail", error: "first try" }
+        if (calls === 1)
+          return { status: "fail", error: { code: "NODE_EXECUTION_FAILED", message: "first try" } }
         return { status: "ok", data: "recovered" }
       },
     }

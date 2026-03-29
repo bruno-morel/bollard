@@ -1,0 +1,14 @@
+{
+  "name": "@bollard/agents",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/types.ts",
+    "./src/*": "./src/*"
+  },
+  "dependencies": {
+    "@bollard/engine": "workspace:*",
+    "@bollard/llm": "workspace:*"
+  }
+}

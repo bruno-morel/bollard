@@ -15,10 +15,29 @@ export interface RunResult {
 
 export type AgenticHandler = (node: BlueprintNode, ctx: PipelineContext) => Promise<NodeResult>
 
+export type HumanGateHandler = (node: BlueprintNode, ctx: PipelineContext) => Promise<NodeResult>
+
+export interface ProgressEvent {
+  type: "node_start" | "node_complete" | "node_retry"
+  nodeId: string
+  nodeName: string
+  nodeType: string
+  step: number
+  totalSteps: number
+  status?: "ok" | "fail" | "block"
+  attempt?: number
+  maxAttempts?: number
+  costUsd?: number
+  durationMs?: number
+}
+
+export type ProgressCallback = (event: ProgressEvent) => void
+
 function executeNode(
   node: BlueprintNode,
   ctx: PipelineContext,
   agenticHandler?: AgenticHandler,
+  humanGateHandler?: HumanGateHandler,
 ): Promise<NodeResult> {
   switch (node.type) {
     case "deterministic": {
@@ -42,11 +61,15 @@ function executeNode(
         duration_ms: 0,
       })
     }
-    case "human_gate":
+    case "human_gate": {
+      if (humanGateHandler) {
+        return humanGateHandler(node, ctx)
+      }
       return Promise.resolve({
         status: "ok" as const,
         data: "auto-approved (Stage 0)",
       })
+    }
     case "risk_gate":
       return Promise.resolve({
         status: "ok" as const,
@@ -73,6 +96,8 @@ export async function runBlueprint(
   task: string,
   config: BollardConfig,
   agenticHandler?: AgenticHandler,
+  humanGateHandler?: HumanGateHandler,
+  onProgress?: ProgressCallback,
 ): Promise<RunResult> {
   const ctx = createContext(task, blueprint.id, config)
   let status: RunResult["status"] = "success"
@@ -98,11 +123,35 @@ export async function runBlueprint(
       }
 
       ctx.currentNode = node.id
+      const stepIndex = blueprint.nodes.indexOf(node)
       const maxAttempts = (node.maxRetries ?? 0) + 1
       let lastResult: NodeResult | undefined
 
+      onProgress?.({
+        type: "node_start",
+        nodeId: node.id,
+        nodeName: node.name,
+        nodeType: node.type,
+        step: stepIndex + 1,
+        totalSteps: blueprint.nodes.length,
+      })
+
+      const nodeStartMs = Date.now()
+
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        lastResult = await executeNode(node, ctx, agenticHandler)
+        if (attempt > 0) {
+          onProgress?.({
+            type: "node_retry",
+            nodeId: node.id,
+            nodeName: node.name,
+            nodeType: node.type,
+            step: stepIndex + 1,
+            totalSteps: blueprint.nodes.length,
+            attempt: attempt + 1,
+            maxAttempts,
+          })
+        }
+        lastResult = await executeNode(node, ctx, agenticHandler, humanGateHandler)
         if (lastResult.cost_usd) {
           ctx.costTracker.add(lastResult.cost_usd)
         }
@@ -110,6 +159,18 @@ export async function runBlueprint(
       }
 
       const result = lastResult as NodeResult
+
+      onProgress?.({
+        type: "node_complete",
+        nodeId: node.id,
+        nodeName: node.name,
+        nodeType: node.type,
+        step: stepIndex + 1,
+        totalSteps: blueprint.nodes.length,
+        status: result.status,
+        ...(result.cost_usd !== undefined ? { costUsd: result.cost_usd } : {}),
+        durationMs: Date.now() - nodeStartMs,
+      })
 
       if (result.status === "fail") {
         const policy = node.onFailure ?? "stop"
@@ -123,12 +184,18 @@ export async function runBlueprint(
         if (policy === "hand_to_human") {
           status = "handed_to_human"
           ctx.results[node.id] = result
-          error = { code: "NODE_EXECUTION_FAILED", message: result.error ?? "Node failed" }
+          error = {
+            code: (result.error?.code ?? "NODE_EXECUTION_FAILED") as BollardErrorCode,
+            message: result.error?.message ?? "Node failed",
+          }
           break
         }
         status = "failure"
         ctx.results[node.id] = result
-        error = { code: "NODE_EXECUTION_FAILED", message: result.error ?? "Node failed" }
+        error = {
+          code: (result.error?.code ?? "NODE_EXECUTION_FAILED") as BollardErrorCode,
+          message: result.error?.message ?? "Node failed",
+        }
         break
       }
 

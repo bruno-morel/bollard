@@ -3,6 +3,7 @@ export { BollardError } from "./errors.js"
 export { CostTracker } from "./cost-tracker.js"
 export type {
   NodeType,
+  NodeResultError,
   NodeResult,
   BlueprintNode,
   Blueprint,
@@ -16,7 +17,13 @@ export type {
   BollardConfig,
 } from "./context.js"
 export { createContext } from "./context.js"
-export type { RunResult, AgenticHandler } from "./runner.js"
+export type {
+  RunResult,
+  AgenticHandler,
+  HumanGateHandler,
+  ProgressEvent,
+  ProgressCallback,
+} from "./runner.js"
 export { runBlueprint } from "./runner.js"
 export type {
   EvalCase,

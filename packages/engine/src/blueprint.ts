@@ -18,12 +18,17 @@ export interface ProbeDefinition {
   intervalSeconds: number
 }
 
+export interface NodeResultError {
+  code: string
+  message: string
+}
+
 export interface NodeResult {
   status: "ok" | "fail" | "block"
   data?: unknown
   cost_usd?: number
   duration_ms?: number
-  error?: string
+  error?: NodeResultError
   probes?: ProbeDefinition[]
 }
 

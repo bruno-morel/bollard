@@ -1,0 +1,13 @@
+{
+  "name": "@bollard/verify",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/static.ts",
+    "./src/*": "./src/*"
+  },
+  "dependencies": {
+    "@bollard/engine": "workspace:*"
+  }
+}
