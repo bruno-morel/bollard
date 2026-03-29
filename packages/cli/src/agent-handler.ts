@@ -1,16 +1,52 @@
+import { execFile } from "node:child_process"
+import { readFile, readdir } from "node:fs/promises"
+import { resolve } from "node:path"
+import { promisify } from "node:util"
 import { createCoderAgent } from "@bollard/agents/src/coder.js"
 import { executeAgent } from "@bollard/agents/src/executor.js"
 import { createPlannerAgent } from "@bollard/agents/src/planner.js"
-import type { AgentContext } from "@bollard/agents/src/types.js"
+import type { AgentContext, ExecutorOptions } from "@bollard/agents/src/types.js"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
+
+const execFileAsync = promisify(execFile)
+const MAX_PRELOAD_CHARS_PER_FILE = 10_000
+const MAX_PRELOAD_FILES = 10
+
+export async function buildProjectTree(workDir: string): Promise<string> {
+  try {
+    const rootEntries = await readdir(workDir)
+    const rootFiles = rootEntries
+      .filter((e) => !e.startsWith(".") && e !== "node_modules" && e !== "spec" && e !== "dist")
+      .sort()
+
+    const pkgEntries = await readdir(resolve(workDir, "packages"), {
+      recursive: true,
+    })
+    const sourceFiles = (pkgEntries as string[])
+      .filter(
+        (e) =>
+          (e.endsWith(".ts") || e.endsWith(".md")) &&
+          !e.includes("node_modules") &&
+          !e.includes("dist") &&
+          !e.includes(".tsbuildinfo"),
+      )
+      .sort()
+      .map((f) => `  packages/${f}`)
+
+    const tree = [...rootFiles.map((f) => `  ${f}`), ...sourceFiles]
+
+    return `## Project File Tree (auto-generated)\nThis replaces list_dir exploration. Do NOT call list_dir on directories already shown here.\n\n\`\`\`\n${tree.join("\n")}\n\`\`\``
+  } catch {
+    return ""
+  }
+}
 
 function parsePlanResponse(text: string): unknown {
   try {
     return JSON.parse(text)
   } catch {
-    // LLMs often wrap JSON in markdown fences — strip them and retry
     const fenced = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/)
     if (fenced?.[1]) {
       try {
@@ -20,6 +56,74 @@ function parsePlanResponse(text: string): unknown {
       }
     }
     return { raw: text }
+  }
+}
+
+async function preloadAffectedFiles(plan: unknown, workDir: string): Promise<string> {
+  if (!plan || typeof plan !== "object") return ""
+
+  const affectedFiles = (plan as Record<string, unknown>)["affected_files"] as
+    | Record<string, string[]>
+    | undefined
+  if (!affectedFiles) return ""
+
+  const filesToRead = [...(affectedFiles["modify"] ?? [])].slice(0, MAX_PRELOAD_FILES)
+  const sections: string[] = []
+
+  for (const filePath of filesToRead) {
+    try {
+      const content = await readFile(resolve(workDir, filePath), "utf-8")
+      const capped =
+        content.length > MAX_PRELOAD_CHARS_PER_FILE
+          ? `${content.slice(0, MAX_PRELOAD_CHARS_PER_FILE)}\n[...file truncated at 10000 chars]`
+          : content
+      sections.push(`### ${filePath}\n\`\`\`\n${capped}\n\`\`\``)
+    } catch {
+      // file might not exist yet — skip silently
+    }
+  }
+
+  if (sections.length === 0) return ""
+  return `\n\n## Pre-loaded File Contents\nThese files from the plan have been pre-read. Do NOT call read_file on these — the contents are already here.\n\n${sections.join("\n\n")}`
+}
+
+function createVerificationHook(workDir: string): (text: string) => Promise<string | null> {
+  return async (): Promise<string | null> => {
+    const checks = [
+      { label: "typecheck", cmd: "pnpm", args: ["run", "typecheck"] },
+      { label: "lint", cmd: "pnpm", args: ["run", "lint"] },
+      { label: "test", cmd: "pnpm", args: ["run", "test"] },
+    ]
+
+    const failures: string[] = []
+
+    for (const check of checks) {
+      process.stderr.write(`\x1b[2m  [verify] running ${check.label}...\x1b[0m\n`)
+      try {
+        await execFileAsync(check.cmd, check.args, {
+          cwd: workDir,
+          maxBuffer: 5 * 1024 * 1024,
+          timeout: 180_000,
+        })
+      } catch (err: unknown) {
+        const stdout =
+          err && typeof err === "object" && "stdout" in err
+            ? String((err as { stdout: string }).stdout)
+            : ""
+        const stderr =
+          err && typeof err === "object" && "stderr" in err
+            ? String((err as { stderr: string }).stderr)
+            : String(err)
+        failures.push(`## ${check.label} FAILED\n${(`${stdout}\n${stderr}`).slice(0, 3000)}`)
+      }
+    }
+
+    if (failures.length === 0) {
+      process.stderr.write("\x1b[32m  [verify] all checks passed\x1b[0m\n")
+      return null
+    }
+
+    return `The system ran verification checks automatically. Fix the following issues and output your completion JSON again:\n\n${failures.join("\n\n")}`
   }
 }
 
@@ -71,12 +175,33 @@ export async function createAgenticHandler(
     }
 
     let userMessage = `Task: ${ctx.task}`
+    let executorOptions: ExecutorOptions | undefined
+
+    if (agentRole === "planner") {
+      const projectTree = await buildProjectTree(workDir)
+      if (projectTree) {
+        userMessage = `Task: ${ctx.task}\n\n${projectTree}`
+      }
+    }
+
     if (agentRole === "coder" && ctx.plan) {
-      userMessage = `Task: ${ctx.task}\n\nApproved Plan:\n${JSON.stringify(ctx.plan, null, 2)}`
+      const preloaded = await preloadAffectedFiles(ctx.plan, workDir)
+      userMessage = `Task: ${ctx.task}\n\nApproved Plan:\n${JSON.stringify(ctx.plan, null, 2)}${preloaded}`
+      executorOptions = {
+        postCompletionHook: createVerificationHook(workDir),
+        maxVerificationRetries: 3,
+      }
     }
 
     const startMs = Date.now()
-    const result = await executeAgent(agent, userMessage, provider, model, agentCtx)
+    const result = await executeAgent(
+      agent,
+      userMessage,
+      provider,
+      model,
+      agentCtx,
+      executorOptions,
+    )
 
     if (agentRole === "planner") {
       ctx.plan = parsePlanResponse(result.response)

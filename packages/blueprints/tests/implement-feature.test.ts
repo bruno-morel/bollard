@@ -62,4 +62,29 @@ describe("createImplementFeatureBlueprint", () => {
     expect(implNode?.maxRetries).toBe(1)
     expect(implNode?.onFailure).toBe("stop")
   })
+
+  it("deterministic nodes never have an agent field", () => {
+    const deterministicNodes = bp.nodes.filter((n) => n.type === "deterministic")
+    expect(deterministicNodes.length).toBeGreaterThan(0)
+    for (const node of deterministicNodes) {
+      expect(node.agent).toBeUndefined()
+    }
+  })
+
+  it("human_gate nodes never have an agent field or execute function", () => {
+    const gates = bp.nodes.filter((n) => n.type === "human_gate")
+    expect(gates.length).toBeGreaterThan(0)
+    for (const node of gates) {
+      expect(node.agent).toBeUndefined()
+      expect(node.execute).toBeUndefined()
+    }
+  })
+
+  it("agentic nodes never have an execute function", () => {
+    const agenticNodes = bp.nodes.filter((n) => n.type === "agentic")
+    expect(agenticNodes.length).toBeGreaterThan(0)
+    for (const node of agenticNodes) {
+      expect(node.execute).toBeUndefined()
+    }
+  })
 })

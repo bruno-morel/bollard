@@ -30,3 +30,8 @@ export interface AgentResult {
   turns: number
   toolCalls: { tool: string; input: Record<string, unknown>; output: string }[]
 }
+
+export interface ExecutorOptions {
+  postCompletionHook?: (text: string) => Promise<string | null>
+  maxVerificationRetries?: number
+}

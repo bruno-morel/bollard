@@ -7,10 +7,14 @@ import type {
   LLMResponse,
   LLMTool,
 } from "@bollard/llm/src/types.js"
-import type { AgentContext, AgentDefinition, AgentResult } from "./types.js"
+import type { AgentContext, AgentDefinition, AgentResult, ExecutorOptions } from "./types.js"
 
 const MAX_RETRIES = 3
 const BASE_DELAY_MS = 15_000
+
+const MAX_TOOL_RESULT_CHARS = 8_000
+const COMPACT_KEEP_RECENT = 6
+const COMPACTED_MAX_CHARS = 500
 
 async function chatWithRetry(
   provider: LLMProvider,
@@ -37,16 +41,41 @@ async function chatWithRetry(
   })
 }
 
+export function compactOlderTurns(messages: LLMMessage[]): void {
+  const compactBefore = messages.length - COMPACT_KEEP_RECENT
+  if (compactBefore <= 1) return
+
+  for (let i = 1; i < compactBefore; i++) {
+    const msg = messages[i]
+    if (!msg || typeof msg.content === "string") continue
+
+    for (const block of msg.content) {
+      if (block.type === "tool_result" && block.text && block.text.length > COMPACTED_MAX_CHARS) {
+        block.text = `${block.text.slice(0, COMPACTED_MAX_CHARS)}\n[...truncated for token efficiency]`
+      }
+      if (block.type === "tool_use" && block.toolName === "write_file" && block.toolInput) {
+        const content = block.toolInput["content"]
+        if (typeof content === "string" && content.length > 200) {
+          block.toolInput["content"] = `${content.slice(0, 200)}\n[...file content truncated]`
+        }
+      }
+    }
+  }
+}
+
 export async function executeAgent(
   agent: AgentDefinition,
   userMessage: string,
   provider: LLMProvider,
   model: string,
   ctx: AgentContext,
+  options?: ExecutorOptions,
 ): Promise<AgentResult> {
   const startMs = Date.now()
   let totalCostUsd = 0
   let turns = 0
+  let verificationRetries = 0
+  const maxVerificationRetries = options?.maxVerificationRetries ?? 3
   const toolCallHistory: AgentResult["toolCalls"] = []
 
   const llmTools: LLMTool[] = agent.tools.map((t) => ({
@@ -83,6 +112,27 @@ export async function executeAgent(
         .map((b) => b.text ?? "")
         .join("")
 
+      if (options?.postCompletionHook && verificationRetries < maxVerificationRetries) {
+        try {
+          const feedback = await options.postCompletionHook(text)
+          if (feedback) {
+            verificationRetries++
+            process.stderr.write(
+              `\x1b[33m  [${agent.role}] verification failed (attempt ${verificationRetries}/${maxVerificationRetries}), sending feedback...\x1b[0m\n`,
+            )
+            messages.push({ role: "assistant", content: response.content })
+            messages.push({ role: "user", content: feedback })
+            compactOlderTurns(messages)
+            turns++
+            continue
+          }
+        } catch (hookErr: unknown) {
+          process.stderr.write(
+            `\x1b[31m  [${agent.role}] verification hook error: ${hookErr instanceof Error ? hookErr.message : String(hookErr)}\x1b[0m\n`,
+          )
+        }
+      }
+
       return {
         response: text,
         totalCostUsd,
@@ -115,6 +165,10 @@ export async function executeAgent(
 
         try {
           const output = await tool.execute(block.toolInput ?? {}, ctx)
+          const cappedOutput =
+            output.length > MAX_TOOL_RESULT_CHARS
+              ? `${output.slice(0, MAX_TOOL_RESULT_CHARS)}\n[...output truncated at 8000 chars]`
+              : output
           toolCallHistory.push({
             tool: block.toolName,
             input: block.toolInput ?? {},
@@ -123,7 +177,7 @@ export async function executeAgent(
           toolResults.push({
             type: "tool_result",
             toolUseId: block.toolUseId,
-            text: output,
+            text: cappedOutput,
           })
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -139,6 +193,7 @@ export async function executeAgent(
 
     messages.push({ role: "assistant", content: assistantBlocks })
     messages.push({ role: "user", content: toolResults })
+    compactOlderTurns(messages)
   }
 
   throw new BollardError({

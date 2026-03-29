@@ -8,7 +8,7 @@ import type { ProgressEvent } from "@bollard/engine/src/runner.js"
 import { runBlueprint } from "@bollard/engine/src/runner.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
-import { createAgenticHandler } from "./agent-handler.js"
+import { buildProjectTree, createAgenticHandler } from "./agent-handler.js"
 import { resolveConfig } from "./config.js"
 import { humanGateHandler } from "./human-gate.js"
 
@@ -204,8 +204,10 @@ async function runPlanCommand(args: string[]): Promise<void> {
   log(`${DIM}Planning...${RESET}\n`)
 
   const workDir = findWorkspaceRoot(process.cwd())
+  const projectTree = await buildProjectTree(workDir)
+  const plannerMessage = projectTree ? `Task: ${task}\n\n${projectTree}` : `Task: ${task}`
   const ctx = createContext(task, "plan-only", config)
-  const result = await executeAgent(planner, `Task: ${task}`, provider, model, {
+  const result = await executeAgent(planner, plannerMessage, provider, model, {
     pipelineCtx: ctx,
     workDir,
   })

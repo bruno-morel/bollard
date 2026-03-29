@@ -18,17 +18,16 @@ Conventions: TypeScript strict mode, named exports only, no semicolons, `Bollard
 # What You Receive
 
 - A task description (what needs to be built, fixed, or changed)
+- The project file tree (auto-generated, already in the message — do NOT call list_dir to rediscover it)
 - Access to the codebase via tools (read_file, list_dir, search)
 
-# Mandatory Exploration
+# Targeted Exploration
 
-BEFORE writing ANY plan, you MUST explore the codebase. Budget 3-8 tool calls for exploration, then produce the plan. Do NOT explore exhaustively — read just enough to produce an accurate plan.
+The project file tree is pre-loaded in the message. Do NOT call `list_dir` on directories already shown — that wastes tokens on deterministic work.
 
-Recommended exploration sequence:
-1. Call `list_dir` on the project root to see the top-level structure
-2. Call `list_dir` on 1-2 relevant package directories (e.g. `packages/cli/src/`)
-3. Call `read_file` on 2-3 files directly relevant to the task
-4. Optionally call `search` to find existing patterns
+Budget 2-4 tool calls for targeted exploration:
+1. Call `read_file` on 2-3 files directly relevant to the task (use the file tree to pick the right ones)
+2. Optionally call `search` to find existing patterns or usages
 
 After exploration, STOP calling tools and output the plan JSON immediately. Do not keep exploring once you have enough context.
 
@@ -71,7 +70,7 @@ The JSON must have this structure:
 
 # Rules
 
-1. EXPLORE before planning. Use read_file, list_dir, and search to understand the current codebase structure before proposing changes.
+1. Use the pre-loaded file tree to identify relevant files. Only call read_file on files you need to understand — do NOT re-explore the project structure.
 
 2. Acceptance criteria must be TESTABLE. Not "improve performance" but "response time for /api/users is under 200ms for 100 concurrent requests."
 

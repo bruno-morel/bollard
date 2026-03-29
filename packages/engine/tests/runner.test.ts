@@ -249,3 +249,103 @@ describe("runBlueprint", () => {
     expect(result.error).toBeUndefined()
   })
 })
+
+describe("deterministic nodes consume zero tokens", () => {
+  it("never invokes the agentic handler for deterministic nodes", async () => {
+    const handlerCalls: string[] = []
+    const handler = async (node: BlueprintNode) => {
+      handlerCalls.push(node.id)
+      return { status: "ok" as const, data: "llm response", cost_usd: 0.01 }
+    }
+
+    const bp = makeBlueprint([
+      okNode("det-1"),
+      { id: "agent-1", name: "agent", type: "agentic" as const, agent: "coder" },
+      okNode("det-2"),
+      okNode("det-3"),
+    ])
+
+    const result = await runBlueprint(bp, "task", TEST_CONFIG, handler)
+
+    expect(result.status).toBe("success")
+    expect(handlerCalls).toEqual(["agent-1"])
+  })
+
+  it("deterministic nodes report zero cost", async () => {
+    const bp = makeBlueprint([okNode("a"), okNode("b"), okNode("c")])
+    const result = await runBlueprint(bp, "task", TEST_CONFIG)
+
+    expect(result.status).toBe("success")
+    expect(result.totalCostUsd).toBe(0)
+    for (const nodeResult of Object.values(result.nodeResults)) {
+      expect(nodeResult.cost_usd ?? 0).toBe(0)
+    }
+  })
+
+  it("only agentic nodes contribute to LLM cost", async () => {
+    const handler = async () => ({
+      status: "ok" as const,
+      data: "done",
+      cost_usd: 0.05,
+    })
+
+    const bp = makeBlueprint([
+      okNode("det-before"),
+      { id: "agent-node", name: "agent", type: "agentic" as const, agent: "coder" },
+      okNode("det-after"),
+    ])
+
+    const result = await runBlueprint(bp, "task", TEST_CONFIG, handler)
+
+    expect(result.status).toBe("success")
+    expect(result.totalCostUsd).toBeCloseTo(0.05)
+    expect(result.nodeResults["det-before"]?.cost_usd ?? 0).toBe(0)
+    expect(result.nodeResults["agent-node"]?.cost_usd).toBeCloseTo(0.05)
+    expect(result.nodeResults["det-after"]?.cost_usd ?? 0).toBe(0)
+  })
+
+  it("human_gate nodes never invoke the agentic handler", async () => {
+    const agenticCalls: string[] = []
+    const agenticHandler = async (node: BlueprintNode) => {
+      agenticCalls.push(node.id)
+      return { status: "ok" as const, data: "llm" }
+    }
+
+    const gateCalls: string[] = []
+    const gateHandler = async (node: BlueprintNode) => {
+      gateCalls.push(node.id)
+      return { status: "ok" as const, data: "approved" }
+    }
+
+    const bp = makeBlueprint([
+      okNode("det"),
+      { id: "agent", name: "agent", type: "agentic" as const, agent: "coder" },
+      { id: "gate", name: "gate", type: "human_gate" as const },
+    ])
+
+    const result = await runBlueprint(bp, "task", TEST_CONFIG, agenticHandler, gateHandler)
+
+    expect(result.status).toBe("success")
+    expect(agenticCalls).toEqual(["agent"])
+    expect(gateCalls).toEqual(["gate"])
+  })
+
+  it("a full pipeline of deterministic nodes costs zero dollars", async () => {
+    const bp = makeBlueprint([
+      okNode("step-1"),
+      okNode("step-2"),
+      okNode("step-3"),
+      okNode("step-4"),
+      okNode("step-5"),
+    ])
+
+    const expensiveHandler = async () => {
+      throw new Error("agentic handler should never be called for deterministic nodes")
+    }
+
+    const result = await runBlueprint(bp, "task", TEST_CONFIG, expensiveHandler)
+
+    expect(result.status).toBe("success")
+    expect(result.totalCostUsd).toBe(0)
+  })
+})
