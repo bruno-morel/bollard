@@ -203,10 +203,11 @@ async function runPlanCommand(args: string[]): Promise<void> {
   log(`${DIM}Model:${RESET} ${model}`)
   log(`${DIM}Planning...${RESET}\n`)
 
+  const workDir = findWorkspaceRoot(process.cwd())
   const ctx = createContext(task, "plan-only", config)
   const result = await executeAgent(planner, `Task: ${task}`, provider, model, {
     pipelineCtx: ctx,
-    workDir: process.cwd(),
+    workDir,
   })
 
   process.stdout.write(`${result.response}\n`)

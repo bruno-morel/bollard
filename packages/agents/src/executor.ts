@@ -59,6 +59,11 @@ export async function executeAgent(
 
     for (const block of assistantBlocks) {
       if (block.type === "tool_use" && block.toolName && block.toolUseId) {
+        const inputSummary = JSON.stringify(block.toolInput ?? {}).slice(0, 120)
+        process.stderr.write(
+          `\x1b[2m  [${agent.role}] turn ${turns}: ${block.toolName}(${inputSummary})\x1b[0m\n`,
+        )
+
         const tool = agent.tools.find((t) => t.name === block.toolName)
         if (!tool) {
           toolResults.push({
@@ -83,6 +88,7 @@ export async function executeAgent(
           })
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err)
+          process.stderr.write(`\x1b[31m  [${agent.role}] tool error: ${msg}\x1b[0m\n`)
           toolResults.push({
             type: "tool_result",
             toolUseId: block.toolUseId,

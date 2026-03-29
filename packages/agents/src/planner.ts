@@ -14,7 +14,7 @@ export async function createPlannerAgent(): Promise<AgentDefinition> {
     role: "planner",
     systemPrompt,
     tools: READ_ONLY_TOOLS,
-    maxTurns: 15,
+    maxTurns: 25,
     temperature: 0.2,
   }
 }

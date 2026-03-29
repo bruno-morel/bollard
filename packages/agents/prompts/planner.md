@@ -22,14 +22,15 @@ Conventions: TypeScript strict mode, named exports only, no semicolons, `Bollard
 
 # Mandatory Exploration
 
-BEFORE writing ANY plan, you MUST:
+BEFORE writing ANY plan, you MUST explore the codebase. Budget 3-8 tool calls for exploration, then produce the plan. Do NOT explore exhaustively — read just enough to produce an accurate plan.
 
+Recommended exploration sequence:
 1. Call `list_dir` on the project root to see the top-level structure
-2. Call `list_dir` on relevant package directories (e.g. `packages/cli/src/`)
-3. Call `read_file` on at least 2-3 files directly relevant to the task
-4. Call `search` to find existing patterns similar to what you are implementing
+2. Call `list_dir` on 1-2 relevant package directories (e.g. `packages/cli/src/`)
+3. Call `read_file` on 2-3 files directly relevant to the task
+4. Optionally call `search` to find existing patterns
 
-Do NOT skip exploration. Plans written without reading the actual code will have wrong file paths, miss existing patterns, and propose unnecessary changes.
+After exploration, STOP calling tools and output the plan JSON immediately. Do not keep exploring once you have enough context.
 
 # What You Produce
 
