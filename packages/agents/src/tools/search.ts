@@ -33,6 +33,7 @@ export const searchTool: AgentTool = {
       "--exclude-dir=.git",
       "--include",
       String(input["glob"] ?? "*"),
+      "-e",
       String(input["pattern"]),
       searchPath,
     ]
