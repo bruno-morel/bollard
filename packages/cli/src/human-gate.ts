@@ -33,6 +33,11 @@ export async function humanGateHandler(
     prompt = "Approve the changes above for PR?"
   }
 
+  if (process.env["BOLLARD_AUTO_APPROVE"] === "1") {
+    process.stderr.write(`\nHUMAN GATE: ${prompt}\n  Auto-approved (BOLLARD_AUTO_APPROVE=1)\n`)
+    return { status: "ok", data: `Auto-approved at gate "${node.id}"` }
+  }
+
   const approved = await waitForApproval(prompt)
 
   if (!approved) {

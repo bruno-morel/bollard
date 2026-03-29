@@ -15,6 +15,7 @@ services:
     working_dir: /app
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - BOLLARD_AUTO_APPROVE=${BOLLARD_AUTO_APPROVE:-}
     entrypoint: ["pnpm"]
 
 volumes:
