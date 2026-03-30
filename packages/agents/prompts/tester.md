@@ -50,6 +50,10 @@ You receive:
 
 13. **Follow Runtime Constraints exactly.** When the task includes a "Runtime Constraints" section, treat it as authoritative specification. These describe behaviors not visible in types — filesystem requirements, validation strictness, environment dependencies, allowlists, edge-case semantics. Use the exact fixture setup patterns provided. If a constraint says a function requires a temp directory, create one. If it lists allowed values, test both allowed and disallowed. If it shows required environment variables, set them.
 
+14. **The return type in the signature is the ONLY truth about what a function returns.** If the signature says `Promise<string>`, the function returns a string — assert with `expect(typeof result).toBe("string")` or `expect(result).toContain(...)`. Do NOT fabricate structured result objects like `{ success: boolean, data: ... }` or `{ ok: true, content: ... }`. Do NOT assert `.success`, `.data`, `.output`, `.result`, or any property on a string return. Read the return type annotation character by character. `Promise<string>` means string. `Promise<NodeResult>` means NodeResult. `Promise<void>` means no return value.
+
+15. **Property-based tests must use valid inputs.** When generating arbitrary inputs with fast-check, constrain them to the valid domain. If a function only accepts values from a known set (e.g., an allowlist of commands), use `fc.constantFrom(...)` with values from that set — do NOT generate random strings that will be rejected. Invalid-input property tests are negative tests, not property tests; keep them separate.
+
 # Output Format
 
 Output ONLY the test file content. No explanatory text. The output will be written directly to a .test.ts file.
