@@ -30,15 +30,15 @@ Most projects need zero lines of `.bollard.yml`. The ones that do need it write 
 
 | What | How It's Detected | Fallback |
 |------|-------------------|----------|
-| **Language** | `tsconfig.json` → TypeScript. `package.json` → JS. | Error: Bollard requires a Node.js project (for now) |
-| **Test runner** | `vitest.config.*` → Vitest. `jest.config.*` → Jest. `*.test.ts` pattern → infer. | Warns. Adversarial test agent still generates tests, but can't run them. |
-| **Linter** | `biome.json` → Biome. `.eslintrc.*` → ESLint. | Warns. Suggests Biome. |
-| **Package manager** | `pnpm-lock.yaml` → pnpm. `yarn.lock` → yarn. `package-lock.json` → npm. | pnpm |
+| **Language** | `tsconfig.json` → TypeScript. `pyproject.toml`/`setup.py` → Python. `go.mod` → Go. `Cargo.toml` → Rust. `package.json` (no tsconfig) → JS. See [06-toolchain-profiles.md](06-toolchain-profiles.md) Section 3.1 for the full matrix. | Interactive prompt during `bollard init` |
+| **Test runner** | `vitest.config.*` → Vitest. `jest.config.*` → Jest. `conftest.py` → pytest. `_test.go` → go test. `Cargo.toml` → cargo test. See [06-toolchain-profiles.md](06-toolchain-profiles.md) Section 3.3. | Warns. Adversarial test agent (Layer 2) still generates tests, but Layer 1 is skipped. |
+| **Linter** | `biome.json` → Biome. `.eslintrc.*` → ESLint. `ruff.toml` / `[tool.ruff]` → Ruff. `.golangci.yml` → golangci-lint. Clippy (default for Rust). | Warns. Suggests appropriate linter for detected language. |
+| **Type checker** | `tsconfig.json` → tsc. `mypy.ini` / `[tool.mypy]` → mypy. Go/Rust compilers have built-in type checking. | Warns: "type checking is a free verification layer" |
+| **Package manager** | `pnpm-lock.yaml` → pnpm. `yarn.lock` → yarn. `package-lock.json` → npm. `poetry.lock` → poetry. `uv.lock` → uv. `go.sum` → go modules. `Cargo.lock` → cargo. | Inferred from language |
 | **Docker** | `docker --version` succeeds | In-process mode (less isolation, same verification) |
 | **Provider** | `.github/workflows/` → `github-actions`. Docker only → `local`. | `local` |
-| **Monorepo** | `pnpm-workspace.yaml` or `lerna.json` | Single-package mode |
+| **Monorepo** | `pnpm-workspace.yaml`, `lerna.json`, Go workspace `go.work`, Cargo workspace `[workspace]` | Single-package mode |
 | **LLM** | `$ANTHROPIC_API_KEY` → Anthropic. `$OPENAI_API_KEY` → OpenAI. | Error: no LLM configured |
-| **TS strict mode** | Reads `tsconfig.json` → `compilerOptions.strict` | Warns: "strict mode is a free verification layer" |
 
 Every detection result is printed during `bollard init` and at the start of every run (in debug mode). No magic — you can always see what Bollard detected and why.
 
@@ -48,18 +48,34 @@ Every detection result is printed during `bollard init` and at the start of ever
 $ cd my-typescript-project
 $ npx bollard init
 
-✓ TypeScript (strict mode ON)
-✓ Vitest
-✓ Biome
-✓ pnpm
-✓ Docker (agent isolation: container)
-✓ GitHub Actions detected → provider: github-actions
-✓ ANTHROPIC_API_KEY set
+✓ Language:         TypeScript (strict mode ON)
+✓ Test framework:   Vitest
+✓ Linter:           Biome
+✓ Package manager:  pnpm
+✓ Docker:           yes (agent isolation: container)
+✓ CI:               GitHub Actions detected → provider: github-actions
+✓ LLM:              ANTHROPIC_API_KEY set
 
 Ready. Run: npx bollard run --task "your task here"
 ```
 
-No config file generated. No Stryker config needed (Bollard runs it directly with `--mutate` on changed files). If auto-detection covers your project, there's nothing to write.
+```bash
+$ cd my-python-api
+$ npx bollard init
+
+✓ Language:         Python 3.12
+✓ Test framework:   pytest (conftest.py + pyproject.toml)
+✓ Linter:           Ruff ([tool.ruff] in pyproject.toml)
+✓ Type checker:     mypy ([tool.mypy] in pyproject.toml)
+✓ Package manager:  poetry (poetry.lock found)
+✓ Docker:           yes (Dockerfile found)
+✓ CI:               GitHub Actions detected → provider: github-actions
+✓ LLM:              ANTHROPIC_API_KEY set
+
+Ready. Run: npx bollard run --task "your task here"
+```
+
+No config file generated. If auto-detection covers your project, there's nothing to write. See [06-toolchain-profiles.md](06-toolchain-profiles.md) for the full detection matrix and interactive init for undetected tools.
 
 ---
 
@@ -69,16 +85,17 @@ These values exist in the codebase as hardcoded defaults, derived from the risk 
 
 ### Verification Layers
 
-Every layer is enabled by default if the tooling exists. There's no `verification.static.typescript: true` in a config file — if `tsconfig.json` exists, TS checks run. Period.
+Every layer is enabled by default if the tooling exists. There's no `verification.static.typescript: true` in a config file — if a type checker is detected, type checks run. Period. All verification commands are read from the `ToolchainProfile` (see [06-toolchain-profiles.md](06-toolchain-profiles.md)) — the engine never checks `if language === "python"`.
 
 | Layer | Enabled when... | Disabled when... |
 |-------|-----------------|-----------------|
-| TypeScript strict | `tsconfig.json` with `strict: true` | No tsconfig, or strict is off (Bollard warns) |
-| Linting | `biome.json` or `.eslintrc.*` exists | No linter detected (Bollard warns) |
+| Type checking | Type checker detected (tsc, mypy, pyright, go vet, rustc) | No type checker — Bollard warns: "type checking is a free verification layer" |
+| Linting | Linter detected (Biome, ESLint, Ruff, golangci-lint, Clippy, etc.) | No linter detected (Bollard warns) |
 | Secret scanning | Always (gitleaks is zero-config) | Never — this is a safety net, not optional |
-| Dependency audit | Always (`npm audit` / `pnpm audit`) | Never |
-| Test execution | Test runner detected | No test runner (Bollard warns) |
-| Mutation testing | Test runner detected + Stage 3 | No tests to run against |
+| Dependency audit | Always (pnpm audit, pip-audit, govulncheck, cargo-audit, etc.) | Never |
+| Test execution (Layer 1) | Test runner detected | No test runner (Bollard warns, risk score elevated) |
+| Adversarial tests (Layer 2) | Stage 2+ | Pre-Stage 2 |
+| Mutation testing (Layer 3) | Test runner detected + Stage 3 | No tests to run against |
 | Contract testing | `pact.config.*` exists | No Pact setup |
 
 ### Risk Thresholds
@@ -251,9 +268,17 @@ For every combination of project type and provider, here's what should happen wi
 | TS + Vitest + Biome (ideal) | local | `bollard init` + set API key | Everything works |
 | TS + Jest + ESLint (legacy) | local | `bollard init` | Works — detects Jest/ESLint |
 | TS + no tests (greenfield) | local | `bollard init` | Works — agent generates all tests |
-| JS (no TypeScript) | local | `bollard init` | Works — disables TS layer, warns |
+| JS (no TypeScript) | local | `bollard init` | Works — disables type check layer, warns |
+| Python + pytest + ruff + mypy | local | `bollard init` | Detects all four. Verification profile auto-configured. |
+| Python + no tests (new) | local | `bollard init` | Detects Python, warns no tests. Layer 1 skipped, Layer 2 still runs. |
+| Go module | local | `bollard init` | Detects go test, go vet, govulncheck. |
+| Rust + cargo | local | `bollard init` | Detects cargo test, clippy, cargo-audit. |
+| Polyglot (TS + Python) | local | `bollard init` | Detects both. Per-package profiles. |
+| Empty directory | local | `bollard init` | Interactive: asks language, suggests tools. |
 | Any | github-actions | `bollard setup github-actions` | Label issue → PR |
 | Any | gcp | `npx @bollard/provider-gcp setup --project X` | Cloud Run Jobs → PR |
+
+See [06-toolchain-profiles.md](06-toolchain-profiles.md) for the full detection matrix and the three-layer verification model.
 
 None of these require editing `.bollard.yml`.
 

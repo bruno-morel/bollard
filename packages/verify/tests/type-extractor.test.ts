@@ -1,0 +1,147 @@
+import { readFile } from "node:fs/promises"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+import { describe, expect, it } from "vitest"
+import { extractPrivateIdentifiers, extractSignatures } from "../src/type-extractor.js"
+
+const THIS_DIR = dirname(fileURLToPath(import.meta.url))
+const PACKAGES_DIR = resolve(THIS_DIR, "../..")
+
+async function readSource(pkgPath: string): Promise<string> {
+  return readFile(resolve(PACKAGES_DIR, pkgPath), "utf-8")
+}
+
+describe("extractSignatures", () => {
+  it("extracts class signatures from errors.ts without implementation bodies", async () => {
+    const source = await readSource("engine/src/errors.ts")
+    const result = extractSignatures("engine/src/errors.ts", source)
+
+    expect(result.signatures).toContain("export class BollardError")
+    expect(result.signatures).toContain("constructor(")
+    expect(result.signatures).toContain("{ ... }")
+
+    expect(result.signatures).not.toContain("Object.setPrototypeOf")
+    expect(result.signatures).not.toContain('this.name = "BollardError"')
+  })
+
+  it("strips private class members from cost-tracker.ts", async () => {
+    const source = await readSource("engine/src/cost-tracker.ts")
+    const result = extractSignatures("engine/src/cost-tracker.ts", source)
+
+    expect(result.signatures).toContain("add(costUsd: number)")
+    expect(result.signatures).toContain("total()")
+    expect(result.signatures).toContain("exceeded()")
+    expect(result.signatures).toContain("remaining()")
+
+    expect(result.signatures).not.toContain("_total")
+    expect(result.signatures).not.toContain("_limit")
+  })
+
+  it("preserves interfaces in full from llm/types.ts", async () => {
+    const source = await readSource("llm/src/types.ts")
+    const result = extractSignatures("llm/src/types.ts", source)
+
+    expect(result.types).toContain("export interface LLMProvider")
+    expect(result.types).toContain("export interface LLMRequest")
+    expect(result.types).toContain("export interface LLMResponse")
+    expect(result.types).toContain("chat(request: LLMRequest)")
+  })
+
+  it("preserves import statements", async () => {
+    const source = await readSource("engine/src/cost-tracker.ts")
+    const result = extractSignatures("engine/src/cost-tracker.ts", source)
+
+    expect(result.imports).toContain("import")
+    expect(result.imports).toContain("BollardError")
+  })
+
+  it("preserves type aliases in full", async () => {
+    const source = await readSource("engine/src/errors.ts")
+    const result = extractSignatures("engine/src/errors.ts", source)
+
+    expect(result.types).toContain("export type BollardErrorCode")
+    expect(result.types).toContain("LLM_TIMEOUT")
+    expect(result.types).toContain("NODE_EXECUTION_FAILED")
+  })
+
+  it("extracts typed const declarations without initializer values", async () => {
+    const source = await readSource("agents/src/tools/index.ts")
+    const result = extractSignatures("agents/src/tools/index.ts", source)
+
+    expect(result.signatures).toContain("ALL_TOOLS")
+    expect(result.signatures).toContain("AgentTool[]")
+    expect(result.signatures).toContain("READ_ONLY_TOOLS")
+
+    expect(result.signatures).not.toContain("readFileTool")
+    expect(result.signatures).not.toContain("writeFileTool")
+  })
+
+  it("strips non-exported items", async () => {
+    const source = await readSource("engine/src/errors.ts")
+    const result = extractSignatures("engine/src/errors.ts", source)
+
+    expect(result.signatures).not.toContain("RETRYABLE_CODES")
+    expect(result.types).not.toContain("BollardErrorOptions")
+  })
+
+  it("extracts runner.ts signatures without implementation logic", async () => {
+    const source = await readSource("engine/src/runner.ts")
+    const result = extractSignatures("engine/src/runner.ts", source)
+
+    expect(result.signatures).toContain("runBlueprint")
+    expect(result.signatures).toContain("{ ... }")
+
+    expect(result.signatures).not.toContain("ctx.costTracker")
+    expect(result.signatures).not.toContain("checkPostconditions")
+    expect(result.signatures).not.toContain("executeNode")
+  })
+
+  it("does not leak implementation keywords in cost-tracker output", async () => {
+    const source = await readSource("engine/src/cost-tracker.ts")
+    const result = extractSignatures("engine/src/cost-tracker.ts", source)
+
+    const combined = `${result.imports}\n${result.types}\n${result.signatures}`
+
+    expect(combined).not.toContain("Math.max")
+    expect(combined).not.toContain("this._total")
+    expect(combined).not.toContain("this._limit")
+  })
+})
+
+describe("extractPrivateIdentifiers", () => {
+  it("returns private class fields from cost-tracker.ts", async () => {
+    const source = await readSource("engine/src/cost-tracker.ts")
+    const result = extractPrivateIdentifiers("engine/src/cost-tracker.ts", source)
+
+    expect(result).toContain("_total")
+    expect(result).toContain("_limit")
+
+    expect(result).not.toContain("add")
+    expect(result).not.toContain("total")
+    expect(result).not.toContain("exceeded")
+    expect(result).not.toContain("remaining")
+  })
+
+  it("returns non-exported variables from errors.ts", async () => {
+    const source = await readSource("engine/src/errors.ts")
+    const result = extractPrivateIdentifiers("engine/src/errors.ts", source)
+
+    expect(result).toContain("RETRYABLE_CODES")
+  })
+
+  it("filters noise identifiers and single-char names", () => {
+    const source = `
+function helper(i: number, ctx: Context): void {
+  const x = i + 1
+}
+export function publicFn(): void { }
+`
+    const result = extractPrivateIdentifiers("test.ts", source)
+
+    expect(result).toContain("helper")
+    expect(result).not.toContain("i")
+    expect(result).not.toContain("x")
+    expect(result).not.toContain("ctx")
+    expect(result).not.toContain("publicFn")
+  })
+})

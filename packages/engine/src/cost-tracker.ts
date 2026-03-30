@@ -5,14 +5,21 @@ export class CostTracker {
   private readonly _limit: number
 
   constructor(limitUsd: number) {
+    if (!Number.isFinite(limitUsd) || limitUsd < 0) {
+      throw new BollardError({
+        code: "CONTRACT_VIOLATION",
+        message: `Limit must be a non-negative finite number, got: ${limitUsd}`,
+        context: { limitUsd },
+      })
+    }
     this._limit = limitUsd
   }
 
   add(costUsd: number): void {
-    if (costUsd < 0) {
+    if (!Number.isFinite(costUsd) || costUsd < 0) {
       throw new BollardError({
         code: "CONTRACT_VIOLATION",
-        message: `Cost cannot be negative: ${costUsd}`,
+        message: `Cost must be a non-negative finite number, got: ${costUsd}`,
         context: { costUsd },
       })
     }

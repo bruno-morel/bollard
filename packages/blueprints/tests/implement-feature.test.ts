@@ -4,8 +4,8 @@ import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
 describe("createImplementFeatureBlueprint", () => {
   const bp = createImplementFeatureBlueprint("/tmp/test")
 
-  it("has 8 nodes in the correct order", () => {
-    expect(bp.nodes).toHaveLength(8)
+  it("has 11 nodes in the correct order", () => {
+    expect(bp.nodes).toHaveLength(11)
     const ids = bp.nodes.map((n) => n.id)
     expect(ids).toEqual([
       "create-branch",
@@ -13,6 +13,9 @@ describe("createImplementFeatureBlueprint", () => {
       "approve-plan",
       "implement",
       "static-checks",
+      "extract-signatures",
+      "generate-tests",
+      "write-tests",
       "run-tests",
       "generate-diff",
       "approve-pr",
@@ -27,6 +30,9 @@ describe("createImplementFeatureBlueprint", () => {
       { id: "approve-plan", type: "human_gate" },
       { id: "implement", type: "agentic" },
       { id: "static-checks", type: "deterministic" },
+      { id: "extract-signatures", type: "deterministic" },
+      { id: "generate-tests", type: "agentic" },
+      { id: "write-tests", type: "deterministic" },
       { id: "run-tests", type: "deterministic" },
       { id: "generate-diff", type: "deterministic" },
       { id: "approve-pr", type: "human_gate" },
@@ -53,8 +59,10 @@ describe("createImplementFeatureBlueprint", () => {
   it("agentic nodes have agent roles", () => {
     const planNode = bp.nodes.find((n) => n.id === "generate-plan")
     const implNode = bp.nodes.find((n) => n.id === "implement")
+    const testNode = bp.nodes.find((n) => n.id === "generate-tests")
     expect(planNode?.agent).toBe("planner")
     expect(implNode?.agent).toBe("coder")
+    expect(testNode?.agent).toBe("tester")
   })
 
   it("coder node has retry config", () => {
@@ -86,5 +94,11 @@ describe("createImplementFeatureBlueprint", () => {
     for (const node of agenticNodes) {
       expect(node.execute).toBeUndefined()
     }
+  })
+
+  it("has 3 agentic nodes (planner, coder, tester)", () => {
+    const agenticNodes = bp.nodes.filter((n) => n.type === "agentic")
+    expect(agenticNodes).toHaveLength(3)
+    expect(agenticNodes.map((n) => n.agent)).toEqual(["planner", "coder", "tester"])
   })
 })

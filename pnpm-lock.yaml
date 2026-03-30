@@ -92,6 +92,9 @@ importers:
       '@bollard/engine':
         specifier: workspace:*
         version: link:../engine
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
 
 packages:
 

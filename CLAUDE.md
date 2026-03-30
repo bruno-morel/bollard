@@ -6,7 +6,7 @@
 
 Bollard is an **artifact integrity framework** for AI-assisted software development. It ensures every artifact (code, tests, docs, infra) is produced, adversarially verified, and mechanically proven sound before shipping. The core innovation: separate the producer from the verifier, then prove the verification itself is meaningful (via mutation testing).
 
-Bollard is currently at **Stage 1** (planner + coder agents). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 adds multi-turn agents (planner and coder), filesystem tools, static verification, the `implement-feature` blueprint, and eval sets. Stage 2 will add adversarial testing (independent test agent), Stage 3 adds mutation testing and Docker isolation.
+Bollard is currently at **Stage 1** (planner + coder agents). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 adds multi-turn agents (planner and coder), filesystem tools, static verification, the `implement-feature` blueprint, and eval sets. Stage 1.5 will add language-agnostic toolchain detection (ToolchainProfile, interactive init, templatized prompts). Stage 2 adds adversarial testing (independent test agent) with Docker-isolated verification containers. Stage 3 adds per-language mutation testing, semantic review, and the production feedback loop.
 
 ### What works right now
 
@@ -42,7 +42,7 @@ docker compose run --rm dev --filter @bollard/cli run start -- eval planner
 - **Property-based testing:** fast-check (used by adversarial test agent later, but available now).
 - **Runtime validation:** Zod at all boundaries.
 - **Dev runner:** tsx (esbuild-based, runs TS directly — no build step during development).
-- **Mutation testing:** Stryker (Stage 3, not yet).
+- **Mutation testing:** Per-language (Stryker for JS/TS, mutmut for Python, cargo-mutants for Rust, etc.) — Stage 3, not yet.
 - **Secret scanning:** gitleaks (checked by `@bollard/verify` when installed).
 
 ### Explicitly NOT used
@@ -352,11 +352,16 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 
 ### DO NOT build yet:
 - MCP server — Stage 1.5
-- Adversarial test generation — Stage 2
-- Type extractor — Stage 2
+- Language-agnostic toolchain detection (`@bollard/detect`, ToolchainProfile) — Stage 1.5
+- Templatized agent prompts (language/tools injected from profile) — Stage 1.5
+- Interactive `bollard init` for non-TypeScript projects — Stage 1.5
+- Adversarial test generation (black-box + in-language) — Stage 2
+- Type extractor interface + LLM fallback — Stage 2
+- Docker-isolated verification containers — Stage 2
 - OpenAI/Google LLM providers — Stage 2
-- Mutation testing integration — Stage 3
-- Docker isolation for tool execution — Stage 3
+- Per-language mutation testing (Stryker, mutmut, cargo-mutants, etc.) — Stage 3
+- Semantic review agent — Stage 3
+- Deterministic type extractors for Python/Go/Rust — Stage 3
 - Production probes, drift detection, flag manager — Stage 3
 - CI integration, run history, self-improvement — Stage 4
 
@@ -385,7 +390,8 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 If you need deeper context, refer to these (they are the source of truth) in the spec/ folder:
 
 - `01-architecture.md` — Full architecture, type definitions, pipeline layers
-- `02-bootstrap.md` — Stage-by-stage bootstrap roadmap
+- `02-bootstrap.md` — Stage-by-stage bootstrap roadmap (Stages 0 → 1 → 1.5 → 2 → 3 → 4)
 - `03-providers.md` — Cloud provider abstraction (not needed until Stage 3)
 - `04-configuration.md` — Config philosophy, auto-detection, .bollard.yml spec
 - `05-risk-model.md` — Risk scoring dimensions and gating behavior
+- `06-toolchain-profiles.md` — Language-agnostic verification: three-layer model, toolchain detection, Docker isolation, adversarial test lifecycle

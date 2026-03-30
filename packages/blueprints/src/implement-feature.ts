@@ -1,10 +1,29 @@
 import { execFile } from "node:child_process"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { dirname, resolve } from "node:path"
 import { promisify } from "node:util"
 import type { Blueprint, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
+import { BollardError } from "@bollard/engine/src/errors.js"
+import { createTestRunNode } from "@bollard/verify/src/dynamic.js"
 import { createStaticCheckNode } from "@bollard/verify/src/static.js"
+import {
+  extractPrivateIdentifiers,
+  extractSignaturesFromFiles,
+} from "@bollard/verify/src/type-extractor.js"
 
 const execFileAsync = promisify(execFile)
+
+function getAffectedTsFiles(plan: unknown): string[] {
+  if (!plan || typeof plan !== "object") return []
+  const af = (plan as Record<string, unknown>)["affected_files"] as
+    | Record<string, string[]>
+    | undefined
+  if (!af) return []
+  return [...(af["modify"] ?? []), ...(af["create"] ?? [])].filter(
+    (f) => f.endsWith(".ts") && !f.endsWith(".test.ts"),
+  )
+}
 
 export function createImplementFeatureBlueprint(workDir: string): Blueprint {
   return {
@@ -58,35 +77,103 @@ export function createImplementFeatureBlueprint(workDir: string): Blueprint {
       createStaticCheckNode(workDir),
 
       {
-        id: "run-tests",
-        name: "Run Tests",
+        id: "extract-signatures",
+        name: "Extract Type Signatures",
         type: "deterministic",
-        execute: async (): Promise<NodeResult> => {
-          try {
-            const { stdout, stderr } = await execFileAsync(
-              "pnpm",
-              ["run", "test", "--reporter=verbose"],
-              {
-                cwd: workDir,
-                maxBuffer: 5 * 1024 * 1024,
-                timeout: 300_000,
-              },
-            )
-            return { status: "ok", data: { output: (stdout + stderr).slice(0, 5000) } }
-          } catch (err: unknown) {
-            const output =
-              err && typeof err === "object" && "stdout" in err
-                ? String((err as { stdout: string }).stdout)
-                : String(err)
-            return {
-              status: "fail",
-              error: { code: "TEST_FAILED", message: output.slice(0, 2000) },
-            }
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const files = getAffectedTsFiles(ctx.plan)
+          if (files.length === 0) {
+            return { status: "ok", data: { filesExtracted: 0, signatures: [] } }
+          }
+
+          const fullPaths = files.map((f) => resolve(workDir, f))
+          const signatures = await extractSignaturesFromFiles(fullPaths)
+
+          return {
+            status: "ok",
+            data: {
+              filesExtracted: files.length,
+              signatures,
+            },
           }
         },
-        maxRetries: 1,
-        onFailure: "stop",
       },
+
+      {
+        id: "generate-tests",
+        name: "Generate Adversarial Tests",
+        type: "agentic",
+        agent: "tester",
+      },
+
+      {
+        id: "write-tests",
+        name: "Write Adversarial Test Files",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const testerResult = ctx.results["generate-tests"]
+          const testerOutput = typeof testerResult?.data === "string" ? testerResult.data : ""
+
+          if (!testerOutput) {
+            return {
+              status: "fail",
+              error: {
+                code: "NODE_EXECUTION_FAILED",
+                message: "No test output from tester agent",
+              },
+            }
+          }
+
+          const files = getAffectedTsFiles(ctx.plan)
+          const leakedTokens: string[] = []
+
+          for (const filePath of files) {
+            try {
+              const source = await readFile(resolve(workDir, filePath), "utf-8")
+              const privateIds = extractPrivateIdentifiers(filePath, source)
+              for (const id of privateIds) {
+                if (testerOutput.includes(id)) {
+                  leakedTokens.push(id)
+                }
+              }
+            } catch {
+              // File might not exist yet (newly created) — skip
+            }
+          }
+
+          if (leakedTokens.length > 0) {
+            const unique = [...new Set(leakedTokens)]
+            throw new BollardError({
+              code: "POSTCONDITION_FAILED",
+              message: `Information leak detected in adversarial tests: [${unique.join(", ")}]`,
+              context: { leakedTokens: unique, sourceFiles: files },
+            })
+          }
+
+          const firstFile = files[0]
+          if (!firstFile) {
+            return {
+              status: "fail",
+              error: {
+                code: "NODE_EXECUTION_FAILED",
+                message: "No affected files to generate tests for",
+              },
+            }
+          }
+
+          const testPath = firstFile.replace(/\.ts$/, ".adversarial.test.ts")
+          const fullPath = resolve(workDir, testPath)
+          await mkdir(dirname(fullPath), { recursive: true })
+          await writeFile(fullPath, testerOutput, "utf-8")
+
+          return {
+            status: "ok",
+            data: { testFile: testPath, bytesWritten: testerOutput.length },
+          }
+        },
+      },
+
+      createTestRunNode(workDir),
 
       {
         id: "generate-diff",

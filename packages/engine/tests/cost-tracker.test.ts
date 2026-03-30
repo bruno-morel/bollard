@@ -61,6 +61,28 @@ describe("CostTracker", () => {
     }
   })
 
+  it("rejects NaN cost", () => {
+    const tracker = new CostTracker(10)
+    expect(() => tracker.add(Number.NaN)).toThrow(BollardError)
+  })
+
+  it("rejects Infinity cost", () => {
+    const tracker = new CostTracker(10)
+    expect(() => tracker.add(Number.POSITIVE_INFINITY)).toThrow(BollardError)
+  })
+
+  it("rejects negative limit", () => {
+    expect(() => new CostTracker(-5)).toThrow(BollardError)
+  })
+
+  it("rejects NaN limit", () => {
+    expect(() => new CostTracker(Number.NaN)).toThrow(BollardError)
+  })
+
+  it("rejects Infinity limit", () => {
+    expect(() => new CostTracker(Number.POSITIVE_INFINITY)).toThrow(BollardError)
+  })
+
   it("accepts adding zero cost", () => {
     const tracker = new CostTracker(10)
     tracker.add(0)
@@ -73,7 +95,7 @@ describe("CostTracker", () => {
         fc.property(
           fc.array(fc.double({ min: 0, max: 100, noNaN: true }), { minLength: 1, maxLength: 20 }),
           (costs) => {
-            const tracker = new CostTracker(Number.POSITIVE_INFINITY)
+            const tracker = new CostTracker(1e15)
             let expectedTotal = 0
             for (const c of costs) {
               tracker.add(c)

@@ -4,7 +4,7 @@ Features deferred from v0.1 spec to keep scope tight. These are all good ideas �
 
 ---
 
-## Stage 2-3: Production Feedback Loop Enhancements
+## Stage 3+: Production Feedback Loop Enhancements
 
 These extend the core probe → measure → correct loop once it's running and proven.
 
@@ -68,6 +68,18 @@ The principle (docs go through the same adversarial pipeline) is in the spec. Th
 - Playwright flows simulating real user journeys
 - Visual regression detection
 - Full synthetic monitoring (beyond API contract verification)
+
+---
+
+## Stage 1.5–3: Language Agnosticism — MOVED TO SPEC
+
+Now a core concern across multiple stages. See [06-toolchain-profiles.md](06-toolchain-profiles.md) for the full design and [02-bootstrap.md](02-bootstrap.md) for the updated stage breakdown:
+
+- **Stage 1.5:** Toolchain detection (`@bollard/detect`), profile-driven verification, templatized agent prompts, interactive `bollard init`. All existing TypeScript behavior preserved, plus Python/Go/Rust/Ruby/Java detection.
+- **Stage 2:** Docker-isolated adversarial test containers, black-box testing in Bollard's own runtime (language-independent), in-language test generation for supported frameworks, `SignatureExtractor` interface with TS implementation + LLM fallback.
+- **Stage 3:** Per-language mutation testing (Stryker, mutmut, go-mutesting, cargo-mutants), deterministic type extractors for Python/Go/Rust, mutation testing against both Layer 1 and Layer 2 test suites.
+
+The persistent-native adversarial test mode (tests written in the project's language, integrated with the project's test runner) is a Stage 2 deliverable. See [06-toolchain-profiles.md](06-toolchain-profiles.md) Section 13 for the ephemeral vs. persistent-native lifecycle model.
 
 ---
 

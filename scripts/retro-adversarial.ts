@@ -53,7 +53,7 @@ function getContextHints(relativePath: string): string[] {
       "beforeEach(() => {",
       '  workDir = mkdtempSync(join(tmpdir(), "bollard-test-"))',
       "  ctx = {",
-      "    pipelineCtx: {} as AgentContext[\"pipelineCtx\"],",
+      '    pipelineCtx: {} as AgentContext["pipelineCtx"],',
       "    workDir,",
       "  }",
       "})",
@@ -71,7 +71,7 @@ function getContextHints(relativePath: string): string[] {
       "Only these commands are allowed by default: pnpm, npx, node, tsc, biome, git, cat, head, tail, wc, diff.",
       'Any other command (echo, pwd, ls, sleep, rm, etc.) is rejected with an error: `Command "X" is not allowed.`',
       "Commands are split on whitespace; the first token is checked against the allowlist.",
-      '`ctx.allowedCommands` can override the default list — if set, only those commands are accepted.',
+      "`ctx.allowedCommands` can override the default list — if set, only those commands are accepted.",
     )
   }
 
