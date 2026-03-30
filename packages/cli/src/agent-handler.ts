@@ -5,10 +5,12 @@ import { promisify } from "node:util"
 import { createCoderAgent } from "@bollard/agents/src/coder.js"
 import { executeAgent } from "@bollard/agents/src/executor.js"
 import { createPlannerAgent } from "@bollard/agents/src/planner.js"
+import { createTesterAgent } from "@bollard/agents/src/tester.js"
 import type { AgentContext, ExecutorOptions } from "@bollard/agents/src/types.js"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
+import type { ExtractedSignature } from "@bollard/verify/src/type-extractor.js"
 
 const execFileAsync = promisify(execFile)
 const MAX_PRELOAD_CHARS_PER_FILE = 10_000
@@ -127,6 +129,61 @@ function createVerificationHook(workDir: string): (text: string) => Promise<stri
   }
 }
 
+function buildTesterMessage(ctx: PipelineContext): string {
+  const sigResult = ctx.results["extract-signatures"]
+  const signatures = sigResult?.data as { signatures?: ExtractedSignature[] } | undefined
+
+  const plan = ctx.plan as
+    | {
+        summary?: string
+        acceptance_criteria?: string[]
+        steps?: { runtimeConstraints?: string[] }[]
+      }
+    | undefined
+
+  const sections: string[] = [
+    "# Task",
+    ctx.task,
+    "",
+    "# Acceptance Criteria",
+    ...(plan?.acceptance_criteria ?? ["(no criteria provided)"]).map((c, i) => `${i + 1}. ${c}`),
+    "",
+  ]
+
+  const allConstraints = (plan?.steps ?? []).flatMap((s) => s.runtimeConstraints ?? [])
+  const uniqueConstraints = [...new Set(allConstraints)]
+  if (uniqueConstraints.length > 0) {
+    sections.push(
+      "# Runtime Constraints (not visible in type signatures)",
+      "",
+      ...uniqueConstraints,
+      "",
+    )
+  }
+
+  sections.push("# Public API Surface (signatures only — implementation bodies stripped)", "")
+
+  for (const sig of signatures?.signatures ?? []) {
+    sections.push(`## ${sig.filePath}`, "")
+    if (sig.imports) {
+      sections.push("### Imports", `\`\`\`typescript\n${sig.imports}\n\`\`\``, "")
+    }
+    if (sig.types) {
+      sections.push("### Types", `\`\`\`typescript\n${sig.types}\n\`\`\``, "")
+    }
+    if (sig.signatures) {
+      sections.push("### Signatures", `\`\`\`typescript\n${sig.signatures}\n\`\`\``, "")
+    }
+  }
+
+  sections.push(
+    "# Instructions",
+    "Write a complete test file. Output ONLY the TypeScript test code, no explanations.",
+  )
+
+  return sections.join("\n")
+}
+
 export async function createAgenticHandler(
   config: BollardConfig,
   workDir: string,
@@ -135,6 +192,7 @@ export async function createAgenticHandler(
   const agents = {
     planner: await createPlannerAgent(),
     coder: await createCoderAgent(),
+    tester: await createTesterAgent(),
   }
 
   return async (node: BlueprintNode, ctx: PipelineContext): Promise<NodeResult> => {
@@ -191,6 +249,10 @@ export async function createAgenticHandler(
         postCompletionHook: createVerificationHook(workDir),
         maxVerificationRetries: 3,
       }
+    }
+
+    if (agentRole === "tester") {
+      userMessage = buildTesterMessage(ctx)
     }
 
     const startMs = Date.now()
