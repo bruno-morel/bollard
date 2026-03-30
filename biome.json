@@ -30,7 +30,7 @@
   },
   "overrides": [
     {
-      "include": ["vitest.config.ts"],
+      "include": ["vitest.config.ts", "vitest.adversarial.config.ts"],
       "linter": {
         "rules": {
           "style": {
@@ -41,6 +41,6 @@
     }
   ],
   "files": {
-    "ignore": ["node_modules", "dist", "*.json", "*.d.ts", "*.js", "*.map"]
+    "ignore": ["node_modules", "dist", "*.json", "*.d.ts", "*.js", "*.map", "*.adversarial.test.ts"]
   }
 }
