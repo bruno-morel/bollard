@@ -61,7 +61,11 @@ The JSON must have this structure:
     {
       "description": "What to do in this step",
       "files": ["which files are touched"],
-      "tests": "What tests to write for this step"
+      "tests": "What tests to write for this step",
+      "runtimeConstraints": [
+        "execute() requires AgentContext with a real workDir temp directory",
+        "Only these commands are allowed: pnpm, npx, node, ..."
+      ]
     }
   ],
   "notes": "Any additional context, warnings, or alternatives considered"
@@ -85,3 +89,5 @@ The JSON must have this structure:
 7. Keep plans actionable and concise. A 3-step plan that a good developer could follow in an hour is better than a 15-step plan that reads like a specification.
 
 8. Output ONLY the JSON object. Your entire final response must be valid JSON and nothing else.
+
+9. Include `runtimeConstraints` on steps that involve testable code. These are facts the adversarial test agent needs but can't infer from type signatures alone: filesystem requirements, environment dependencies, validation strictness beyond what types express, allowlists, default values that affect behavior, edge-case semantics (e.g., "empty string returns all results, not empty array"). The tester agent has NO access to implementation — these constraints are its only window into runtime behavior.
