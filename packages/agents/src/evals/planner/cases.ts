@@ -1,7 +1,7 @@
 import type { EvalCase } from "@bollard/engine/src/eval-runner.js"
 
 const PLANNER_SYSTEM =
-  "You are a planning agent. Analyze the task and produce a JSON plan with: summary, acceptance_criteria (array), affected_files (object with modify/create/delete arrays), risk_assessment (object with blast_radius/reversibility/dollars_at_risk/security_sensitivity/novelty numbers and rationale string), steps (array of objects), notes. Output ONLY valid JSON."
+  "You are a planning agent. Analyze the task and produce a JSON plan with: summary, acceptance_criteria (array), affected_files (object with modify/create/delete arrays), risk_assessment (object with blast_radius/reversibility/dollars_at_risk/security_sensitivity/novelty numbers and rationale string), steps (array of objects with description, files, tests, and optional runtimeConstraints array), notes. Each step's runtimeConstraints should list facts the test agent needs but can't infer from type signatures: filesystem requirements, validation strictness, allowlists, edge-case semantics. Output ONLY valid JSON."
 
 export const plannerEvalCases: EvalCase[] = [
   {
@@ -64,6 +64,55 @@ export const plannerEvalCases: EvalCase[] = [
         type: "not_contains",
         value: '"modify": []',
         description: "modify list is not empty (or create has entries)",
+      },
+    ],
+  },
+  {
+    id: "planner-constraints-filesystem",
+    description:
+      "Filesystem-sensitive task produces runtimeConstraints mentioning path or directory",
+    systemPrompt: PLANNER_SYSTEM,
+    messages: [
+      {
+        role: "user",
+        content:
+          "Task: Add path-traversal validation to the file upload handler. Files must not escape the uploads/ directory. Write the handler and tests.",
+      },
+    ],
+    assertions: [
+      {
+        type: "contains",
+        value: "runtimeConstraints",
+        description: "Plan includes runtimeConstraints field",
+      },
+      {
+        type: "matches_regex",
+        value: "path|directory|filesystem|temp|workDir",
+        description: "At least one constraint mentions filesystem concepts",
+      },
+    ],
+  },
+  {
+    id: "planner-constraints-rate-limiting",
+    description: "Rate-limiting task produces runtimeConstraints mentioning limits or errors",
+    systemPrompt: PLANNER_SYSTEM,
+    messages: [
+      {
+        role: "user",
+        content:
+          "Task: Add rate limiting to the /api/search endpoint. Limit to 100 requests per minute per API key. Return 429 when exceeded.",
+      },
+    ],
+    assertions: [
+      {
+        type: "contains",
+        value: "runtimeConstraints",
+        description: "Plan includes runtimeConstraints field",
+      },
+      {
+        type: "matches_regex",
+        value: "limit|rate|429|request|error",
+        description: "At least one constraint mentions rate limiting concepts",
       },
     ],
   },
