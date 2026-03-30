@@ -61,6 +61,11 @@ function getContextHints(relativePath: string): string[] {
       "```",
       "The path-traversal guard rejects any resolved path that escapes `workDir`.",
       'Test traversal with inputs like `{ path: "../../../etc/passwd" }`.',
+      "",
+      "## Return type: plain string",
+      "CRITICAL: `execute()` returns `Promise<string>` — a plain string, NOT an object.",
+      "Do NOT assert `.success`, `.data`, `.output`, or any property. Assert on the string itself:",
+      '`expect(typeof result).toBe("string")`, `expect(result).toContain(...)`, `expect(result.length).toBeGreaterThan(0)`.',
     )
   }
 
@@ -72,6 +77,11 @@ function getContextHints(relativePath: string): string[] {
       'Any other command (echo, pwd, ls, sleep, rm, etc.) is rejected with an error: `Command "X" is not allowed.`',
       "Commands are split on whitespace; the first token is checked against the allowlist.",
       "`ctx.allowedCommands` can override the default list — if set, only those commands are accepted.",
+      "",
+      "## Property-based testing guidance",
+      "For property-based tests, use `fc.constantFrom('cat', 'head', 'tail', 'wc', 'git')` for valid commands.",
+      "Do NOT use `fc.string()` for the command — random strings will be rejected by the allowlist and the test will not verify useful properties.",
+      "Negative tests for disallowed commands should be explicit `it()` blocks, not property tests.",
     )
   }
 
@@ -82,6 +92,7 @@ function getContextHints(relativePath: string): string[] {
       "The search tool runs `grep` against real files. Create test files in the temp `workDir` before searching.",
       'Pattern matching is regex-based. The tool returns "No matches found." when grep exits with code 1 (no matches).',
       "Results are capped at 100 lines.",
+      "For property-based tests, create files with known content first, then search for patterns that should match.",
     )
   }
 
