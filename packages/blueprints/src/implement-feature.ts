@@ -11,6 +11,7 @@ import {
   extractPrivateIdentifiers,
   extractSignaturesFromFiles,
 } from "@bollard/verify/src/type-extractor.js"
+import { deriveAdversarialTestPath, stripMarkdownFences } from "./write-tests-helpers.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -205,14 +206,15 @@ export function createImplementFeatureBlueprint(workDir: string): Blueprint {
             }
           }
 
-          const testPath = firstFile.replace(/\.ts$/, ".adversarial.test.ts")
+          const testPath = deriveAdversarialTestPath(firstFile)
+          const cleanOutput = stripMarkdownFences(testerOutput)
           const fullPath = resolve(workDir, testPath)
           await mkdir(dirname(fullPath), { recursive: true })
-          await writeFile(fullPath, testerOutput, "utf-8")
+          await writeFile(fullPath, cleanOutput, "utf-8")
 
           return {
             status: "ok",
-            data: { testFile: testPath, bytesWritten: testerOutput.length },
+            data: { testFile: testPath, bytesWritten: cleanOutput.length },
           }
         },
       },
