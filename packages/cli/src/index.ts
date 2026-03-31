@@ -10,6 +10,7 @@ import { LLMClient } from "@bollard/llm/src/client.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
 import { buildProjectTree, createAgenticHandler } from "./agent-handler.js"
 import { resolveConfig } from "./config.js"
+import { diffToolchainProfile } from "./diff.js"
 import { humanGateHandler } from "./human-gate.js"
 
 const DIM = "\x1b[2m"
@@ -262,6 +263,64 @@ async function runVerifyCommand(args: string[]): Promise<void> {
   process.exit(allPassed ? 0 : 1)
 }
 
+async function runDiffCommand(): Promise<void> {
+  const workDir = findWorkspaceRoot(process.cwd())
+
+  header("diff")
+  log(`${DIM}Comparing detected profile against hardcoded Stage 1 defaults...${RESET}\n`)
+
+  const { detectToolchain } = await import("@bollard/detect/src/detect.js")
+  const profile = await detectToolchain(workDir)
+  const diff = diffToolchainProfile(profile)
+
+  log(`${BOLD}Checks:${RESET}`)
+  for (const check of diff.checks) {
+    let icon: string
+    let details = ""
+
+    switch (check.status) {
+      case "unchanged":
+        icon = `${GREEN}✓${RESET}`
+        details = `${check.detected?.cmd} ${check.detected?.args.join(" ")}`
+        break
+      case "differ":
+        icon = `${YELLOW}~${RESET}`
+        details = `${check.hardcoded?.cmd} ${check.hardcoded?.args.join(" ")} → ${check.detected?.cmd} ${check.detected?.args.join(" ")}`
+        break
+      case "new":
+        icon = `${CYAN}+${RESET}`
+        details = `${check.detected?.cmd} ${check.detected?.args.join(" ")}`
+        break
+      case "removed":
+        icon = `${RED}-${RESET}`
+        details = `${check.hardcoded?.cmd} ${check.hardcoded?.args.join(" ")}`
+        break
+    }
+
+    log(`  ${icon} ${check.name} ${DIM}${details}${RESET}`)
+  }
+
+  for (const pattern of diff.patterns) {
+    log(`\n${BOLD}${pattern.type}:${RESET}`)
+
+    for (const item of pattern.unchanged) {
+      log(`  ${GREEN}✓${RESET} ${item}`)
+    }
+    for (const item of pattern.added) {
+      log(`  ${CYAN}+${RESET} ${item}`)
+    }
+    for (const item of pattern.removed) {
+      log(`  ${RED}-${RESET} ${item}`)
+    }
+  }
+
+  log(`\n${BOLD}Summary:${RESET}`)
+  log(
+    `${diff.summary.unchanged} unchanged, ${diff.summary.differ} differ, ${diff.summary.new} new, ${diff.summary.removed} removed`,
+  )
+  log("")
+}
+
 async function runRunCommand(args: string[]): Promise<void> {
   const blueprintName = args[0]
   const task = getTaskFlag(args)
@@ -377,6 +436,11 @@ async function main(): Promise<void> {
     return
   }
 
+  if (command === "diff") {
+    await runDiffCommand()
+    return
+  }
+
   if (command === "config" && rest[0] === "show") {
     const { config, profile, sources } = await resolveConfig()
     const showSources = rest.includes("--sources")
@@ -444,6 +508,7 @@ async function main(): Promise<void> {
   log(`  ${BOLD}run${RESET} <blueprint> --task <task>   Run a blueprint`)
   log(`  ${BOLD}plan${RESET} --task <task>              Generate a plan without implementing`)
   log(`  ${BOLD}verify${RESET} [--profile]              Run static checks (or show profile)`)
+  log(`  ${BOLD}diff${RESET}                            Compare profile vs hardcoded defaults`)
   log(`  ${BOLD}eval${RESET} [agent]                    Run agent eval sets`)
   log(`  ${BOLD}config show${RESET} [--sources]         Show resolved configuration`)
   log(`  ${BOLD}init${RESET}                            Detect project configuration`)
