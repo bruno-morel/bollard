@@ -207,10 +207,10 @@ bollard/
 
 ## Current Test Stats
 
-- **18 test files, 185 tests passing** (0 skipped, 0 failing)
-- **Source:** ~3000 LOC across 7 packages
-- **Tests:** ~2000 LOC
-- **Prompts:** ~120 LOC (planner.md + coder.md + tester.md)
+- **21 test files, 222 tests passing** (0 skipped, 0 failing)
+- **Source:** ~4600 LOC across 7 packages
+- **Tests:** ~2900 LOC
+- **Prompts:** ~220 LOC (planner.md + coder.md + tester.md)
 
 ## Key Types (Source of Truth)
 
@@ -219,6 +219,15 @@ bollard/
 - `BollardErrorCode` is a string union of all error codes (LLM_TIMEOUT, LLM_RATE_LIMIT, LLM_AUTH, LLM_PROVIDER_ERROR, LLM_INVALID_RESPONSE, COST_LIMIT_EXCEEDED, TIME_LIMIT_EXCEEDED, NODE_EXECUTION_FAILED, POSTCONDITION_FAILED, STATIC_CHECK_FAILED, TEST_FAILED, MUTATION_THRESHOLD_NOT_MET, CONTRACT_VIOLATION, HUMAN_REJECTED, RISK_GATE_BLOCKED, CONFIG_INVALID, DETECTION_FAILED, PROFILE_INVALID, PROVIDER_NOT_FOUND, MODEL_NOT_AVAILABLE).
 - `BollardError extends Error` with `code`, `context`, `retryable` (getter — true for LLM_TIMEOUT, LLM_RATE_LIMIT, LLM_PROVIDER_ERROR).
 - Static methods: `BollardError.is(err)` type guard, `BollardError.hasCode(err, code)`.
+
+### ToolchainProfile + VerificationCommand + LanguageId (packages/detect/src/types.ts)
+
+- `LanguageId` is a string union: `"typescript" | "javascript" | "python" | "go" | "rust" | "java" | "kotlin" | "ruby" | "csharp" | "elixir" | "unknown"`.
+- `PackageManagerId` is a string union: `"pnpm" | "npm" | "yarn" | "bun" | "poetry" | "pipenv" | "uv" | "pip" | "go" | "cargo" | "bundler" | "gradle" | "maven"`.
+- `VerificationCommand { label: string; cmd: string; args: string[]; source: ConfigSource }` — a single executable check.
+- `ToolchainProfile { language: LanguageId; packageManager?: PackageManagerId; checks: { typecheck?, lint?, test?, audit?, secretScan? }; mutation?; sourcePatterns: string[]; testPatterns: string[]; ignorePatterns: string[]; allowedCommands: string[]; adversarial: { mode, runtimeImage? } }` — computed on every run from auto-detection + `.bollard.yml` overrides.
+- `detectToolchain(cwd): Promise<ToolchainProfile>` — orchestrator that runs per-language detectors (TypeScript → Python → Go → Rust → fallback) and returns the first match.
+- `fillPromptTemplate(template, profile): string` — replaces `{{language}}`, `{{packageManager}}`, `{{typecheck}}`, `{{linter}}`, `{{testFramework}}`, `{{auditTool}}`, `{{allowedCommands}}`, `{{sourcePatterns}}`, `{{testPatterns}}` in agent prompts.
 
 ### Blueprint types (packages/engine/src/blueprint.ts)
 
@@ -381,7 +390,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - Planner agent (read-only tools, structured JSON plan output)
 - Coder agent (all tools, implements plans)
 - Static verification package (tsc, biome, audit, gitleaks)
-- `implement-feature` blueprint (8-node pipeline with human gates)
+- `implement-feature` blueprint (11-node pipeline with human gates)
 - CLI commands: `plan`, `verify`, `run implement-feature`, `eval`
 - Human gate handler (interactive stdin approval)
 - Agent eval sets (planner: 4 cases, coder: 2 cases)
@@ -413,7 +422,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - CI integration, run history, self-improvement — Stage 4
 
 ### Size (current):
-- Total: ~3000 source, ~2000 test, ~120 prompt across 7 packages
+- Total: ~4600 source, ~2900 test, ~220 prompt across 7 packages
 
 ## Design Principles
 
