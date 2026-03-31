@@ -116,10 +116,11 @@ bollard/
 │   │   │       ├── python.ts     # Detect pyproject.toml, poetry/pipenv/uv, ruff/mypy, pytest
 │   │   │       ├── go.ts         # Detect go.mod, golangci-lint, go vet/test
 │   │   │       ├── rust.ts       # Detect Cargo.toml, clippy, cargo test/audit
+│   │   │       ├── javascript.ts # Detect package.json w/o tsconfig, ESLint/Biome, Jest/Vitest/Mocha
 │   │   │       └── fallback.ts   # Returns null; buildManualProfile for interactive init
 │   │   └── tests/
-│   │       ├── detect.test.ts    # 16 tests — all detectors + orchestrator
-│   │       └── fixtures/         # ts-project/, py-project/, go-project/, rust-project/, empty-project/
+│   │       ├── detect.test.ts    # 26 tests — all detectors + orchestrator
+│   │       └── fixtures/         # ts-project/, js-project/, py-project/, go-project/, rust-project/, empty-project/
 │   │
 │   ├── engine/                   ← THE KERNEL (Stage 0)
 │   │   ├── src/
@@ -199,17 +200,20 @@ bollard/
 │       │   ├── index.ts          # Entry: parse args, route commands, progress output
 │       │   ├── config.ts         # detectToolchain + .bollard.yml overrides + ToolchainProfile
 │       │   ├── agent-handler.ts  # Multi-turn agentic handler (threads profile to agents)
+│       │   ├── diff.ts           # diffToolchainProfile — compare profile vs Stage 1 defaults
 │       │   └── human-gate.ts     # Interactive human approval via stdin
 │       └── tests/
 │           ├── config.test.ts    # 10 tests — defaults, detection, YAML, profile
+│           ├── profile-flag.test.ts  # 2 tests — verify --profile flag
+│           ├── diff.test.ts      # 6 tests — diff helper (unchanged/differ/new/removed scenarios)
 │           └── config.adversarial.test.ts  # Adversarial config tests
 ```
 
 ## Current Test Stats
 
-- **21 test files, 222 tests passing** (0 skipped, 0 failing)
-- **Source:** ~4600 LOC across 7 packages
-- **Tests:** ~2900 LOC
+- **23 test files, 240 tests passing** (0 skipped, 0 failing)
+- **Source:** ~4970 LOC across 7 packages
+- **Tests:** ~3415 LOC (+ ~6856 LOC adversarial tests)
 - **Prompts:** ~220 LOC (planner.md + coder.md + tester.md)
 
 ## Key Types (Source of Truth)
@@ -327,6 +331,8 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 | `run implement-feature --task "..."` | Full Stage 1 pipeline with human gates |
 | `plan --task "..."` | Standalone planner agent (no implementation) |
 | `verify` | Run static checks against the workspace |
+| `verify [--profile]` | Run static checks (or show detected profile as JSON) |
+| `diff` | Compare detected profile vs hardcoded Stage 1 defaults |
 | `eval [agent]` | Run eval sets (planner, coder) |
 | `config show [--sources]` | Show resolved configuration |
 | `init` | Detect project configuration |
@@ -422,7 +428,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - CI integration, run history, self-improvement — Stage 4
 
 ### Size (current):
-- Total: ~4600 source, ~2900 test, ~220 prompt across 7 packages
+- Total: ~4970 source, ~3415 test (+~6856 adversarial), ~220 prompt across 7 packages
 
 ## Design Principles
 
