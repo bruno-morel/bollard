@@ -16,9 +16,9 @@ function detectPackageManager(cwd: string): PackageManagerId {
   return "npm"
 }
 
-function detectLinter(cwd: string): VerificationCommand | undefined {
+function detectLinter(cwd: string, pkg: PackageManagerId): VerificationCommand | undefined {
   if (existsSync(join(cwd, "biome.json")) || existsSync(join(cwd, "biome.jsonc"))) {
-    return { label: "Biome", cmd: "pnpm", args: ["run", "lint"], source: "auto-detected" }
+    return { label: "Biome", cmd: pkg, args: ["run", "lint"], source: "auto-detected" }
   }
 
   const eslintMarkers = [
@@ -34,7 +34,7 @@ function detectLinter(cwd: string): VerificationCommand | undefined {
   ]
   for (const marker of eslintMarkers) {
     if (existsSync(join(cwd, marker))) {
-      return { label: "ESLint", cmd: "pnpm", args: ["run", "lint"], source: "auto-detected" }
+      return { label: "ESLint", cmd: pkg, args: ["run", "lint"], source: "auto-detected" }
     }
   }
 
@@ -84,7 +84,7 @@ export async function detect(cwd: string): Promise<Partial<ToolchainProfile> | n
   if (!existsSync(join(cwd, "tsconfig.json"))) return null
 
   const pkg = detectPackageManager(cwd)
-  const linter = detectLinter(cwd)
+  const linter = detectLinter(cwd, pkg)
   const test = detectTestFramework(cwd, pkg)
   const linterTool = detectLinterTool(cwd)
   const extraTools = linterTool ? [linterTool] : []

@@ -130,7 +130,7 @@ function getContextHints(relativePath: string): string[] {
     hints.push(
       "## Runtime constraint: Zod strict validation",
       "The `.bollard.yml` schema is validated with `z.object({...}).strict()` — any extra properties cause rejection.",
-      "Valid `.bollard.yml` top-level keys: `llm`, `agent`, `risk` (and nothing else).",
+      "Valid `.bollard.yml` top-level keys: `llm`, `agent`, `risk`, `toolchain` (and nothing else).",
       "Valid `llm` shape: `{ default?: { provider?: string, model?: string }, agents?: Record<string, { provider: string, model: string }> }`",
       "Valid `agent` shape: `{ max_cost_usd?: number, max_duration_minutes?: number }`",
       "",
