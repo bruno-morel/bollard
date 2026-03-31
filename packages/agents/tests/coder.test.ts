@@ -27,6 +27,11 @@ describe("createCoderAgent", () => {
     expect(toolNames).toContain("run_command")
   })
 
+  it("has 60 max turns", async () => {
+    const coder = await createCoderAgent()
+    expect(coder.maxTurns).toBe(60)
+  })
+
   it("has more turns than the planner", async () => {
     const coder = await createCoderAgent()
     const planner = await createPlannerAgent()

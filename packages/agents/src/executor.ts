@@ -122,7 +122,15 @@ export async function executeAgent(
         .map((b) => b.text ?? "")
         .join("")
 
-      if (options?.postCompletionHook && verificationRetries < maxVerificationRetries) {
+      const pastTurnBudget =
+        options?.skipVerificationAfterTurn !== undefined &&
+        turns >= options.skipVerificationAfterTurn
+
+      if (
+        options?.postCompletionHook &&
+        verificationRetries < maxVerificationRetries &&
+        !pastTurnBudget
+      ) {
         try {
           const feedback = await options.postCompletionHook(text)
           if (feedback) {

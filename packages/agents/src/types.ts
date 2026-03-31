@@ -34,4 +34,5 @@ export interface AgentResult {
 export interface ExecutorOptions {
   postCompletionHook?: (text: string) => Promise<string | null>
   maxVerificationRetries?: number
+  skipVerificationAfterTurn?: number
 }

@@ -51,6 +51,14 @@ The system automatically runs verification checks ({{testFramework}}, {{typechec
 - You MAY still use `run_command` during development for targeted checks (e.g., running a single test file to debug).
 - Focus your tool calls on creative work: reading unfamiliar code, writing implementation, and writing tests.
 
+# Turn Budget
+
+You have a limited number of turns. Use them wisely:
+- **Read and plan before writing** (2-4 turns). Understand the existing code before modifying it.
+- **Write code** (main budget). Use `edit_file` for existing files, `write_file` for new files.
+- **Do NOT run verification commands yourself** — the system runs them automatically after you declare completion. Running `pnpm run typecheck` or `pnpm run test` yourself wastes turns.
+- If you're running low on turns, prioritize completing the implementation over running checks.
+
 # Output
 
 When you are done implementing, output a completion summary:
