@@ -8,9 +8,19 @@
 
 I'm building **Bollard**, an artifact integrity framework for AI-assisted software development. Read the `CLAUDE.md` at the repo root — it has all the context, types, and constraints. Also read `spec/06-toolchain-profiles.md` for the language-agnostic verification design and `spec/02-bootstrap.md` Stage 1.5 section.
 
-We're at Stage 1 (planner + coder agents, static verification, implement-feature blueprint). Everything works for TypeScript projects. Stage 1.5 makes the verification pipeline language-agnostic — Bollard should detect the project's language, test framework, linter, type checker, and package manager automatically, then use those detected tools for verification instead of the current hardcoded TypeScript commands.
+We're at Stage 1 with adversarial testing infrastructure already in place. Here's what exists today:
 
-**The critical constraint: all existing TypeScript behavior must be preserved exactly.** This is a refactor that introduces an abstraction layer, not a rewrite. The test suite must pass before and after with no changes to test expectations.
+- **3 agents:** planner (read-only tools, JSON plan output), coder (all tools, implements plans), tester (no tools, writes blind tests from type signatures)
+- **3 agent prompts:** `planner.md` (9 rules, `runtimeConstraints` in plan schema), `coder.md` (9 rules, verification hook), `tester.md` (15 rules including Rules 8–15 for type accuracy, runtime constraints, return types, property-based testing)
+- **Implement-feature blueprint:** 10 nodes — create-branch → generate-plan → approve-plan → implement → static-checks → extract-signatures → generate-tests → write-tests → run-tests → generate-diff → approve-pr
+- **Type extractor:** `packages/verify/src/type-extractor.ts` — extracts signatures without bodies from TypeScript source
+- **Dynamic test runner:** `packages/verify/src/dynamic.ts` — runs Vitest programmatically
+- **Retro-adversarial script:** `scripts/retro-adversarial.ts` — generates blind tests from signatures with per-module context hints
+- **162 hand-written tests + ~97 adversarial tests passing**
+
+**Everything is hardcoded to TypeScript.** Stage 1.5 makes the pipeline language-agnostic — Bollard should detect the project's language, test framework, linter, type checker, and package manager automatically, then use those detected tools for verification instead of hardcoded TypeScript commands.
+
+**The critical constraint: all existing TypeScript behavior must be preserved exactly.** This is a refactor that introduces an abstraction layer, not a rewrite. All 162 hand-written tests must pass before and after with no changes to test expectations.
 
 Here's the build order — complete each step fully before moving to the next:
 
@@ -156,7 +166,7 @@ This function:
 2. Returns the first non-null result
 3. Adds gitleaks as `checks.secretScan` if `gitleaks version` succeeds (try/catch, skip if not installed)
 4. If no language detected, returns a minimal profile with `language: "unknown"` and empty checks
-5. Applies `.bollard.yml` overrides if a `toolchain:` section exists (see Step 6)
+5. Applies `.bollard.yml` overrides if a `toolchain:` section exists (see Step 7)
 
 Also implement `packages/detect/src/derive.ts` with helper functions:
 - `deriveSourcePatterns(lang: LanguageId): string[]`
@@ -170,7 +180,7 @@ Test: `detectToolchain` on each fixture directory returns the correct full profi
 
 ### Step 4: Refactor `@bollard/verify` — profile-driven static checks
 
-This is the key refactor. `runStaticChecks` currently hardcodes three commands (`pnpm run typecheck`, `pnpm run lint`, `pnpm audit`). Change its signature to accept a `ToolchainProfile`:
+`runStaticChecks` currently hardcodes three commands (`pnpm run typecheck`, `pnpm run lint`, `pnpm audit`). Change its signature to accept a `ToolchainProfile`:
 
 ```typescript
 // Before
@@ -194,28 +204,31 @@ Update `createStaticCheckNode` to accept and pass through the profile.
 
 **Critical: update the existing tests.** The integration test in `packages/verify/tests/static.test.ts` runs actual typecheck + lint against the Bollard repo. It must still pass. The test should call `detectToolchain(workDir)` to get the profile, then pass it to `runStaticChecks`. If the detection works correctly, the test output is unchanged.
 
-### Step 5: Refactor `@bollard/agents` — profile-driven command whitelist
+### Step 5: Refactor `@bollard/verify` — profile-driven dynamic test runner
 
-Change `run-command.ts` to accept the allowed commands from the agent context instead of a hardcoded default:
-
-The `AgentContext` type (in `packages/agents/src/types.ts`) already has an `allowedCommands?: string[]` field. The `run_command` tool already reads from it:
+`runTests` in `packages/verify/src/dynamic.ts` currently hardcodes `pnpm exec vitest run`. Change its signature to optionally accept a `ToolchainProfile`:
 
 ```typescript
-const allowed = ctx.allowedCommands ?? DEFAULT_ALLOWED_COMMANDS
+// Before
+export async function runTests(workDir: string, testFiles?: string[]): Promise<TestRunResult>
+
+// After
+export async function runTests(
+  workDir: string,
+  testFiles?: string[],
+  profile?: ToolchainProfile,
+): Promise<TestRunResult>
 ```
 
-The change is: the caller (agent-handler) should populate `ctx.allowedCommands` from the `ToolchainProfile` instead of leaving it undefined. The `DEFAULT_ALLOWED_COMMANDS` constant stays as a fallback (for backward compatibility), but in normal operation the profile's list is used.
+When `profile` is provided and `profile.checks.test` exists, use the profile's test command instead of hardcoded Vitest. The test output parser (`parseSummary`) may need an adapter pattern for different test runner output formats — but at Stage 1.5, only the Vitest parser is needed. Add a `// TODO: Stage 2 — add parsers for pytest, go test, cargo test` comment.
 
-Update `createAgenticHandler` in `packages/cli/src/agent-handler.ts` to:
-1. Accept a `ToolchainProfile` parameter
-2. Pass `profile.allowedCommands` into the `AgentContext`
-3. Use `profile.sourcePatterns` and `profile.ignorePatterns` in `buildProjectTree` instead of hardcoded `.ts`/`.md`/`node_modules`/`dist` filters
+When `profile` is undefined, fall back to the current hardcoded Vitest behavior (backward compatibility).
 
-Update the existing tool tests — they should still pass since the default fallback is the same list.
+### Step 6: Refactor `@bollard/agents` — profile-driven command whitelist + prompts
 
-### Step 6: Templatize agent prompts
+**6a: Command whitelist.** The `AgentContext` type already has `allowedCommands?: string[]` and `run_command` already reads from it. No code change needed in the tool itself — the wiring happens in `agent-handler.ts` (Step 9).
 
-The planner and coder prompts currently hardcode TypeScript-specific context. Make them templates.
+**6b: Templatize agent prompts.** The planner, coder, and tester prompts hardcode TypeScript-specific context. Make them templates.
 
 **Approach: simple string replacement.** No template engine, no new dependency. The prompts gain `{{variable}}` placeholders. At agent creation time, a `fillPromptTemplate(template, profile)` function replaces them.
 
@@ -239,9 +252,9 @@ Replaces these variables:
 - `{{sourcePatterns}}` → profile.sourcePatterns.join(", ")
 - `{{testPatterns}}` → profile.testPatterns.join(", ")
 
-Update `prompts/planner.md` — replace the hardcoded "Project Context" section:
+**Update `prompts/planner.md`** — replace the hardcoded "Project Context" section:
 
-**Before:**
+Before:
 ```markdown
 # Project Context
 
@@ -257,7 +270,7 @@ This is a TypeScript monorepo managed with pnpm workspaces. The workspace root i
 Conventions: TypeScript strict mode, named exports only, no semicolons, `BollardError` for all errors, Vitest for tests, Biome for lint/format.
 ```
 
-**After:**
+After:
 ```markdown
 # Project Context
 
@@ -270,29 +283,57 @@ Test files match: {{testPatterns}}.
 Allowed commands: {{allowedCommands}}.
 ```
 
-Update `prompts/coder.md` similarly — replace the hardcoded references:
+**IMPORTANT: preserve the `runtimeConstraints` field in the plan schema and Rule 9.** Only replace the Project Context section. The rest of planner.md (What You Receive, Targeted Exploration, What You Produce, Rules 1–9) stays as-is.
 
-**Before (in Rules section):**
+**Update `prompts/coder.md`** — replace the hardcoded references:
+
+Before (Rule 3):
 ```markdown
 3. Write tests for EVERY piece of new functionality. Use Vitest. Use fast-check for property-based tests where applicable.
 ```
 
-**After:**
+After:
 ```markdown
 3. Write tests for EVERY piece of new functionality. Use {{testFramework}}. Follow existing test patterns in the codebase.
 ```
 
-**Before (in Verification section):**
+Before (Verification section):
 ```markdown
 The system automatically runs `pnpm run test`, `pnpm run typecheck`, and `pnpm run lint` after you declare completion.
 ```
 
-**After:**
+After:
 ```markdown
 The system automatically runs verification checks ({{testFramework}}, {{typecheck}}, {{linter}}) after you declare completion. Do NOT run these commands yourself — it wastes tokens and time.
 ```
 
-Update `createPlannerAgent` and `createCoderAgent` to accept a `ToolchainProfile`, read the template, fill it, and use the filled prompt as the system prompt.
+Also update the Stage 1 limitation notice (line 15) — the tester agent now exists:
+
+Before:
+```markdown
+**IMPORTANT: At Stage 1, you write your own tests. This is a known limitation — at Stage 2, an independent test agent will write tests instead. Write thorough tests anyway.**
+```
+
+After:
+```markdown
+**You write unit tests for your code. An independent adversarial test agent will also generate blind tests from your type signatures. Write thorough tests anyway — your tests serve as Layer 1 verification.**
+```
+
+**Update `prompts/tester.md`** — replace hardcoded references:
+
+Before (Rule 6):
+```markdown
+6. **Use Vitest + fast-check.** Import from the public API surface shown in the signatures. Don't import internal modules.
+```
+
+After:
+```markdown
+6. **Use {{testFramework}}.** Import from the public API surface shown in the signatures. Don't import internal modules.
+```
+
+The remaining 14 rules (1–5, 7–15) are language-agnostic already. Leave them unchanged.
+
+**Update `createPlannerAgent`, `createCoderAgent`, and `createTesterAgent`** to accept an optional `ToolchainProfile`. When provided, read the template, fill it via `fillPromptTemplate`, and use the filled prompt as the system prompt. When not provided (backward compatibility), use the raw template — the `{{placeholders}}` become visible but the agent still functions.
 
 Write tests for `fillPromptTemplate`: verify that all placeholders are replaced, verify that a TypeScript profile produces output containing "TypeScript", "pnpm", "Vitest", "Biome".
 
@@ -355,20 +396,26 @@ Verification layers:
 Update `createAgenticHandler` to accept the `ToolchainProfile` and thread it through:
 
 1. Accept `profile: ToolchainProfile` as a parameter
-2. Pass `profile` to `createPlannerAgent(profile)` and `createCoderAgent(profile)` for prompt templating
+2. Pass `profile` to `createPlannerAgent(profile)`, `createCoderAgent(profile)`, and `createTesterAgent(profile)` for prompt templating
 3. Set `agentCtx.allowedCommands = profile.allowedCommands`
-4. Update `buildProjectTree` to use `profile.sourcePatterns` and `profile.ignorePatterns` instead of hardcoded `.ts`/`.md`/`node_modules`/`dist` filters
+4. Update `buildProjectTree` to use `profile.sourcePatterns` and `profile.ignorePatterns` instead of the current hardcoded `.ts`/`.md`/`node_modules`/`dist` filters
 5. Update `createVerificationHook` to read check commands from the profile instead of hardcoded `pnpm run typecheck/lint/test`
+6. `buildTesterMessage` is already wired for `runtimeConstraints` — leave it unchanged
 
 ### Step 10: Refactor `@bollard/blueprints` — implement-feature.ts
 
-Update the `implement-feature` blueprint to use profile-driven values:
+Update the `implement-feature` blueprint to use profile-driven values. The blueprint now has 10 nodes (not the 8 in CLAUDE.md — it was expanded during the adversarial work). The nodes are:
 
-1. The `create-branch` node stays the same (git is language-independent)
-2. The `static-checks` node uses `createStaticCheckNode(workDir, profile)` instead of `createStaticCheckNode(workDir)`
-3. The `run-tests` node reads the test command from `profile.checks.test` instead of hardcoding `pnpm run test`
-4. The `generate-diff` node stays the same (git is language-independent)
-5. Any file extension filters (`.ts`, `.test.ts`) are replaced by `profile.sourcePatterns` and `profile.testPatterns`
+1. **create-branch** — stays the same (git is language-independent)
+2. **generate-plan** — stays the same (planner gets profile via prompt templating)
+3. **approve-plan** — stays the same
+4. **implement** — stays the same (coder gets profile via prompt templating)
+5. **static-checks** — change to `createStaticCheckNode(workDir, profile)` instead of `createStaticCheckNode(workDir)`
+6. **extract-signatures** — currently TypeScript-only via `type-extractor.ts`. At Stage 1.5, leave the TS extractor in place but add a guard: if `profile.language !== "typescript"`, skip extraction and return empty signatures (the LLM fallback extractor comes at Stage 2). Add a comment: `// TODO: Stage 2 — SignatureExtractor interface with LLM fallback for non-TS`
+7. **generate-tests** — stays the same (tester gets profile via prompt templating)
+8. **write-tests** — stays the same
+9. **run-tests** — change `createTestRunNode(workDir)` to pass the profile: `createTestRunNode(workDir, undefined, profile)`
+10. **generate-diff** / **approve-pr** — stay the same
 
 The blueprint needs access to the profile. Add it to `PipelineContext`:
 
@@ -380,16 +427,29 @@ interface PipelineContext {
 }
 ```
 
-Update `implement-feature.test.ts`: the existing structure tests should still pass. Verify that node configuration now reads from the profile when present.
+The `getAffectedTsFiles` function filters for `.ts` files. Rename it to `getAffectedSourceFiles` and use `profile.sourcePatterns` when available, falling back to `.ts` filtering for backward compatibility.
 
-### Step 11: Wire it all up and verify
+Update `implement-feature.test.ts`: the existing structure tests should still pass. Add new tests verifying that node configuration reads from the profile when present.
+
+### Step 11: Update CLAUDE.md
+
+Update the project structure section to reflect current state:
+- Agents package: add `tester.ts`, `prompts/tester.md`, `evals/tester/cases.ts`
+- Verify package: add `dynamic.ts`, `type-extractor.ts`
+- Detect package: the new `@bollard/detect` package
+- Implement-feature: "10-node pipeline" (not 8)
+- Known limitations: update to reflect tester agent exists, note that non-TS adversarial testing requires Stage 2 (LLM signature extractor)
+- Test stats: update counts
+- "DO NOT build yet" section: remove Stage 1.5 items that are now built
+
+### Step 12: Wire it all up and verify
 
 This is the critical step. Everything must work end-to-end:
 
 1. `docker compose build dev` — image builds with the new `@bollard/detect` package
 2. `docker compose run --rm dev run typecheck` — zero errors
 3. `docker compose run --rm dev run lint` — zero warnings
-4. `docker compose run --rm dev run test` — all existing tests pass, plus new detection tests
+4. `docker compose run --rm dev run test` — all existing 162+ hand-written tests pass, plus new detection tests
 5. `docker compose run --rm dev --filter @bollard/cli run start -- verify` — static checks pass (same as before, but now profile-driven)
 6. `docker compose run --rm dev --filter @bollard/cli run start -- init` — shows TypeScript detection with the new format
 7. `docker compose run --rm dev --filter @bollard/cli run start -- config show --sources` — shows the toolchain profile in output
@@ -397,9 +457,9 @@ This is the critical step. Everything must work end-to-end:
 Print the total source LOC and test LOC. Target:
 - `@bollard/detect`: ~400 source, ~300 test
 - Refactored packages: net ~+100 source (mostly removals + replacements), ~+120 test
-- Total project after Stage 1.5: ~2800 source, ~2000 test, ~120 prompt
+- Total project after Stage 1.5: ~3500 source, ~2500 test, ~150 prompt
 
-### Step 12: Verify non-TypeScript detection (manual test)
+### Step 13: Verify non-TypeScript detection (manual test)
 
 Create a temporary test directory with Python project markers:
 
@@ -426,13 +486,28 @@ echo 'poetry.lock placeholder' > poetry.lock
 
 Then run `bollard init` against it (from inside the Docker container). It should detect Python, poetry, pytest, ruff, mypy — all without any `.bollard.yml`.
 
+### Step 14: Run adversarial retro pass to confirm no regression
+
+Run the retro-adversarial script against the full codebase to confirm that the refactoring hasn't broken the adversarial testing pipeline:
+
+```bash
+docker compose run --rm --entrypoint sh dev -c "pnpm exec tsx scripts/retro-adversarial.ts"
+```
+
+The script should still detect source files, extract signatures, generate tests, and run them. The pass rates should be comparable to the Pass 4 results (97/42 on the 8 worst files, overall ~70% pass rate on worst files).
+
+If the retro script fails because import paths changed during refactoring, fix them. The retro script imports from `@bollard/agents/src/executor.js`, `@bollard/verify/src/type-extractor.js`, etc. — these must still work after the refactor.
+
 ---
 
 ### Important reminders
 
 - **Read CLAUDE.md and spec/06-toolchain-profiles.md before starting.** The spec has the full type definitions and design rationale.
 - **All existing behavior must be preserved.** The refactor must be invisible to a TypeScript project. Same commands, same output, same test results.
-- **Don't build anything from Stage 2+.** No Docker containers, no adversarial test agent, no mutation testing, no type extractors. Stage 1.5 is purely detection and configuration.
+- **The tester agent and adversarial infrastructure already exist.** Don't rebuild `tester.ts`, `type-extractor.ts`, `dynamic.ts`, or the implement-feature blueprint nodes 6–8. Only refactor them to accept profiles.
+- **Preserve tester prompt Rules 8–15.** These were iteratively tuned across 4 adversarial passes. Only replace Rule 6's "Vitest + fast-check" with `{{testFramework}}`. Leave everything else unchanged.
+- **Preserve planner.md Rules 1–9 and `runtimeConstraints`.** Only replace the Project Context section. Rule 9 (`runtimeConstraints`) is critical for adversarial test quality — do NOT modify it.
+- **Don't build anything from Stage 2+.** No Docker containers, no SignatureExtractor interface, no LLM fallback extractor, no mutation testing. Stage 1.5 is detection + configuration only. For non-TS languages, the signature extractor returns empty at this stage.
 - **Keep deps minimal.** No TOML parser (use regex for pyproject.toml section detection). No template engine (use string replacement). No prompt library (use readline for interactive init).
 - **Use named exports only.** No default exports. No semicolons.
 - **All errors must be `BollardError` instances** with appropriate codes and context. Add `DETECTION_FAILED` and `PROFILE_INVALID` to `BollardErrorCode` if needed.

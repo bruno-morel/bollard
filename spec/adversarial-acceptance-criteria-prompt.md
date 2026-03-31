@@ -1,6 +1,6 @@
-# Adversarial Acceptance Criteria — Closing the Category A Gap
+# Adversarial Acceptance Criteria — Closing the Category A Gap ✅ DONE
 
-> Paste this into Claude Code or Cursor's Composer. The CLAUDE.md file at the repo root has all the context. Read `docs/retro-adversarial-results.md` for the full adversarial testing results (Pass 1, Pass 2, and the Pass 3 analysis).
+> **Status:** Completed 2026-03-30. All 8 steps done across Passes 3 and 4. Category A failures resolved. Pipeline declared tuned at 30.2% failure rate (no dominant pattern remaining). See `docs/retro-adversarial-results.md` for full results.
 
 ---
 
