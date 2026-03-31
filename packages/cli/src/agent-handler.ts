@@ -11,7 +11,10 @@ import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
-import type { ExtractedSignature } from "@bollard/verify/src/type-extractor.js"
+import type {
+  ExtractedSignature,
+  ExtractedTypeDefinition,
+} from "@bollard/verify/src/type-extractor.js"
 
 const execFileAsync = promisify(execFile)
 const MAX_PRELOAD_CHARS_PER_FILE = 10_000
@@ -186,7 +189,9 @@ function createVerificationHook(
 
 function buildTesterMessage(ctx: PipelineContext): string {
   const sigResult = ctx.results["extract-signatures"]
-  const signatures = sigResult?.data as { signatures?: ExtractedSignature[] } | undefined
+  const extractionData = sigResult?.data as
+    | { signatures?: ExtractedSignature[]; types?: ExtractedTypeDefinition[] }
+    | undefined
 
   const plan = ctx.plan as
     | {
@@ -218,7 +223,7 @@ function buildTesterMessage(ctx: PipelineContext): string {
 
   sections.push("# Public API Surface (signatures only — implementation bodies stripped)", "")
 
-  for (const sig of signatures?.signatures ?? []) {
+  for (const sig of extractionData?.signatures ?? []) {
     sections.push(`## ${sig.filePath}`, "")
     if (sig.imports) {
       sections.push("### Imports", `\`\`\`typescript\n${sig.imports}\n\`\`\``, "")
@@ -228,6 +233,14 @@ function buildTesterMessage(ctx: PipelineContext): string {
     }
     if (sig.signatures) {
       sections.push("### Signatures", `\`\`\`typescript\n${sig.signatures}\n\`\`\``, "")
+    }
+  }
+
+  const referencedTypes = extractionData?.types ?? []
+  if (referencedTypes.length > 0) {
+    sections.push("# Referenced Type Definitions", "")
+    for (const typeDef of referencedTypes) {
+      sections.push(`\`\`\`typescript\n${typeDef.definition}\n\`\`\``, "")
     }
   }
 
