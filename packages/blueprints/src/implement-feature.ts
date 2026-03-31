@@ -130,13 +130,14 @@ export function createImplementFeatureBlueprint(workDir: string): Blueprint {
           }
 
           const fullPaths = files.map((f) => resolve(workDir, f))
-          const signatures = await extractSignaturesFromFiles(fullPaths)
+          const result = await extractSignaturesFromFiles(fullPaths)
 
           return {
             status: "ok",
             data: {
               filesExtracted: files.length,
-              signatures,
+              signatures: result.signatures,
+              types: result.types,
             },
           }
         },

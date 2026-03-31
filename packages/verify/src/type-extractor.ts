@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises"
+import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
 import ts from "typescript"
 
 export interface ExtractedSignature {
@@ -6,6 +7,22 @@ export interface ExtractedSignature {
   signatures: string
   types: string
   imports: string
+}
+
+export interface ExtractedTypeDefinition {
+  name: string
+  kind: "interface" | "type" | "enum" | "const"
+  definition: string
+  filePath: string
+}
+
+export interface ExtractionResult {
+  signatures: ExtractedSignature[]
+  types: ExtractedTypeDefinition[]
+}
+
+export interface SignatureExtractor {
+  extract(files: string[], profile?: ToolchainProfile): Promise<ExtractionResult>
 }
 
 function getNodeModifiers(node: ts.Node): readonly ts.Modifier[] | undefined {
@@ -129,15 +146,124 @@ export function extractSignatures(filePath: string, sourceText: string): Extract
   }
 }
 
-export async function extractSignaturesFromFiles(
-  filePaths: string[],
-): Promise<ExtractedSignature[]> {
-  const results: ExtractedSignature[] = []
+export function extractTypeDefinitions(
+  filePath: string,
+  sourceText: string,
+): ExtractedTypeDefinition[] {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  )
+
+  const defs: ExtractedTypeDefinition[] = []
+
+  for (const stmt of sourceFile.statements) {
+    if (!isNodeExported(stmt)) continue
+
+    if (ts.isInterfaceDeclaration(stmt)) {
+      defs.push({
+        name: stmt.name.getText(sourceFile),
+        kind: "interface",
+        definition: sourceText.slice(stmt.pos, stmt.end).trim(),
+        filePath,
+      })
+    } else if (ts.isTypeAliasDeclaration(stmt)) {
+      defs.push({
+        name: stmt.name.getText(sourceFile),
+        kind: "type",
+        definition: sourceText.slice(stmt.pos, stmt.end).trim(),
+        filePath,
+      })
+    } else if (ts.isEnumDeclaration(stmt)) {
+      defs.push({
+        name: stmt.name.getText(sourceFile),
+        kind: "enum",
+        definition: sourceText.slice(stmt.pos, stmt.end).trim(),
+        filePath,
+      })
+    } else if (ts.isVariableStatement(stmt)) {
+      for (const decl of stmt.declarationList.declarations) {
+        if (ts.isVariableDeclaration(decl) && decl.type) {
+          defs.push({
+            name: decl.name.getText(sourceFile),
+            kind: "const",
+            definition: `export const ${decl.name.getText(sourceFile)}: ${decl.type.getText(sourceFile)}`,
+            filePath,
+          })
+        }
+      }
+    }
+  }
+
+  return defs
+}
+
+const PASCAL_CASE_RE = /\b([A-Z][a-zA-Z0-9]+)\b/g
+
+export function resolveReferencedTypes(
+  signatures: ExtractedSignature[],
+  allTypes: ExtractedTypeDefinition[],
+): ExtractedTypeDefinition[] {
+  const typeMap = new Map<string, ExtractedTypeDefinition>()
+  for (const t of allTypes) {
+    typeMap.set(t.name, t)
+  }
+
+  const referenced = new Set<string>()
+  for (const sig of signatures) {
+    const text = `${sig.signatures}\n${sig.types}`
+    const matches = text.match(PASCAL_CASE_RE) ?? []
+    for (const name of matches) {
+      if (typeMap.has(name)) {
+        referenced.add(name)
+      }
+    }
+  }
+
+  const result: ExtractedTypeDefinition[] = []
+  const seen = new Set<string>()
+  for (const name of referenced) {
+    if (seen.has(name)) continue
+    seen.add(name)
+    const def = typeMap.get(name)
+    if (def) result.push(def)
+  }
+
+  return result
+}
+
+export async function extractSignaturesFromFiles(filePaths: string[]): Promise<ExtractionResult> {
+  const signatures: ExtractedSignature[] = []
+  const allTypes: ExtractedTypeDefinition[] = []
   for (const fp of filePaths) {
     const sourceText = await readFile(fp, "utf-8")
-    results.push(extractSignatures(fp, sourceText))
+    signatures.push(extractSignatures(fp, sourceText))
+    allTypes.push(...extractTypeDefinitions(fp, sourceText))
   }
-  return results
+  return { signatures, types: allTypes }
+}
+
+export class TsCompilerExtractor implements SignatureExtractor {
+  async extract(files: string[]): Promise<ExtractionResult> {
+    return extractSignaturesFromFiles(files)
+  }
+}
+
+export class LlmFallbackExtractor implements SignatureExtractor {
+  // TODO: Stage 2 -- implement LLM-based signature extraction
+  async extract(_files: string[], _profile?: ToolchainProfile): Promise<ExtractionResult> {
+    return { signatures: [], types: [] }
+  }
+}
+
+export function getExtractor(lang: LanguageId): SignatureExtractor {
+  if (lang === "typescript") {
+    return new TsCompilerExtractor()
+  }
+  return new LlmFallbackExtractor()
 }
 
 // ---- Leak detection support ----

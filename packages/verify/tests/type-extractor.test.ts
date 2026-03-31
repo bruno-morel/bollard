@@ -2,7 +2,17 @@ import { readFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { extractPrivateIdentifiers, extractSignatures } from "../src/type-extractor.js"
+import {
+  type ExtractionResult,
+  LlmFallbackExtractor,
+  TsCompilerExtractor,
+  extractPrivateIdentifiers,
+  extractSignatures,
+  extractSignaturesFromFiles,
+  extractTypeDefinitions,
+  getExtractor,
+  resolveReferencedTypes,
+} from "../src/type-extractor.js"
 
 const THIS_DIR = dirname(fileURLToPath(import.meta.url))
 const PACKAGES_DIR = resolve(THIS_DIR, "../..")
@@ -143,5 +153,150 @@ export function publicFn(): void { }
     expect(result).not.toContain("x")
     expect(result).not.toContain("ctx")
     expect(result).not.toContain("publicFn")
+  })
+})
+
+describe("extractTypeDefinitions", () => {
+  it("extracts exported interfaces", async () => {
+    const source = await readSource("detect/src/types.ts")
+    const defs = extractTypeDefinitions("detect/src/types.ts", source)
+
+    const iface = defs.find((d) => d.name === "ToolchainProfile")
+    expect(iface).toBeDefined()
+    expect(iface?.kind).toBe("interface")
+    expect(iface?.definition).toContain("language: LanguageId")
+    expect(iface?.definition).toContain("checks:")
+  })
+
+  it("extracts exported type aliases", async () => {
+    const source = await readSource("engine/src/errors.ts")
+    const defs = extractTypeDefinitions("engine/src/errors.ts", source)
+
+    const typeAlias = defs.find((d) => d.name === "BollardErrorCode")
+    expect(typeAlias).toBeDefined()
+    expect(typeAlias?.kind).toBe("type")
+    expect(typeAlias?.definition).toContain("LLM_TIMEOUT")
+  })
+
+  it("extracts exported const with type annotations", async () => {
+    const source = await readSource("agents/src/tools/index.ts")
+    const defs = extractTypeDefinitions("agents/src/tools/index.ts", source)
+
+    const allTools = defs.find((d) => d.name === "ALL_TOOLS")
+    expect(allTools).toBeDefined()
+    expect(allTools?.kind).toBe("const")
+    expect(allTools?.definition).toContain("AgentTool[]")
+  })
+
+  it("does not include non-exported types", async () => {
+    const source = await readSource("engine/src/errors.ts")
+    const defs = extractTypeDefinitions("engine/src/errors.ts", source)
+
+    const names = defs.map((d) => d.name)
+    expect(names).not.toContain("BollardErrorOptions")
+  })
+})
+
+describe("resolveReferencedTypes", () => {
+  it("resolves types referenced in function signatures", () => {
+    const signatures = [
+      {
+        filePath: "test.ts",
+        signatures: "export function detect(cwd: string): Promise<ToolchainProfile> { ... }",
+        types: "",
+        imports: "",
+      },
+    ]
+
+    const allTypes = [
+      {
+        name: "ToolchainProfile",
+        kind: "interface" as const,
+        definition: "export interface ToolchainProfile { language: LanguageId }",
+        filePath: "types.ts",
+      },
+      {
+        name: "UnrelatedType",
+        kind: "interface" as const,
+        definition: "export interface UnrelatedType { x: number }",
+        filePath: "other.ts",
+      },
+    ]
+
+    const resolved = resolveReferencedTypes(signatures, allTypes)
+    expect(resolved).toHaveLength(1)
+    expect(resolved[0]?.name).toBe("ToolchainProfile")
+  })
+
+  it("deduplicates resolved types", () => {
+    const signatures = [
+      {
+        filePath: "a.ts",
+        signatures: "export function a(p: MyType): MyType { ... }",
+        types: "",
+        imports: "",
+      },
+      {
+        filePath: "b.ts",
+        signatures: "export function b(p: MyType): void { ... }",
+        types: "",
+        imports: "",
+      },
+    ]
+
+    const allTypes = [
+      {
+        name: "MyType",
+        kind: "interface" as const,
+        definition: "export interface MyType { x: number }",
+        filePath: "types.ts",
+      },
+    ]
+
+    const resolved = resolveReferencedTypes(signatures, allTypes)
+    expect(resolved).toHaveLength(1)
+  })
+})
+
+describe("extractSignaturesFromFiles returns ExtractionResult", () => {
+  it("returns both signatures and types", async () => {
+    const files = [resolve(PACKAGES_DIR, "detect/src/types.ts")]
+    const result = await extractSignaturesFromFiles(files)
+
+    expect(result.signatures).toHaveLength(1)
+    expect(result.signatures[0]?.filePath).toBe(files[0])
+    expect(result.types.length).toBeGreaterThan(0)
+    expect(result.types.some((t) => t.name === "ToolchainProfile")).toBe(true)
+  })
+})
+
+describe("SignatureExtractor implementations", () => {
+  it("TsCompilerExtractor wraps extractSignaturesFromFiles", async () => {
+    const extractor = new TsCompilerExtractor()
+    const files = [resolve(PACKAGES_DIR, "engine/src/errors.ts")]
+    const result = await extractor.extract(files)
+
+    expect(result.signatures).toHaveLength(1)
+    expect(result.signatures[0]?.signatures).toContain("BollardError")
+    expect(result.types.length).toBeGreaterThan(0)
+  })
+
+  it("LlmFallbackExtractor returns empty result", async () => {
+    const extractor = new LlmFallbackExtractor()
+    const result = await extractor.extract(["anything.py"])
+
+    expect(result.signatures).toHaveLength(0)
+    expect(result.types).toHaveLength(0)
+  })
+
+  it("getExtractor returns TsCompilerExtractor for typescript", () => {
+    const extractor = getExtractor("typescript")
+    expect(extractor).toBeInstanceOf(TsCompilerExtractor)
+  })
+
+  it("getExtractor returns LlmFallbackExtractor for non-typescript", () => {
+    expect(getExtractor("python")).toBeInstanceOf(LlmFallbackExtractor)
+    expect(getExtractor("go")).toBeInstanceOf(LlmFallbackExtractor)
+    expect(getExtractor("rust")).toBeInstanceOf(LlmFallbackExtractor)
   })
 })

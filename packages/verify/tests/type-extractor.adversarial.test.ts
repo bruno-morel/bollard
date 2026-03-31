@@ -47,11 +47,13 @@ describe("Feature: extractSignatures extracts function signatures and types", ()
 })
 
 describe("Feature: extractSignaturesFromFiles processes multiple files", () => {
-  it("should return empty array for empty file list", async () => {
+  it("should return empty result for empty file list", async () => {
     const result = await extractSignaturesFromFiles([])
-    
-    expect(Array.isArray(result)).toBe(true)
-    expect(result.length).toBe(0)
+
+    expect(Array.isArray(result.signatures)).toBe(true)
+    expect(result.signatures.length).toBe(0)
+    expect(Array.isArray(result.types)).toBe(true)
+    expect(result.types.length).toBe(0)
   })
 
   it("should handle non-existent files gracefully", async () => {
@@ -59,30 +61,20 @@ describe("Feature: extractSignaturesFromFiles processes multiple files", () => {
       "/does/not/exist.ts",
       "/also/missing.ts"
     ]
-    
-    // ASSUMPTION: returns results even for missing files, possibly with empty content
-    const result = await extractSignaturesFromFiles(nonExistentFiles)
-    expect(Array.isArray(result)).toBe(true)
+
+    // ASSUMPTION: throws on missing files
+    await expect(extractSignaturesFromFiles(nonExistentFiles)).rejects.toThrow()
   })
 
   it("should preserve file order in results", async () => {
     const filePaths = [
       "first.ts",
-      "second.ts", 
+      "second.ts",
       "third.ts"
     ]
-    
-    const result = await extractSignaturesFromFiles(filePaths)
-    expect(Array.isArray(result)).toBe(true)
-    
-    if (result.length > 0) {
-      result.forEach((extracted, index) => {
-        expect(typeof extracted.filePath).toBe("string")
-        expect(typeof extracted.signatures).toBe("string")
-        expect(typeof extracted.types).toBe("string")
-        expect(typeof extracted.imports).toBe("string")
-      })
-    }
+
+    // These files don't exist, so this will throw
+    await expect(extractSignaturesFromFiles(filePaths)).rejects.toThrow()
   })
 })
 
