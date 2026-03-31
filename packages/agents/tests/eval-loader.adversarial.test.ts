@@ -7,21 +7,21 @@ describe("Feature: loadEvalCases returns all cases when no filter or invalid fil
     const cases = loadEvalCases()
     expect(cases).toBeInstanceOf(Array)
     expect(cases.length).toBeGreaterThan(0)
-    expect(cases.every(c => typeof c === 'object' && c !== null)).toBe(true)
+    expect(cases.every(c => c && typeof c === 'object')).toBe(true)
   })
 
   it("should return all cases when agentFilter is empty string", () => {
     const cases = loadEvalCases("")
     expect(cases).toBeInstanceOf(Array)
     expect(cases.length).toBeGreaterThan(0)
-    expect(cases.every(c => typeof c === 'object' && c !== null)).toBe(true)
+    expect(cases.every(c => c && typeof c === 'object')).toBe(true)
   })
 
-  it("should return all cases when agentFilter is unrecognized agent name", () => {
+  it("should return all cases when agentFilter is invalid agent name", () => {
     const cases = loadEvalCases("nonexistent")
     expect(cases).toBeInstanceOf(Array)
     expect(cases.length).toBeGreaterThan(0)
-    expect(cases.every(c => typeof c === 'object' && c !== null)).toBe(true)
+    expect(cases.every(c => c && typeof c === 'object')).toBe(true)
   })
 
   it("should return same number of cases for undefined and invalid filters", () => {
@@ -38,19 +38,22 @@ describe("Feature: loadEvalCases filters by exact agent name match", () => {
   it("should return filtered cases for planner agent", () => {
     const cases = loadEvalCases("planner")
     expect(cases).toBeInstanceOf(Array)
-    expect(cases.every(c => typeof c === 'object' && c !== null)).toBe(true)
+    expect(cases.length).toBeGreaterThan(0)
+    expect(cases.every(c => c && typeof c === 'object')).toBe(true)
   })
 
   it("should return filtered cases for coder agent", () => {
     const cases = loadEvalCases("coder")
     expect(cases).toBeInstanceOf(Array)
-    expect(cases.every(c => typeof c === 'object' && c !== null)).toBe(true)
+    expect(cases.length).toBeGreaterThan(0)
+    expect(cases.every(c => c && typeof c === 'object')).toBe(true)
   })
 
   it("should return filtered cases for tester agent", () => {
     const cases = loadEvalCases("tester")
     expect(cases).toBeInstanceOf(Array)
-    expect(cases.every(c => typeof c === 'object' && c !== null)).toBe(true)
+    expect(cases.length).toBeGreaterThan(0)
+    expect(cases.every(c => c && typeof c === 'object')).toBe(true)
   })
 
   it("should return fewer cases when filtering than when not filtering", () => {
@@ -59,54 +62,54 @@ describe("Feature: loadEvalCases filters by exact agent name match", () => {
     const coderCases = loadEvalCases("coder")
     const testerCases = loadEvalCases("tester")
     
-    expect(plannerCases.length).toBeLessThanOrEqual(allCases.length)
-    expect(coderCases.length).toBeLessThanOrEqual(allCases.length)
-    expect(testerCases.length).toBeLessThanOrEqual(allCases.length)
+    expect(plannerCases.length).toBeLessThan(allCases.length)
+    expect(coderCases.length).toBeLessThan(allCases.length)
+    expect(testerCases.length).toBeLessThan(allCases.length)
   })
 
-  it("should not filter on partial matches", () => {
-    const allCases = loadEvalCases()
-    const partialMatch = loadEvalCases("plan")
+  it("should return different cases for different agents", () => {
+    const plannerCases = loadEvalCases("planner")
+    const coderCases = loadEvalCases("coder")
+    const testerCases = loadEvalCases("tester")
     
-    expect(partialMatch.length).toBe(allCases.length)
-  })
-
-  it("should be case sensitive", () => {
-    const allCases = loadEvalCases()
-    const upperCase = loadEvalCases("PLANNER")
-    const mixedCase = loadEvalCases("Planner")
-    
-    expect(upperCase.length).toBe(allCases.length)
-    expect(mixedCase.length).toBe(allCases.length)
+    expect(plannerCases).not.toEqual(coderCases)
+    expect(coderCases).not.toEqual(testerCases)
+    expect(testerCases).not.toEqual(plannerCases)
   })
 })
 
 describe("Feature: availableAgents returns known agent list", () => {
-  it("should return array of exactly three agents", () => {
+  it("should return exactly planner, coder, tester", () => {
     const agents = availableAgents()
     expect(agents).toEqual(["planner", "coder", "tester"])
   })
 
-  it("should return consistent results on multiple calls", () => {
+  it("should return array with length 3", () => {
+    const agents = availableAgents()
+    expect(agents).toHaveLength(3)
+  })
+
+  it("should return consistent results across calls", () => {
     const agents1 = availableAgents()
     const agents2 = availableAgents()
     expect(agents1).toEqual(agents2)
   })
-
-  it("should return array with string elements", () => {
-    const agents = availableAgents()
-    expect(agents.every(agent => typeof agent === 'string')).toBe(true)
-  })
 })
 
 describe("Property-based tests: loadEvalCases with arbitrary strings", () => {
-  it("should handle arbitrary string filters without throwing", () => {
+  it("should handle arbitrary string filters consistently", () => {
     fc.assert(fc.property(
       fc.string(),
       (filter) => {
         const cases = loadEvalCases(filter)
         expect(cases).toBeInstanceOf(Array)
-        expect(cases.every(c => typeof c === 'object' && c !== null)).toBe(true)
+        expect(cases.every(c => c && typeof c === 'object')).toBe(true)
+        
+        // Should return all cases unless exact match with known agent
+        const allCases = loadEvalCases()
+        if (!["planner", "coder", "tester"].includes(filter)) {
+          expect(cases.length).toBe(allCases.length)
+        }
       }
     ))
   })
@@ -117,61 +120,49 @@ describe("Property-based tests: loadEvalCases with arbitrary strings", () => {
       (filter) => {
         const cases1 = loadEvalCases(filter)
         const cases2 = loadEvalCases(filter)
-        expect(cases1.length).toBe(cases2.length)
-      }
-    ))
-  })
-
-  it("should return all cases for any non-exact agent name", () => {
-    const allCases = loadEvalCases()
-    const validAgents = new Set(["planner", "coder", "tester"])
-    
-    fc.assert(fc.property(
-      fc.string().filter(s => !validAgents.has(s)),
-      (invalidFilter) => {
-        const cases = loadEvalCases(invalidFilter)
-        expect(cases.length).toBe(allCases.length)
+        expect(cases1).toEqual(cases2)
       }
     ))
   })
 })
 
 describe("Negative tests: edge cases and boundary values", () => {
-  it("should handle whitespace-only strings as invalid filters", () => {
+  it("should handle whitespace-only filter", () => {
+    const cases = loadEvalCases("   ")
     const allCases = loadEvalCases()
-    const whitespaceCases = loadEvalCases("   ")
-    const tabCases = loadEvalCases("\t")
-    const newlineCases = loadEvalCases("\n")
-    
-    expect(whitespaceCases.length).toBe(allCases.length)
-    expect(tabCases.length).toBe(allCases.length)
-    expect(newlineCases.length).toBe(allCases.length)
+    expect(cases.length).toBe(allCases.length)
   })
 
-  it("should handle special characters as invalid filters", () => {
+  it("should handle case-sensitive filtering", () => {
+    const upperCases = loadEvalCases("PLANNER")
+    const lowerCases = loadEvalCases("planner")
     const allCases = loadEvalCases()
-    const specialChars = ["@", "#", "$", "%", "^", "&", "*", "(", ")", "-", "+", "="]
     
-    specialChars.forEach(char => {
-      const cases = loadEvalCases(char)
-      expect(cases.length).toBe(allCases.length)
-    })
+    expect(upperCases.length).toBe(allCases.length) // No match, returns all
+    expect(lowerCases.length).toBeLessThan(allCases.length) // Exact match, filters
   })
 
-  it("should handle very long strings as invalid filters", () => {
+  it("should handle partial agent name matches", () => {
+    const partialCases = loadEvalCases("plan")
     const allCases = loadEvalCases()
-    const longString = "a".repeat(10000)
-    const longCases = loadEvalCases(longString)
-    
-    expect(longCases.length).toBe(allCases.length)
+    expect(partialCases.length).toBe(allCases.length) // No exact match, returns all
   })
 
-  it("should handle unicode characters as invalid filters", () => {
+  it("should handle agent name with extra characters", () => {
+    const extraCases = loadEvalCases("planner-extra")
     const allCases = loadEvalCases()
-    const unicodeCases = loadEvalCases("🚀")
-    const emojiCases = loadEvalCases("👨‍💻")
-    
-    expect(unicodeCases.length).toBe(allCases.length)
-    expect(emojiCases.length).toBe(allCases.length)
+    expect(extraCases.length).toBe(allCases.length) // No exact match, returns all
+  })
+
+  it("should handle numeric string filters", () => {
+    const numericCases = loadEvalCases("123")
+    const allCases = loadEvalCases()
+    expect(numericCases.length).toBe(allCases.length)
+  })
+
+  it("should handle special character filters", () => {
+    const specialCases = loadEvalCases("@#$%")
+    const allCases = loadEvalCases()
+    expect(specialCases.length).toBe(allCases.length)
   })
 })

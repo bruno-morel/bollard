@@ -22,30 +22,42 @@ afterEach(() => {
 })
 
 describe("Feature: All exported functions and classes have behavioral tests", () => {
-  it("should have readFileTool with correct structure", () => {
-    expect(readFileTool).toBeDefined()
-    expect(typeof readFileTool.execute).toBe("function")
-    expect(readFileTool.name).toBeDefined()
-    expect(readFileTool.description).toBeDefined()
-  })
-
-  it("should read existing file content as string", async () => {
-    const content = "Hello, world!"
-    const filename = "test.txt"
-    writeFileSync(join(workDir, filename), content, "utf-8")
-
-    const result = await readFileTool.execute({ path: filename }, ctx)
+  it("should read file content as UTF-8 string", async () => {
+    const content = "Hello, world!\nThis is a test file."
+    writeFileSync(join(workDir, "test.txt"), content, "utf-8")
+    
+    const result = await readFileTool.execute({ path: "test.txt" }, ctx)
     
     expect(typeof result).toBe("string")
     expect(result).toBe(content)
   })
 
-  it("should read UTF-8 encoded files correctly", async () => {
-    const content = "Hello 世界 🌍"
-    const filename = "unicode.txt"
-    writeFileSync(join(workDir, filename), content, "utf-8")
+  it("should read empty file as empty string", async () => {
+    writeFileSync(join(workDir, "empty.txt"), "", "utf-8")
+    
+    const result = await readFileTool.execute({ path: "empty.txt" }, ctx)
+    
+    expect(typeof result).toBe("string")
+    expect(result).toBe("")
+  })
 
-    const result = await readFileTool.execute({ path: filename }, ctx)
+  it("should read file with unicode content", async () => {
+    const content = "Hello 世界! 🌍 Café naïve résumé"
+    writeFileSync(join(workDir, "unicode.txt"), content, "utf-8")
+    
+    const result = await readFileTool.execute({ path: "unicode.txt" }, ctx)
+    
+    expect(typeof result).toBe("string")
+    expect(result).toBe(content)
+  })
+
+  it("should read file in subdirectory", async () => {
+    const subDir = join(workDir, "subdir")
+    mkdirSync(subDir)
+    const content = "Nested file content"
+    writeFileSync(join(subDir, "nested.txt"), content, "utf-8")
+    
+    const result = await readFileTool.execute({ path: "subdir/nested.txt" }, ctx)
     
     expect(typeof result).toBe("string")
     expect(result).toBe(content)
@@ -53,9 +65,12 @@ describe("Feature: All exported functions and classes have behavioral tests", ()
 })
 
 describe("Feature: Property-based tests for string parameters", () => {
-  it("should read any valid filename with alphanumeric content", () => {
-    fc.assert(fc.property(
-      fc.string({ minLength: 1, maxLength: 50 }).filter(s => /^[a-zA-Z0-9._-]+$/.test(s)),
+  it("should read any valid filename within workDir", async () => {
+    await fc.assert(fc.asyncProperty(
+      fc.string({ minLength: 1, maxLength: 50 }).filter(s => 
+        !s.includes('/') && !s.includes('\\') && !s.includes('\0') && 
+        s !== '.' && s !== '..' && s.trim() === s
+      ),
       fc.string({ minLength: 0, maxLength: 1000 }),
       async (filename, content) => {
         writeFileSync(join(workDir, filename), content, "utf-8")
@@ -68,18 +83,17 @@ describe("Feature: Property-based tests for string parameters", () => {
     ))
   })
 
-  it("should handle files with various content lengths", () => {
-    fc.assert(fc.property(
-      fc.string({ minLength: 0, maxLength: 10000 }),
+  it("should preserve exact content for any UTF-8 string", async () => {
+    await fc.assert(fc.asyncProperty(
+      fc.string(),
       async (content) => {
-        const filename = "length-test.txt"
-        writeFileSync(join(workDir, filename), content, "utf-8")
+        writeFileSync(join(workDir, "prop-test.txt"), content, "utf-8")
         
-        const result = await readFileTool.execute({ path: filename }, ctx)
+        const result = await readFileTool.execute({ path: "prop-test.txt" }, ctx)
         
         expect(typeof result).toBe("string")
-        expect(result.length).toBe(content.length)
         expect(result).toBe(content)
+        expect(result.length).toBe(content.length)
       }
     ))
   })
@@ -92,98 +106,121 @@ describe("Feature: Negative tests for error conditions", () => {
   })
 
   it("should reject path traversal attempts", async () => {
-    await expect(readFileTool.execute({ path: "../../../etc/passwd" }, ctx))
-      .rejects.toThrow()
+    // Create a file outside workDir to ensure it exists
+    const outsideFile = join(tmpdir(), "outside-file.txt")
+    writeFileSync(outsideFile, "secret content", "utf-8")
+    
+    try {
+      await expect(readFileTool.execute({ path: "../outside-file.txt" }, ctx))
+        .rejects.toThrow()
+      
+      await expect(readFileTool.execute({ path: "../../outside-file.txt" }, ctx))
+        .rejects.toThrow()
+      
+      await expect(readFileTool.execute({ path: "../../../etc/passwd" }, ctx))
+        .rejects.toThrow()
+      
+      await expect(readFileTool.execute({ path: "../../../../tmp/outside-file.txt" }, ctx))
+        .rejects.toThrow()
+    } finally {
+      rmSync(outsideFile, { force: true })
+    }
   })
 
-  it("should reject absolute paths outside workDir", async () => {
+  it("should reject absolute paths", async () => {
     await expect(readFileTool.execute({ path: "/etc/passwd" }, ctx))
       .rejects.toThrow()
-  })
-
-  it("should reject complex path traversal with mixed separators", async () => {
-    await expect(readFileTool.execute({ path: "..\\..\\..\\windows\\system32\\drivers\\etc\\hosts" }, ctx))
+    
+    await expect(readFileTool.execute({ path: "/tmp/test.txt" }, ctx))
       .rejects.toThrow()
   })
 
-  it("should reject paths with null bytes", async () => {
+  it("should reject null bytes in path", async () => {
     await expect(readFileTool.execute({ path: "test\0.txt" }, ctx))
       .rejects.toThrow()
+    
+    await expect(readFileTool.execute({ path: "test.txt\0" }, ctx))
+      .rejects.toThrow()
   })
 
-  it("should reject empty path", async () => {
+  it("should throw when trying to read directory", async () => {
+    mkdirSync(join(workDir, "testdir"))
+    
+    await expect(readFileTool.execute({ path: "testdir" }, ctx))
+      .rejects.toThrow()
+  })
+
+  it("should handle empty path", async () => {
     await expect(readFileTool.execute({ path: "" }, ctx))
       .rejects.toThrow()
   })
 
-  it("should reject directory paths", async () => {
-    const dirname = "testdir"
-    writeFileSync(join(workDir, dirname), "", "utf-8")
+  it("should handle path with only dots", async () => {
+    await expect(readFileTool.execute({ path: "." }, ctx))
+      .rejects.toThrow()
     
-    await expect(readFileTool.execute({ path: dirname }, ctx))
+    await expect(readFileTool.execute({ path: ".." }, ctx))
       .rejects.toThrow()
   })
 })
 
-describe("Feature: Domain-specific file reading properties", () => {
-  it("should preserve exact file content including whitespace", async () => {
-    const content = "  \n\t  spaces and tabs  \n  "
-    const filename = "whitespace.txt"
-    writeFileSync(join(workDir, filename), content, "utf-8")
-
-    const result = await readFileTool.execute({ path: filename }, ctx)
+describe("Feature: Domain-specific properties", () => {
+  it("should preserve line endings exactly", async () => {
+    const contentWithCRLF = "line1\r\nline2\r\nline3"
+    const contentWithLF = "line1\nline2\nline3"
+    const contentWithCR = "line1\rline2\rline3"
     
-    expect(result).toBe(content)
-    expect(result.includes("\n")).toBe(true)
-    expect(result.includes("\t")).toBe(true)
+    writeFileSync(join(workDir, "crlf.txt"), contentWithCRLF, "utf-8")
+    writeFileSync(join(workDir, "lf.txt"), contentWithLF, "utf-8")
+    writeFileSync(join(workDir, "cr.txt"), contentWithCR, "utf-8")
+    
+    const crlfResult = await readFileTool.execute({ path: "crlf.txt" }, ctx)
+    const lfResult = await readFileTool.execute({ path: "lf.txt" }, ctx)
+    const crResult = await readFileTool.execute({ path: "cr.txt" }, ctx)
+    
+    expect(crlfResult).toBe(contentWithCRLF)
+    expect(lfResult).toBe(contentWithLF)
+    expect(crResult).toBe(contentWithCR)
+    expect(crlfResult).not.toBe(lfResult)
+    expect(lfResult).not.toBe(crResult)
   })
 
-  it("should handle empty files", async () => {
-    const filename = "empty.txt"
-    writeFileSync(join(workDir, filename), "", "utf-8")
-
-    const result = await readFileTool.execute({ path: filename }, ctx)
+  it("should handle files with no trailing newline", async () => {
+    const contentNoNewline = "content without newline"
+    const contentWithNewline = "content with newline\n"
     
-    expect(typeof result).toBe("string")
-    expect(result).toBe("")
-    expect(result.length).toBe(0)
+    writeFileSync(join(workDir, "no-newline.txt"), contentNoNewline, "utf-8")
+    writeFileSync(join(workDir, "with-newline.txt"), contentWithNewline, "utf-8")
+    
+    const noNewlineResult = await readFileTool.execute({ path: "no-newline.txt" }, ctx)
+    const withNewlineResult = await readFileTool.execute({ path: "with-newline.txt" }, ctx)
+    
+    expect(noNewlineResult).toBe(contentNoNewline)
+    expect(withNewlineResult).toBe(contentWithNewline)
+    expect(noNewlineResult.endsWith('\n')).toBe(false)
+    expect(withNewlineResult.endsWith('\n')).toBe(true)
   })
 
-  it("should read files in subdirectories within workDir", async () => {
-    const subdir = "subdir"
-    const filename = "nested.txt"
-    const content = "nested content"
+  it("should read binary data as UTF-8 interpretation", async () => {
+    // Write some bytes that aren't valid UTF-8
+    const buffer = Buffer.from([0xFF, 0xFE, 0x00, 0x41]) // Invalid UTF-8 sequence
+    writeFileSync(join(workDir, "binary.txt"), buffer)
     
-    writeFileSync(join(workDir, subdir), "", "utf-8")
-    rmSync(join(workDir, subdir))
-    writeFileSync(join(workDir, subdir, filename), content, "utf-8")
-
-    const result = await readFileTool.execute({ path: join(subdir, filename) }, ctx)
+    const result = await readFileTool.execute({ path: "binary.txt" }, ctx)
     
     expect(typeof result).toBe("string")
-    expect(result).toBe(content)
+    expect(result.length).toBeGreaterThan(0)
+    // The exact content depends on how Node.js handles invalid UTF-8, but it should be a string
   })
 
-  it("should handle files with special characters in content", async () => {
-    const content = "Special chars: !@#$%^&*()[]{}|\\:;\"'<>?,./"
-    const filename = "special.txt"
-    writeFileSync(join(workDir, filename), content, "utf-8")
-
-    const result = await readFileTool.execute({ path: filename }, ctx)
+  it("should handle very large files", async () => {
+    const largeContent = "x".repeat(100000) // 100KB of 'x'
+    writeFileSync(join(workDir, "large.txt"), largeContent, "utf-8")
+    
+    const result = await readFileTool.execute({ path: "large.txt" }, ctx)
     
     expect(typeof result).toBe("string")
-    expect(result).toBe(content)
-  })
-
-  it("should return string with correct line endings", async () => {
-    const content = "line1\nline2\r\nline3\r"
-    const filename = "lineendings.txt"
-    writeFileSync(join(workDir, filename), content, "utf-8")
-
-    const result = await readFileTool.execute({ path: filename }, ctx)
-    
-    expect(typeof result).toBe("string")
-    expect(result).toBe(content)
-    expect(result.split("\n").length).toBe(3)
+    expect(result.length).toBe(100000)
+    expect(result).toBe(largeContent)
   })
 })

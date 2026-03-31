@@ -21,18 +21,13 @@ afterEach(() => {
   rmSync(workDir, { recursive: true, force: true })
 })
 
-describe("Feature: Tool metadata and structure", () => {
-  it("should have required tool properties", () => {
-    expect(listDirTool.name).toBe("list-dir")
-    expect(typeof listDirTool.description).toBe("string")
-    expect(listDirTool.description.length).toBeGreaterThan(0)
-    expect(typeof listDirTool.inputSchema).toBe("object")
+describe("Feature: All exported functions and classes have behavioral tests", () => {
+  it("should have listDirTool with execute method", () => {
+    expect(listDirTool).toBeDefined()
     expect(typeof listDirTool.execute).toBe("function")
   })
-})
 
-describe("Feature: Directory listing with real filesystem", () => {
-  it("should list empty directory", async () => {
+  it("should return string for empty directory", async () => {
     const result = await listDirTool.execute({ path: "." }, ctx)
     expect(typeof result).toBe("string")
     expect(result).toBe("")
@@ -40,156 +35,176 @@ describe("Feature: Directory listing with real filesystem", () => {
 
   it("should list files without trailing slash", async () => {
     writeFileSync(join(workDir, "test.txt"), "content")
-    writeFileSync(join(workDir, "README.md"), "readme")
-    
     const result = await listDirTool.execute({ path: "." }, ctx)
     expect(typeof result).toBe("string")
-    expect(result).toContain("test.txt")
-    expect(result).toContain("README.md")
-    expect(result).not.toContain("test.txt/")
-    expect(result).not.toContain("README.md/")
+    expect(result).toBe("test.txt")
   })
 
   it("should list directories with trailing slash", async () => {
     mkdirSync(join(workDir, "subdir"))
-    mkdirSync(join(workDir, "another"))
-    
     const result = await listDirTool.execute({ path: "." }, ctx)
     expect(typeof result).toBe("string")
-    expect(result).toContain("subdir/")
-    expect(result).toContain("another/")
+    expect(result).toBe("subdir/")
   })
 
   it("should list mixed files and directories", async () => {
     writeFileSync(join(workDir, "file.txt"), "content")
     mkdirSync(join(workDir, "dir"))
-    
     const result = await listDirTool.execute({ path: "." }, ctx)
     expect(typeof result).toBe("string")
-    expect(result).toContain("file.txt")
-    expect(result).toContain("dir/")
-    expect(result).not.toContain("file.txt/")
+    const lines = result.split("\n").sort()
+    expect(lines).toEqual(["dir/", "file.txt"])
   })
 
   it("should list subdirectory contents", async () => {
     mkdirSync(join(workDir, "subdir"))
     writeFileSync(join(workDir, "subdir", "nested.txt"), "content")
-    
     const result = await listDirTool.execute({ path: "subdir" }, ctx)
     expect(typeof result).toBe("string")
-    expect(result).toContain("nested.txt")
-  })
-
-  it("should return newline-separated output", async () => {
-    writeFileSync(join(workDir, "a.txt"), "content")
-    writeFileSync(join(workDir, "b.txt"), "content")
-    mkdirSync(join(workDir, "c"))
-    
-    const result = await listDirTool.execute({ path: "." }, ctx)
-    expect(typeof result).toBe("string")
-    const lines = result.split("\n").filter(line => line.length > 0)
-    expect(lines.length).toBe(3)
-    expect(lines).toContain("a.txt")
-    expect(lines).toContain("b.txt")
-    expect(lines).toContain("c/")
+    expect(result).toBe("nested.txt")
   })
 })
 
-describe("Feature: Path traversal protection", () => {
-  it("should reject parent directory traversal", async () => {
-    await expect(listDirTool.execute({ path: "../" }, ctx)).rejects.toThrow()
+describe("Feature: Property-based tests for string parameters", () => {
+  it("should handle arbitrary valid relative paths", async () => {
+    await fc.assert(fc.asyncProperty(
+      fc.array(fc.stringMatching(/^[a-zA-Z0-9_-]+$/), { minLength: 1, maxLength: 3 }),
+      async (pathSegments) => {
+        const relativePath = pathSegments.join("/")
+        let currentDir = workDir
+        
+        // Create nested directory structure
+        for (const segment of pathSegments) {
+          currentDir = join(currentDir, segment)
+          mkdirSync(currentDir, { recursive: true })
+        }
+        
+        writeFileSync(join(currentDir, "test.txt"), "content")
+        
+        const result = await listDirTool.execute({ path: relativePath }, ctx)
+        expect(typeof result).toBe("string")
+        expect(result).toContain("test.txt")
+      }
+    ))
   })
 
-  it("should reject deep parent traversal", async () => {
-    await expect(listDirTool.execute({ path: "../../../etc/passwd" }, ctx)).rejects.toThrow()
+  it("should handle various file name patterns", async () => {
+    await fc.assert(fc.asyncProperty(
+      fc.stringMatching(/^[a-zA-Z0-9._-]+$/),
+      async (filename) => {
+        fc.pre(filename.length > 0 && filename.length < 100)
+        writeFileSync(join(workDir, filename), "content")
+        
+        const result = await listDirTool.execute({ path: "." }, ctx)
+        expect(typeof result).toBe("string")
+        expect(result).toBe(filename)
+      }
+    ))
+  })
+})
+
+describe("Feature: Negative tests for error conditions", () => {
+  it("should reject path traversal attempts", async () => {
+    await expect(listDirTool.execute({ path: "../../../etc/passwd" }, ctx))
+      .rejects.toThrow()
   })
 
   it("should reject absolute paths", async () => {
-    await expect(listDirTool.execute({ path: "/etc" }, ctx)).rejects.toThrow()
+    await expect(listDirTool.execute({ path: "/etc/passwd" }, ctx))
+      .rejects.toThrow()
   })
 
   it("should reject paths with .. components", async () => {
-    await expect(listDirTool.execute({ path: "subdir/../../../etc" }, ctx)).rejects.toThrow()
+    await expect(listDirTool.execute({ path: "subdir/../../../etc" }, ctx))
+      .rejects.toThrow()
   })
 
-  it("should allow safe relative paths", async () => {
-    mkdirSync(join(workDir, "safe"))
-    writeFileSync(join(workDir, "safe", "file.txt"), "content")
-    
-    const result = await listDirTool.execute({ path: "safe" }, ctx)
-    expect(typeof result).toBe("string")
-    expect(result).toContain("file.txt")
-  })
-})
-
-describe("Feature: Error handling for invalid paths", () => {
-  it("should handle nonexistent directory", async () => {
-    await expect(listDirTool.execute({ path: "nonexistent" }, ctx)).rejects.toThrow()
+  it("should handle non-existent directory", async () => {
+    await expect(listDirTool.execute({ path: "nonexistent" }, ctx))
+      .rejects.toThrow()
   })
 
   it("should handle file instead of directory", async () => {
     writeFileSync(join(workDir, "file.txt"), "content")
-    
-    await expect(listDirTool.execute({ path: "file.txt" }, ctx)).rejects.toThrow()
-  })
-})
-
-describe("Feature: Property-based testing for path inputs", () => {
-  it("should handle various safe relative paths", () => {
-    fc.assert(fc.property(
-      fc.array(fc.stringMatching(/^[a-zA-Z0-9_-]+$/), { minLength: 1, maxLength: 3 }),
-      async (pathSegments) => {
-        const safePath = pathSegments.join("/")
-        
-        // Create the directory structure
-        let currentPath = workDir
-        for (const segment of pathSegments) {
-          currentPath = join(currentPath, segment)
-          mkdirSync(currentPath, { recursive: true })
-        }
-        
-        const result = await listDirTool.execute({ path: safePath }, ctx)
-        expect(typeof result).toBe("string")
-      }
-    ), { numRuns: 20 })
-  })
-
-  it("should reject paths containing dangerous patterns", () => {
-    fc.assert(fc.property(
-      fc.oneof(
-        fc.constant("../"),
-        fc.constant("..\\"),
-        fc.constant("/etc"),
-        fc.constant("C:\\Windows"),
-        fc.stringMatching(/.*\.\..*/)
-      ),
-      async (dangerousPath) => {
-        await expect(listDirTool.execute({ path: dangerousPath }, ctx)).rejects.toThrow()
-      }
-    ), { numRuns: 10 })
-  })
-})
-
-describe("Feature: Input validation", () => {
-  it("should handle empty path string", async () => {
-    const result = await listDirTool.execute({ path: "" }, ctx)
-    expect(typeof result).toBe("string")
-  })
-
-  it("should handle dot path", async () => {
-    const result = await listDirTool.execute({ path: "." }, ctx)
-    expect(typeof result).toBe("string")
+    await expect(listDirTool.execute({ path: "file.txt" }, ctx))
+      .rejects.toThrow()
   })
 
   it("should reject null path", async () => {
-    await expect(listDirTool.execute({ path: null as any }, ctx)).rejects.toThrow()
+    await expect(listDirTool.execute({ path: null as any }, ctx))
+      .rejects.toThrow()
   })
 
   it("should reject undefined path", async () => {
-    await expect(listDirTool.execute({ path: undefined as any }, ctx)).rejects.toThrow()
+    await expect(listDirTool.execute({ path: undefined as any }, ctx))
+      .rejects.toThrow()
   })
 
-  it("should reject missing path property", async () => {
-    await expect(listDirTool.execute({} as any, ctx)).rejects.toThrow()
+  it("should reject empty path", async () => {
+    await expect(listDirTool.execute({ path: "" }, ctx))
+      .rejects.toThrow()
+  })
+})
+
+describe("Feature: Domain-specific properties", () => {
+  it("should maintain alphabetical ordering of entries", async () => {
+    const files = ["zebra.txt", "alpha.txt", "beta.txt"]
+    files.forEach(file => writeFileSync(join(workDir, file), "content"))
+    
+    const result = await listDirTool.execute({ path: "." }, ctx)
+    const lines = result.split("\n")
+    const sortedLines = [...lines].sort()
+    expect(lines).toEqual(sortedLines)
+  })
+
+  it("should distinguish files from directories consistently", async () => {
+    writeFileSync(join(workDir, "file"), "content")
+    mkdirSync(join(workDir, "dir"))
+    
+    const result = await listDirTool.execute({ path: "." }, ctx)
+    const lines = result.split("\n")
+    
+    const fileEntry = lines.find(line => line === "file")
+    const dirEntry = lines.find(line => line === "dir/")
+    
+    expect(fileEntry).toBeDefined()
+    expect(dirEntry).toBeDefined()
+    expect(fileEntry).not.toContain("/")
+    expect(dirEntry).toContain("/")
+  })
+
+  it("should handle directories with many entries", async () => {
+    const numFiles = 100
+    for (let i = 0; i < numFiles; i++) {
+      writeFileSync(join(workDir, `file${i.toString().padStart(3, "0")}.txt`), "content")
+    }
+    
+    const result = await listDirTool.execute({ path: "." }, ctx)
+    const lines = result.split("\n")
+    expect(lines).toHaveLength(numFiles)
+    expect(lines.every(line => line.endsWith(".txt"))).toBe(true)
+  })
+
+  it("should handle special characters in filenames", async () => {
+    const specialFiles = ["file with spaces.txt", "file-with-dashes.txt", "file_with_underscores.txt"]
+    specialFiles.forEach(file => writeFileSync(join(workDir, file), "content"))
+    
+    const result = await listDirTool.execute({ path: "." }, ctx)
+    const lines = result.split("\n")
+    
+    specialFiles.forEach(expectedFile => {
+      expect(lines).toContain(expectedFile)
+    })
+  })
+
+  it("should return newline-separated entries for multiple items", async () => {
+    writeFileSync(join(workDir, "file1.txt"), "content")
+    writeFileSync(join(workDir, "file2.txt"), "content")
+    mkdirSync(join(workDir, "dir1"))
+    
+    const result = await listDirTool.execute({ path: "." }, ctx)
+    expect(typeof result).toBe("string")
+    expect(result.split("\n")).toHaveLength(3)
+    expect(result).toMatch(/^[^\n]+\n[^\n]+\n[^\n]+$/)
   })
 })

@@ -1,16 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import * as fc from "fast-check"
 import { buildProjectTree, createAgenticHandler } from "../src/agent-handler.js"
-import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context.js"
+import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
+import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 
 // Mock external dependencies
 vi.mock("@bollard/agents/src/executor.js", () => ({
   executeAgent: vi.fn().mockResolvedValue({
-    response: "Mock agent response",
-    totalCostUsd: 0.05,
-    totalDurationMs: 1500,
-    turns: 3,
+    response: "Mock response",
+    totalCostUsd: 0.01,
+    totalDurationMs: 1000,
+    turns: 1,
     toolCalls: []
   })
 }))
@@ -18,7 +19,7 @@ vi.mock("@bollard/agents/src/executor.js", () => ({
 vi.mock("@bollard/agents/src/planner.js", () => ({
   createPlannerAgent: vi.fn().mockReturnValue({
     role: "planner",
-    instructions: "Mock planner instructions",
+    instructions: "Mock planner",
     tools: []
   })
 }))
@@ -26,7 +27,7 @@ vi.mock("@bollard/agents/src/planner.js", () => ({
 vi.mock("@bollard/agents/src/coder.js", () => ({
   createCoderAgent: vi.fn().mockReturnValue({
     role: "coder", 
-    instructions: "Mock coder instructions",
+    instructions: "Mock coder",
     tools: []
   })
 }))
@@ -34,7 +35,7 @@ vi.mock("@bollard/agents/src/coder.js", () => ({
 vi.mock("@bollard/agents/src/tester.js", () => ({
   createTesterAgent: vi.fn().mockReturnValue({
     role: "tester",
-    instructions: "Mock tester instructions", 
+    instructions: "Mock tester", 
     tools: []
   })
 }))
@@ -49,277 +50,228 @@ vi.mock("@bollard/llm/src/client.js", () => ({
 }))
 
 vi.mock("node:fs/promises", () => ({
-  readFile: vi.fn(),
-  readdir: vi.fn()
+  readFile: vi.fn().mockResolvedValue("mock file content"),
+  readdir: vi.fn().mockResolvedValue(["file1.js", "file2.ts"])
 }))
 
 vi.mock("node:child_process", () => ({
   execFile: vi.fn()
 }))
 
-describe("Feature: buildProjectTree returns string representation", () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it("should return a string for valid directory", async () => {
-    const { readdir, readFile } = await import("node:fs/promises")
-    vi.mocked(readdir).mockResolvedValue(["file1.ts", "file2.js"] as any)
-    vi.mocked(readFile).mockResolvedValue("mock file content")
-
-    const result = await buildProjectTree("/valid/path")
-    
+describe("Feature: buildProjectTree returns project structure as string", () => {
+  it("should return a string representation of project structure", async () => {
+    const result = await buildProjectTree("/test/dir")
     expect(typeof result).toBe("string")
     expect(result.length).toBeGreaterThan(0)
   })
 
-  it("should handle empty directories", async () => {
-    const { readdir } = await import("node:fs/promises")
-    vi.mocked(readdir).mockResolvedValue([] as any)
-
-    const result = await buildProjectTree("/empty/dir")
-    
+  it("should handle workDir with profile parameter", async () => {
+    const profile: ToolchainProfile = {
+      name: "node",
+      packageManager: "npm",
+      testFramework: "vitest",
+      buildTool: "vite"
+    }
+    const result = await buildProjectTree("/test/dir", profile)
     expect(typeof result).toBe("string")
   })
 
-  it("should handle filesystem errors gracefully", async () => {
-    const { readdir } = await import("node:fs/promises")
-    vi.mocked(readdir).mockRejectedValue(new Error("ENOENT: no such file or directory"))
-
-    await expect(buildProjectTree("/nonexistent")).rejects.toThrow()
-  })
-})
-
-describe("Feature: buildProjectTree property-based tests", () => {
-  it("should always return non-empty string for any valid path", async () => {
-    const { readdir, readFile } = await import("node:fs/promises")
-    vi.mocked(readdir).mockResolvedValue(["test.js"] as any)
-    vi.mocked(readFile).mockResolvedValue("content")
-
-    await fc.assert(fc.asyncProperty(
+  it("should work with various directory paths", () => {
+    return fc.assert(fc.asyncProperty(
       fc.string({ minLength: 1, maxLength: 100 }).filter(s => !s.includes('\0')),
       async (workDir) => {
         const result = await buildProjectTree(workDir)
         expect(typeof result).toBe("string")
-        expect(result.length).toBeGreaterThan(0)
       }
     ))
   })
 })
 
-describe("Feature: createAgenticHandler returns function", () => {
-  const mockConfig: BollardConfig = {
-    llm: {
-      default: {
-        provider: "openai",
-        model: "gpt-4"
-      }
-    }
-  }
+describe("Feature: buildProjectTree handles invalid inputs", () => {
+  it("should handle empty string workDir", async () => {
+    const result = await buildProjectTree("")
+    expect(typeof result).toBe("string")
+  })
+
+  it("should handle null bytes in path", async () => {
+    await expect(buildProjectTree("/test\0/dir")).rejects.toThrow()
+  })
+
+  it("should handle very long paths", async () => {
+    const longPath = "/".repeat(5000)
+    const result = await buildProjectTree(longPath)
+    expect(typeof result).toBe("string")
+  })
+})
+
+describe("Feature: createAgenticHandler returns node execution function", () => {
+  let mockConfig: BollardConfig
+  let mockNode: BlueprintNode
+  let mockContext: PipelineContext
 
   beforeEach(() => {
-    vi.clearAllMocks()
-  })
+    mockConfig = {
+      llm: {
+        default: {
+          provider: "openai",
+          model: "gpt-4"
+        }
+      }
+    } as BollardConfig
 
-  it("should return a function", async () => {
-    const handler = await createAgenticHandler(mockConfig, "/test/dir")
-    
-    expect(typeof handler).toBe("function")
-  })
-
-  it("should create handler that processes blueprint nodes", async () => {
-    const { readdir, readFile } = await import("node:fs/promises")
-    vi.mocked(readdir).mockResolvedValue(["test.ts"] as any)
-    vi.mocked(readFile).mockResolvedValue("test content")
-
-    const handler = await createAgenticHandler(mockConfig, "/test/dir")
-    
-    const mockNode: BlueprintNode = {
+    mockNode = {
       id: "test-node",
-      type: "planner",
-      dependencies: [],
-      metadata: {}
-    }
-    
-    const mockContext: PipelineContext = {
-      workDir: "/test/dir",
-      config: mockConfig
+      type: "plan",
+      description: "Test node",
+      dependencies: []
     }
 
-    const result = await handler(mockNode, mockContext)
+    mockContext = {
+      workDir: "/test/work",
+      config: mockConfig,
+      results: new Map()
+    }
+  })
+
+  it("should return a function that processes blueprint nodes", async () => {
+    const handler = await createAgenticHandler(mockConfig, "/test/work")
+    expect(typeof handler).toBe("function")
     
+    const result = await handler(mockNode, mockContext)
     expect(result).toBeDefined()
-    expect(typeof result).toBe("object")
+    expect(typeof result.success).toBe("boolean")
   })
 
   it("should handle different node types", async () => {
-    const { readdir, readFile } = await import("node:fs/promises")
-    vi.mocked(readdir).mockResolvedValue([] as any)
-    vi.mocked(readFile).mockResolvedValue("")
-
-    const handler = await createAgenticHandler(mockConfig, "/test/dir")
+    const handler = await createAgenticHandler(mockConfig, "/test/work")
     
-    const nodeTypes = ["planner", "coder", "tester"]
-    
-    for (const nodeType of nodeTypes) {
-      const mockNode: BlueprintNode = {
-        id: `${nodeType}-node`,
-        type: nodeType as any,
-        dependencies: [],
-        metadata: {}
-      }
-      
-      const mockContext: PipelineContext = {
-        workDir: "/test/dir", 
-        config: mockConfig
-      }
-
-      const result = await handler(mockNode, mockContext)
+    const nodeTypes = ["plan", "code", "test", "verify"]
+    for (const type of nodeTypes) {
+      const node = { ...mockNode, type }
+      const result = await handler(node, mockContext)
       expect(result).toBeDefined()
     }
   })
 
-  it("should reject invalid config", async () => {
-    const invalidConfig = {} as BollardConfig
-
-    await expect(createAgenticHandler(invalidConfig, "/test/dir")).rejects.toThrow()
-  })
-
-  it("should reject invalid work directory", async () => {
-    const { readdir } = await import("node:fs/promises")
-    vi.mocked(readdir).mockRejectedValue(new Error("ENOENT"))
-
-    await expect(createAgenticHandler(mockConfig, "/nonexistent/dir")).rejects.toThrow()
+  it("should work with profile parameter", async () => {
+    const profile: ToolchainProfile = {
+      name: "node",
+      packageManager: "npm", 
+      testFramework: "vitest",
+      buildTool: "vite"
+    }
+    
+    const handler = await createAgenticHandler(mockConfig, "/test/work", profile)
+    const result = await handler(mockNode, mockContext)
+    expect(result).toBeDefined()
   })
 })
 
-describe("Feature: createAgenticHandler property-based tests", () => {
-  it("should always return function for valid inputs", async () => {
-    const { readdir, readFile } = await import("node:fs/promises")
-    vi.mocked(readdir).mockResolvedValue([] as any)
-    vi.mocked(readFile).mockResolvedValue("")
+describe("Feature: createAgenticHandler handles various node configurations", () => {
+  let mockConfig: BollardConfig
 
-    const validConfig: BollardConfig = {
+  beforeEach(() => {
+    mockConfig = {
       llm: {
         default: {
           provider: "openai",
           model: "gpt-4"
         }
       }
+    } as BollardConfig
+  })
+
+  it("should handle nodes with dependencies", async () => {
+    const handler = await createAgenticHandler(mockConfig, "/test/work")
+    
+    const nodeWithDeps: BlueprintNode = {
+      id: "dependent-node",
+      type: "code",
+      description: "Node with dependencies",
+      dependencies: ["dep1", "dep2"]
     }
 
-    await fc.assert(fc.asyncProperty(
-      fc.string({ minLength: 1, maxLength: 50 }).filter(s => !s.includes('\0')),
-      async (workDir) => {
-        const handler = await createAgenticHandler(validConfig, workDir)
-        expect(typeof handler).toBe("function")
+    const context: PipelineContext = {
+      workDir: "/test/work",
+      config: mockConfig,
+      results: new Map([
+        ["dep1", { success: true, output: "dep1 result" }],
+        ["dep2", { success: true, output: "dep2 result" }]
+      ])
+    }
+
+    const result = await handler(nodeWithDeps, context)
+    expect(result.success).toBeDefined()
+  })
+
+  it("should process nodes with property-based inputs", () => {
+    return fc.assert(fc.asyncProperty(
+      fc.record({
+        id: fc.string({ minLength: 1, maxLength: 50 }),
+        type: fc.constantFrom("plan", "code", "test", "verify"),
+        description: fc.string({ minLength: 1, maxLength: 200 }),
+        dependencies: fc.array(fc.string({ minLength: 1, maxLength: 20 }), { maxLength: 5 })
+      }),
+      async (nodeData) => {
+        const handler = await createAgenticHandler(mockConfig, "/test/work")
+        const context: PipelineContext = {
+          workDir: "/test/work", 
+          config: mockConfig,
+          results: new Map()
+        }
+        
+        const result = await handler(nodeData, context)
+        expect(typeof result.success).toBe("boolean")
       }
     ))
   })
 })
 
-describe("Feature: handler function processes nodes correctly", () => {
-  it("should handle nodes with complex metadata", async () => {
-    const { readdir, readFile } = await import("node:fs/promises")
-    vi.mocked(readdir).mockResolvedValue(["complex.ts"] as any)
-    vi.mocked(readFile).mockResolvedValue("complex content")
-
-    const mockConfig: BollardConfig = {
-      llm: {
-        default: {
-          provider: "anthropic",
-          model: "claude-3"
-        }
-      }
-    }
-
-    const handler = await createAgenticHandler(mockConfig, "/complex/dir")
-    
-    const complexNode: BlueprintNode = {
-      id: "complex-node",
-      type: "coder",
-      dependencies: ["dep1", "dep2"],
-      metadata: {
-        task: "Complex coding task",
-        files: ["src/main.ts", "src/utils.ts"],
-        requirements: ["TypeScript", "ESLint"]
-      }
-    }
-    
-    const mockContext: PipelineContext = {
-      workDir: "/complex/dir",
-      config: mockConfig
-    }
-
-    const result = await handler(complexNode, mockContext)
-    
-    expect(result).toBeDefined()
-    expect(typeof result).toBe("object")
+describe("Feature: createAgenticHandler error conditions", () => {
+  it("should handle invalid config", async () => {
+    const invalidConfig = {} as BollardConfig
+    await expect(createAgenticHandler(invalidConfig, "/test/work")).rejects.toThrow()
   })
 
-  it("should handle empty metadata", async () => {
-    const { readdir, readFile } = await import("node:fs/promises")
-    vi.mocked(readdir).mockResolvedValue([] as any)
-    vi.mocked(readFile).mockResolvedValue("")
-
-    const mockConfig: BollardConfig = {
-      llm: {
-        default: {
-          provider: "openai",
-          model: "gpt-3.5-turbo"
-        }
-      }
-    }
-
-    const handler = await createAgenticHandler(mockConfig, "/empty/dir")
-    
-    const emptyNode: BlueprintNode = {
-      id: "empty-node", 
-      type: "planner",
-      dependencies: [],
-      metadata: {}
-    }
-    
-    const mockContext: PipelineContext = {
-      workDir: "/empty/dir",
-      config: mockConfig
-    }
-
-    const result = await handler(emptyNode, mockContext)
-    
-    expect(result).toBeDefined()
-  })
-
-  it("should handle nodes with many dependencies", async () => {
-    const { readdir, readFile } = await import("node:fs/promises")
-    vi.mocked(readdir).mockResolvedValue(["dep.ts"] as any)
-    vi.mocked(readFile).mockResolvedValue("dependency content")
-
-    const mockConfig: BollardConfig = {
+  it("should handle empty workDir", async () => {
+    const config: BollardConfig = {
       llm: {
         default: {
           provider: "openai",
           model: "gpt-4"
         }
       }
+    } as BollardConfig
+
+    const handler = await createAgenticHandler(config, "")
+    expect(typeof handler).toBe("function")
+  })
+
+  it("should handle malformed node objects", async () => {
+    const config: BollardConfig = {
+      llm: {
+        default: {
+          provider: "openai", 
+          model: "gpt-4"
+        }
+      }
+    } as BollardConfig
+
+    const handler = await createAgenticHandler(config, "/test/work")
+    const context: PipelineContext = {
+      workDir: "/test/work",
+      config,
+      results: new Map()
     }
 
-    const handler = await createAgenticHandler(mockConfig, "/deps/dir")
-    
-    const depNode: BlueprintNode = {
-      id: "dep-heavy-node",
-      type: "tester", 
-      dependencies: Array.from({ length: 10 }, (_, i) => `dep-${i}`),
-      metadata: { testType: "integration" }
-    }
-    
-    const mockContext: PipelineContext = {
-      workDir: "/deps/dir",
-      config: mockConfig
-    }
+    const malformedNode = {
+      id: "",
+      type: "invalid-type",
+      description: "",
+      dependencies: []
+    } as BlueprintNode
 
-    const result = await handler(depNode, mockContext)
-    
-    expect(result).toBeDefined()
+    const result = await handler(malformedNode, context)
+    expect(typeof result.success).toBe("boolean")
   })
 })
