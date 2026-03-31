@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createContext } from "@bollard/engine/src/context.js"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { editFileTool } from "../src/tools/edit-file.js"
 import { listDirTool } from "../src/tools/list-dir.js"
 import { readFileTool } from "../src/tools/read-file.js"
 import { runCommandTool } from "../src/tools/run-command.js"
@@ -107,5 +108,65 @@ describe("run_command", () => {
     await expect(
       runCommandTool.execute({ command: "node -v", cwd: "../../../" }, ctx),
     ).rejects.toThrow("Path traversal")
+  })
+})
+
+describe("edit_file", () => {
+  it("replaces a unique string in a file", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "const x = 1\nconst y = 2\nconst z = 3\n")
+    const result = await editFileTool.execute(
+      { path: "code.ts", old_string: "const y = 2", new_string: "const y = 42" },
+      ctx,
+    )
+    expect(result).toContain("Replaced")
+    expect(readFileSync(join(tempDir, "code.ts"), "utf-8")).toBe(
+      "const x = 1\nconst y = 42\nconst z = 3\n",
+    )
+  })
+
+  it("returns error when old_string not found", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "const x = 1\n")
+    const result = await editFileTool.execute(
+      { path: "code.ts", old_string: "nonexistent", new_string: "replacement" },
+      ctx,
+    )
+    expect(result).toContain("Error: old_string not found in file")
+  })
+
+  it("returns error when old_string appears multiple times", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "foo\nbar\nfoo\n")
+    const result = await editFileTool.execute(
+      { path: "code.ts", old_string: "foo", new_string: "baz" },
+      ctx,
+    )
+    expect(result).toContain("appears 2 times")
+  })
+
+  it("rejects path traversal", async () => {
+    await expect(
+      editFileTool.execute({ path: "../../../etc/passwd", old_string: "x", new_string: "y" }, ctx),
+    ).rejects.toThrow("Path traversal")
+  })
+
+  it("handles empty new_string for deletion", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "line1\nDELETE_ME\nline3\n")
+    const result = await editFileTool.execute(
+      { path: "code.ts", old_string: "DELETE_ME\n", new_string: "" },
+      ctx,
+    )
+    expect(result).toContain("Replaced")
+    expect(readFileSync(join(tempDir, "code.ts"), "utf-8")).toBe("line1\nline3\n")
+  })
+
+  it("handles replacement that changes line count", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "line1\nline2\nline3\n")
+    const result = await editFileTool.execute(
+      { path: "code.ts", old_string: "line2", new_string: "line2a\nline2b\nline2c" },
+      ctx,
+    )
+    expect(result).toContain("Replaced 1 line(s) with 3 line(s)")
+    expect(readFileSync(join(tempDir, "code.ts"), "utf-8")).toBe(
+      "line1\nline2a\nline2b\nline2c\nline3\n",
+    )
   })
 })

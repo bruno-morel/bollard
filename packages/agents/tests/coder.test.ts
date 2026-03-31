@@ -15,12 +15,13 @@ describe("createCoderAgent", () => {
     expect(agent.role).toBe("coder")
   })
 
-  it("uses all tools including write and command", async () => {
+  it("uses all tools including write, edit, and command", async () => {
     const agent = await createCoderAgent()
     expect(agent.tools).toEqual(ALL_TOOLS)
     const toolNames = agent.tools.map((t) => t.name)
     expect(toolNames).toContain("read_file")
     expect(toolNames).toContain("write_file")
+    expect(toolNames).toContain("edit_file")
     expect(toolNames).toContain("list_dir")
     expect(toolNames).toContain("search")
     expect(toolNames).toContain("run_command")

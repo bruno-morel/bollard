@@ -59,6 +59,16 @@ export function compactOlderTurns(messages: LLMMessage[]): void {
           block.toolInput["content"] = `${content.slice(0, 200)}\n[...file content truncated]`
         }
       }
+      if (block.type === "tool_use" && block.toolName === "edit_file" && block.toolInput) {
+        const oldStr = block.toolInput["old_string"]
+        if (typeof oldStr === "string" && oldStr.length > 200) {
+          block.toolInput["old_string"] = `${oldStr.slice(0, 200)}\n[...truncated]`
+        }
+        const newStr = block.toolInput["new_string"]
+        if (typeof newStr === "string" && newStr.length > 200) {
+          block.toolInput["new_string"] = `${newStr.slice(0, 200)}\n[...truncated]`
+        }
+      }
     }
   }
 }
