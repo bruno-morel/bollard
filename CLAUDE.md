@@ -6,7 +6,7 @@
 
 Bollard is an **artifact integrity framework** for AI-assisted software development. It ensures every artifact (code, tests, docs, infra) is produced, adversarially verified, and mechanically proven sound before shipping. The core innovation: separate the producer from the verifier, then prove the verification itself is meaningful (via mutation testing).
 
-Bollard is currently at **Stage 1.5** (language-agnostic toolchain detection). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 adds language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 will add Docker-isolated verification containers. Stage 3 adds per-language mutation testing, semantic review, and the production feedback loop.
+Bollard is currently at **Stage 2** (adversarial verification infrastructure). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 fixes critical agent infrastructure issues discovered during bollard-on-bollard pipeline runs: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. The second half of Stage 2 (Docker-isolated verification containers) is a separate effort. Stage 3 adds per-language mutation testing, semantic review, and the production feedback loop.
 
 ### What works right now
 
@@ -24,14 +24,15 @@ docker compose run --rm dev --filter @bollard/cli run start -- run implement-fea
 docker compose run --rm dev --filter @bollard/cli run start -- eval planner
 ```
 
-### Known limitations at Stage 1.5
+### Known limitations at Stage 2
 
-- No Docker isolation — tools run in the host container with path-traversal guards only.
+- No Docker isolation — tools run in the host container with path-traversal guards only. Docker-isolated verification containers are the second half of Stage 2.
 - Non-TypeScript adversarial tests use blackbox mode only (no in-language mutation yet).
-- Test output parsing is Vitest-specific (`parseSummary`) — Stage 2 will add parsers for pytest, go test, cargo test.
-- Signature extraction only works for TypeScript — Stage 2 will add extractors for other languages.
+- Test output parsing is Vitest-specific (`parseSummary`) — future work will add parsers for pytest, go test, cargo test.
+- Signature extraction only works for TypeScript — `LlmFallbackExtractor` stub exists but is not yet implemented.
 - No MCP server yet.
 - No OpenAI/Google providers — Anthropic only.
+- No rollback on coder max-turns failure — partially-written files remain on disk.
 
 ## Tech Stack (Non-Negotiable)
 
@@ -93,7 +94,7 @@ The `compose.yaml` mounts the workspace as a volume so edits are reflected immed
 
 Pass `ANTHROPIC_API_KEY` via a `.env` file at the project root.
 
-## Project Structure (Stage 1.5)
+## Project Structure (Stage 2)
 
 ```
 bollard/
@@ -161,6 +162,7 @@ bollard/
 │   │   │   │   ├── index.ts      # ALL_TOOLS, READ_ONLY_TOOLS
 │   │   │   │   ├── read-file.ts  # Read file contents (path-traversal protected)
 │   │   │   │   ├── write-file.ts # Write file, create dirs (path-traversal protected)
+│   │   │   │   ├── edit-file.ts  # Surgical string replacement in files (Stage 2)
 │   │   │   │   ├── list-dir.ts   # List directory with type indicators
 │   │   │   │   ├── search.ts     # Grep-based search with glob filtering
 │   │   │   │   └── run-command.ts # Execute whitelisted commands with timeout
@@ -173,27 +175,29 @@ bollard/
 │   │   │   └── tester.md         # System prompt with {{testFramework}} placeholder
 │   │   └── tests/
 │   │       ├── executor.test.ts  # 19 tests — multi-turn, max turns, errors, cost, verification
-│   │       ├── tools.test.ts     # 11 tests — all 5 tools + path traversal guards
-│   │       ├── prompt-template.test.ts  # 5 tests — placeholder replacement, TS/Python profiles
+│   │       ├── tools.test.ts     # 17 tests — all 6 tools + path traversal guards
+│   │       ├── prompt-template.test.ts  # 9 tests — placeholder replacement, TS/Python profiles
 │   │       ├── planner.test.ts   # 5 tests — prompt loading, read-only tools, JSON schema
-│   │       ├── coder.test.ts     # 4 tests — prompt loading, full toolset, turns
+│   │       ├── coder.test.ts     # 5 tests — prompt loading, full toolset, turns, maxTurns
 │   │       └── tester.test.ts    # 5 tests — prompt loading, test generation
 │   │
 │   ├── verify/                   ← VERIFICATION (Stage 1 + 1.5)
 │   │   ├── src/
 │   │   │   ├── static.ts         # runStaticChecks(workDir, profile?) — profile-driven or hardcoded fallback
 │   │   │   ├── dynamic.ts        # runTests(workDir, testFiles?, profile?) — profile-driven test execution
-│   │   │   └── type-extractor.ts # extractSignaturesFromFiles, extractPrivateIdentifiers
+│   │   │   └── type-extractor.ts # extractSignaturesFromFiles, extractTypeDefinitions, resolveReferencedTypes, SignatureExtractor
 │   │   └── tests/
-│   │       ├── static.test.ts    # 3 tests — structure + live integration
+│   │       ├── static.test.ts    # 4 tests — structure + live integration
 │   │       ├── dynamic.test.ts   # 2 tests — integration test
-│   │       └── type-extractor.test.ts  # 12 tests — signature extraction
+│   │       └── type-extractor.test.ts  # 23 tests — signatures, type definitions, reference resolution, extractors
 │   │
-│   ├── blueprints/               ← BLUEPRINT DEFINITIONS (Stage 1 + 1.5)
+│   ├── blueprints/               ← BLUEPRINT DEFINITIONS (Stage 1 + 1.5 + 2)
 │   │   ├── src/
-│   │   │   └── implement-feature.ts  # 11-node pipeline with profile-driven checks
+│   │   │   ├── implement-feature.ts  # 11-node pipeline with profile-driven checks
+│   │   │   └── write-tests-helpers.ts  # deriveAdversarialTestPath, stripMarkdownFences (Stage 2)
 │   │   └── tests/
-│   │       └── implement-feature.test.ts  # 11 tests — node order, types, structure
+│   │       ├── implement-feature.test.ts  # 11 tests — node order, types, structure
+│   │       └── write-tests-helpers.test.ts  # 11 tests — test path derivation, fence stripping
 │   │
 │   └── cli/                      ← CLI (Stage 0 + Stage 1 + Stage 1.5)
 │       ├── src/
@@ -211,10 +215,10 @@ bollard/
 
 ## Current Test Stats
 
-- **23 test files, 240 tests passing** (0 skipped, 0 failing)
-- **Source:** ~4970 LOC across 7 packages
-- **Tests:** ~3415 LOC (+ ~6856 LOC adversarial tests)
-- **Prompts:** ~220 LOC (planner.md + coder.md + tester.md)
+- **24 test files, 269 tests passing** (0 skipped, 0 failing)
+- **Source:** ~5800 LOC across 7 packages
+- **Tests:** ~3690 LOC (+ ~6850 LOC adversarial tests)
+- **Prompts:** ~238 LOC (planner.md + coder.md + tester.md)
 
 ## Key Types (Source of Truth)
 
@@ -281,6 +285,7 @@ The core Stage 1 upgrade. Runs a tool-use loop:
 |------|------|--------|-------------|
 | read-file | `read_file` | Planner + Coder | Read file contents, path-traversal protected |
 | write-file | `write_file` | Coder only | Write/overwrite files, creates parent dirs |
+| edit-file | `edit_file` | Coder only | Surgical string replacement (unique match required), path-traversal protected |
 | list-dir | `list_dir` | Planner + Coder | List directory contents with type indicators |
 | search | `search` | Planner + Coder | Grep-based regex search with glob filter |
 | run-command | `run_command` | Coder only | Execute whitelisted commands (pnpm, node, tsc, biome, git, etc.) |
@@ -290,8 +295,8 @@ All tools enforce path-traversal protection: resolved path must start with `work
 ### Agents
 
 - **Planner** (`createPlannerAgent(profile?)`): read-only tools, temperature 0.2, max 25 turns. Produces structured JSON plan with summary, acceptance criteria, affected files, risk assessment, steps.
-- **Coder** (`createCoderAgent(profile?)`): all 5 tools, temperature 0.3, max 40 turns. Implements plans, writes tests, runs checks.
-- **Tester** (`createTesterAgent(profile?)`): no tools, temperature 0.3, max 5 turns. Generates adversarial tests from type signatures.
+- **Coder** (`createCoderAgent(profile?)`): all 6 tools, temperature 0.3, max 60 turns. Implements plans, writes tests. Prefers `edit_file` for existing files, `write_file` for new files. Verification hook skipped after 80% of turns to prevent budget exhaustion.
+- **Tester** (`createTesterAgent(profile?)`): no tools, temperature 0.3, max 5 turns. Generates adversarial tests from type signatures and referenced type definitions.
 
 All agent creation functions accept an optional `ToolchainProfile` — when provided, prompt `{{placeholders}}` are filled with detected language/tool values.
 
@@ -316,9 +321,9 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 3. **approve-plan** (human_gate) — shows plan, waits for human approval
 4. **implement** (agentic/coder) — coder agent implements plan with full toolset
 5. **static-checks** (deterministic) — profile-driven typecheck + lint + audit + secretScan
-6. **extract-signatures** (deterministic) — extract type signatures from affected files (TS only; other languages return empty)
-7. **generate-tests** (agentic/tester) — adversarial test generation from signatures
-8. **write-tests** (deterministic) — write test files, check for information leaks
+6. **extract-signatures** (deterministic) — extract function signatures + referenced type definitions from affected files (TS only; other languages return empty via `LlmFallbackExtractor` stub)
+7. **generate-tests** (agentic/tester) — adversarial test generation from signatures + type definitions
+8. **write-tests** (deterministic) — strip markdown fences, derive test path (src/ → tests/), write test files, check for information leaks
 9. **run-tests** (deterministic) — profile-driven test execution
 10. **generate-diff** (deterministic) — `git diff --stat main`
 11. **approve-pr** (human_gate) — shows diff summary, waits for human approval
@@ -416,19 +421,31 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - `PipelineContext.toolchainProfile` field
 - New error codes: `DETECTION_FAILED`, `PROFILE_INVALID`
 
+### Stage 2 — Agent Infrastructure (DONE):
+- `edit_file` agent tool for surgical string replacement (prevents whole-file rewrites)
+- Deeper type extraction: `ExtractedTypeDefinition`, `ExtractionResult`, `resolveReferencedTypes`
+- `SignatureExtractor` interface with `TsCompilerExtractor` and `LlmFallbackExtractor` stub
+- `write-tests` node: profile-aware test placement (src/ → tests/), markdown fence stripping
+- Coder max turns increased to 60 (from 40) with turn budget guidance in prompt
+- `skipVerificationAfterTurn` in executor — verification hook skipped above 80% turn budget
+- `buildTesterMessage` includes referenced type definitions alongside signatures
+- `compactOlderTurns` handles `edit_file` payloads
+
 ### DO NOT build yet:
-- MCP server — Stage 2
-- Docker-isolated verification containers — Stage 2
-- Non-TS type extractors (Python/Go/Rust signature extraction) — Stage 2
-- In-language adversarial test generation — Stage 2
-- OpenAI/Google LLM providers — Stage 2
+- MCP server — Stage 2 (Docker isolation half)
+- Docker-isolated verification containers — Stage 2 (Docker isolation half)
+- LLM-based signature extraction for non-TS languages — Stage 2 (Docker isolation half)
+- In-language adversarial test generation — Stage 2 (Docker isolation half)
+- OpenAI/Google LLM providers — Stage 2 (Docker isolation half)
 - Per-language mutation testing (Stryker, mutmut, cargo-mutants, etc.) — Stage 3
 - Semantic review agent — Stage 3
 - Production probes, drift detection, flag manager — Stage 3
+- Git rollback on coder max-turns failure — Stage 3
+- Verification summary batching (single feedback message instead of per-check retries) — Stage 3
 - CI integration, run history, self-improvement — Stage 4
 
 ### Size (current):
-- Total: ~4970 source, ~3415 test (+~6856 adversarial), ~220 prompt across 7 packages
+- Total: ~5800 source, ~3690 test (+~6850 adversarial), ~238 prompt across 7 packages
 
 ## Design Principles
 
