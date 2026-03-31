@@ -225,8 +225,16 @@ async function runPlanCommand(args: string[]): Promise<void> {
   log("")
 }
 
-async function runVerifyCommand(): Promise<void> {
+async function runVerifyCommand(args: string[]): Promise<void> {
   const workDir = findWorkspaceRoot(process.cwd())
+
+  // Check if --profile flag is present
+  if (args.includes("--profile")) {
+    const { detectToolchain } = await import("@bollard/detect/src/detect.js")
+    const profile = await detectToolchain(workDir)
+    process.stdout.write(`${JSON.stringify(profile, null, 2)}\n`)
+    process.exit(0)
+  }
 
   header("verify")
   log(`${DIM}Running static checks...${RESET}\n`)
@@ -365,7 +373,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "verify") {
-    await runVerifyCommand()
+    await runVerifyCommand(rest)
     return
   }
 
@@ -435,7 +443,7 @@ async function main(): Promise<void> {
   log("Commands:\n")
   log(`  ${BOLD}run${RESET} <blueprint> --task <task>   Run a blueprint`)
   log(`  ${BOLD}plan${RESET} --task <task>              Generate a plan without implementing`)
-  log(`  ${BOLD}verify${RESET}                          Run static checks (tsc, biome, audit)`)
+  log(`  ${BOLD}verify${RESET} [--profile]              Run static checks (or show profile)`)
   log(`  ${BOLD}eval${RESET} [agent]                    Run agent eval sets`)
   log(`  ${BOLD}config show${RESET} [--sources]         Show resolved configuration`)
   log(`  ${BOLD}init${RESET}                            Detect project configuration`)
