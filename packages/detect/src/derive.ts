@@ -15,8 +15,12 @@ export function deriveSourcePatterns(lang: LanguageId): string[] {
       return [
         "**/*.js",
         "**/*.jsx",
+        "**/*.mjs",
+        "**/*.cjs",
         "!**/*.test.js",
         "!**/*.spec.js",
+        "!**/*.test.mjs",
+        "!**/*.spec.mjs",
         "!**/node_modules/**",
         "!**/dist/**",
       ]
@@ -45,7 +49,7 @@ export function deriveTestPatterns(lang: LanguageId): string[] {
     case "typescript":
       return ["**/*.test.ts", "**/*.spec.ts"]
     case "javascript":
-      return ["**/*.test.js", "**/*.spec.js"]
+      return ["**/*.test.js", "**/*.spec.js", "**/*.test.mjs", "**/*.spec.mjs"]
     case "python":
       return ["**/test_*.py", "**/*_test.py"]
     case "go":
@@ -69,8 +73,9 @@ export function deriveTestPatterns(lang: LanguageId): string[] {
 export function deriveIgnorePatterns(lang: LanguageId): string[] {
   switch (lang) {
     case "typescript":
-    case "javascript":
       return ["node_modules", "dist", ".tsbuildinfo", "coverage"]
+    case "javascript":
+      return ["node_modules", "dist", "coverage", ".cache"]
     case "python":
       return ["__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache", "*.egg-info"]
     case "go":

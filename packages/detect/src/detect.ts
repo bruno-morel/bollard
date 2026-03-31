@@ -2,6 +2,7 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { detect as detectFallback } from "./languages/fallback.js"
 import { detect as detectGo } from "./languages/go.js"
+import { detect as detectJavascript } from "./languages/javascript.js"
 import { detect as detectPython } from "./languages/python.js"
 import { detect as detectRust } from "./languages/rust.js"
 import { detect as detectTypescript } from "./languages/typescript.js"
@@ -9,7 +10,14 @@ import type { ToolchainProfile } from "./types.js"
 
 const execFileAsync = promisify(execFile)
 
-const detectors = [detectTypescript, detectPython, detectGo, detectRust, detectFallback]
+const detectors = [
+  detectTypescript,
+  detectJavascript,
+  detectPython,
+  detectGo,
+  detectRust,
+  detectFallback,
+]
 
 async function checkGitleaks(): Promise<boolean> {
   try {

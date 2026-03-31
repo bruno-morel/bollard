@@ -5,12 +5,14 @@ import { detectToolchain } from "../src/detect.js"
 import { detect as detectFallback } from "../src/languages/fallback.js"
 import { buildManualProfile } from "../src/languages/fallback.js"
 import { detect as detectGo } from "../src/languages/go.js"
+import { detect as detectJavascript } from "../src/languages/javascript.js"
 import { detect as detectPython } from "../src/languages/python.js"
 import { detect as detectRust } from "../src/languages/rust.js"
 import { detect as detectTypescript } from "../src/languages/typescript.js"
 
 const FIXTURES = resolve(fileURLToPath(import.meta.url), "../fixtures")
 const TS_PROJECT = resolve(FIXTURES, "ts-project")
+const JS_PROJECT = resolve(FIXTURES, "js-project")
 const PY_PROJECT = resolve(FIXTURES, "py-project")
 const GO_PROJECT = resolve(FIXTURES, "go-project")
 const RUST_PROJECT = resolve(FIXTURES, "rust-project")
@@ -32,10 +34,77 @@ describe("TypeScript detector", () => {
   })
 
   it("returns null for non-TypeScript projects", async () => {
+    expect(await detectTypescript(JS_PROJECT)).toBeNull()
     expect(await detectTypescript(PY_PROJECT)).toBeNull()
     expect(await detectTypescript(GO_PROJECT)).toBeNull()
     expect(await detectTypescript(RUST_PROJECT)).toBeNull()
     expect(await detectTypescript(EMPTY_PROJECT)).toBeNull()
+  })
+})
+
+describe("JavaScript detector", () => {
+  it("detects a JavaScript project with npm, eslint, jest", async () => {
+    const result = await detectJavascript(JS_PROJECT)
+    expect(result).not.toBeNull()
+    expect(result?.language).toBe("javascript")
+    expect(result?.packageManager).toBe("npm")
+    expect(result?.checks.lint?.label).toBe("ESLint")
+    expect(result?.checks.test?.label).toBe("Jest")
+    expect(result?.checks.audit).toBeDefined()
+    expect(result?.sourcePatterns).toContain("**/*.js")
+    expect(result?.sourcePatterns).toContain("**/*.mjs")
+    expect(result?.sourcePatterns).toContain("**/*.cjs")
+    expect(result?.testPatterns).toContain("**/*.test.js")
+    expect(result?.testPatterns).toContain("**/*.spec.js")
+    expect(result?.testPatterns).toContain("**/*.test.mjs")
+    expect(result?.testPatterns).toContain("**/*.spec.mjs")
+    expect(result?.allowedCommands).toContain("npm")
+    expect(result?.allowedCommands).toContain("eslint")
+  })
+
+  it("returns null for TypeScript projects (TS takes priority)", async () => {
+    expect(await detectJavascript(TS_PROJECT)).toBeNull()
+  })
+
+  it("returns null for non-JavaScript projects", async () => {
+    expect(await detectJavascript(PY_PROJECT)).toBeNull()
+    expect(await detectJavascript(GO_PROJECT)).toBeNull()
+    expect(await detectJavascript(RUST_PROJECT)).toBeNull()
+    expect(await detectJavascript(EMPTY_PROJECT)).toBeNull()
+  })
+
+  it("detects correct package manager from lock files", async () => {
+    // Test with npm (our fixture uses package-lock.json)
+    const result = await detectJavascript(JS_PROJECT)
+    expect(result?.packageManager).toBe("npm")
+  })
+
+  it("detects correct linter from config files", async () => {
+    // Test with ESLint (our fixture uses .eslintrc.json)
+    const result = await detectJavascript(JS_PROJECT)
+    expect(result?.checks.lint?.label).toBe("ESLint")
+  })
+
+  it("detects correct test framework from config files", async () => {
+    // Test with Jest (our fixture uses jest.config.js)
+    const result = await detectJavascript(JS_PROJECT)
+    expect(result?.checks.test?.label).toBe("Jest")
+  })
+
+  it("has correct source and test patterns", async () => {
+    const result = await detectJavascript(JS_PROJECT)
+    expect(result?.sourcePatterns).toContain("**/*.js")
+    expect(result?.sourcePatterns).toContain("**/*.mjs")
+    expect(result?.sourcePatterns).toContain("**/*.cjs")
+    expect(result?.sourcePatterns).toContain("!**/node_modules/**")
+    expect(result?.testPatterns).toContain("**/*.test.js")
+    expect(result?.testPatterns).toContain("**/*.spec.js")
+    expect(result?.testPatterns).toContain("**/*.test.mjs")
+    expect(result?.testPatterns).toContain("**/*.spec.mjs")
+    expect(result?.ignorePatterns).toContain("node_modules")
+    expect(result?.ignorePatterns).toContain("dist")
+    expect(result?.ignorePatterns).toContain("coverage")
+    expect(result?.ignorePatterns).toContain(".cache")
   })
 })
 
@@ -53,6 +122,7 @@ describe("Python detector", () => {
 
   it("returns null for non-Python projects", async () => {
     expect(await detectPython(TS_PROJECT)).toBeNull()
+    expect(await detectPython(JS_PROJECT)).toBeNull()
     expect(await detectPython(GO_PROJECT)).toBeNull()
     expect(await detectPython(RUST_PROJECT)).toBeNull()
     expect(await detectPython(EMPTY_PROJECT)).toBeNull()
@@ -73,6 +143,7 @@ describe("Go detector", () => {
 
   it("returns null for non-Go projects", async () => {
     expect(await detectGo(TS_PROJECT)).toBeNull()
+    expect(await detectGo(JS_PROJECT)).toBeNull()
     expect(await detectGo(PY_PROJECT)).toBeNull()
     expect(await detectGo(RUST_PROJECT)).toBeNull()
     expect(await detectGo(EMPTY_PROJECT)).toBeNull()
@@ -93,6 +164,7 @@ describe("Rust detector", () => {
 
   it("returns null for non-Rust projects", async () => {
     expect(await detectRust(TS_PROJECT)).toBeNull()
+    expect(await detectRust(JS_PROJECT)).toBeNull()
     expect(await detectRust(PY_PROJECT)).toBeNull()
     expect(await detectRust(GO_PROJECT)).toBeNull()
     expect(await detectRust(EMPTY_PROJECT)).toBeNull()
@@ -132,6 +204,21 @@ describe("detectToolchain orchestrator", () => {
     expect(profile.checks.audit).toBeDefined()
   })
 
+  it("detects JavaScript project", async () => {
+    const profile = await detectToolchain(JS_PROJECT)
+    expect(profile.language).toBe("javascript")
+    expect(profile.packageManager).toBe("npm")
+    expect(profile.checks.lint?.label).toBe("ESLint")
+    expect(profile.checks.test?.label).toBe("Jest")
+    expect(profile.checks.audit).toBeDefined()
+  })
+
+  it("TypeScript takes priority over JavaScript when both markers exist", async () => {
+    // TS_PROJECT has both package.json and tsconfig.json
+    const profile = await detectToolchain(TS_PROJECT)
+    expect(profile.language).toBe("typescript")
+  })
+
   it("detects Python project", async () => {
     const profile = await detectToolchain(PY_PROJECT)
     expect(profile.language).toBe("python")
@@ -164,6 +251,16 @@ describe("detectToolchain orchestrator", () => {
     expect(profile.checks.lint?.cmd).toBe("pnpm")
     expect(profile.checks.lint?.args).toEqual(["run", "lint"])
     expect(profile.checks.audit?.cmd).toBe("pnpm")
+    expect(profile.checks.audit?.args).toEqual(["audit", "--audit-level=high"])
+  })
+
+  it("JavaScript profile produces correct commands", async () => {
+    const profile = await detectToolchain(JS_PROJECT)
+    expect(profile.checks.lint?.cmd).toBe("npm")
+    expect(profile.checks.lint?.args).toEqual(["run", "lint"])
+    expect(profile.checks.test?.cmd).toBe("npm")
+    expect(profile.checks.test?.args).toEqual(["run", "test"])
+    expect(profile.checks.audit?.cmd).toBe("npm")
     expect(profile.checks.audit?.args).toEqual(["audit", "--audit-level=high"])
   })
 })
