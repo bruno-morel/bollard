@@ -13,6 +13,7 @@ COPY packages/cli/package.json packages/cli/package.json
 COPY packages/agents/package.json packages/agents/package.json
 COPY packages/verify/package.json packages/verify/package.json
 COPY packages/blueprints/package.json packages/blueprints/package.json
+COPY packages/detect/package.json packages/detect/package.json
 
 RUN pnpm install --frozen-lockfile
 

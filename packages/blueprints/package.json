@@ -8,6 +8,7 @@
     "./src/*": "./src/*"
   },
   "dependencies": {
+    "@bollard/detect": "workspace:*",
     "@bollard/engine": "workspace:*",
     "@bollard/agents": "workspace:*",
     "@bollard/verify": "workspace:*"

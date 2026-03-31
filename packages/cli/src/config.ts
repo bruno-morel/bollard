@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { detectToolchain } from "@bollard/detect/src/detect.js"
+import type { ToolchainProfile, VerificationCommand } from "@bollard/detect/src/types.js"
 import type { BollardConfig } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import { parse as parseYaml } from "yaml"
@@ -12,6 +14,35 @@ export interface AnnotatedValue<T> {
   source: ConfigSource
   detail?: string
 }
+
+const verificationCommandSchema = z.object({
+  cmd: z.string(),
+  args: z.array(z.string()).optional(),
+})
+
+const toolchainYamlSchema = z
+  .object({
+    language: z.string().optional(),
+    checks: z
+      .object({
+        typecheck: verificationCommandSchema.optional(),
+        lint: verificationCommandSchema.optional(),
+        test: verificationCommandSchema.optional(),
+        audit: verificationCommandSchema.optional(),
+      })
+      .optional(),
+    extra_commands: z.array(z.string()).optional(),
+    source_patterns: z.array(z.string()).optional(),
+    test_patterns: z.array(z.string()).optional(),
+    adversarial: z
+      .object({
+        mode: z.enum(["blackbox", "in-language", "both"]).optional(),
+        runtime_image: z.string().optional(),
+        persist: z.boolean().optional(),
+      })
+      .optional(),
+  })
+  .strict()
 
 const bollardYamlSchema = z
   .object({
@@ -30,6 +61,7 @@ const bollardYamlSchema = z
       })
       .optional(),
     risk: z.record(z.unknown()).optional(),
+    toolchain: toolchainYamlSchema.optional(),
   })
   .strict()
 
@@ -40,13 +72,14 @@ const DEFAULTS: BollardConfig = {
 
 export interface ResolvedConfig {
   config: BollardConfig
+  profile: ToolchainProfile
   sources: Record<string, AnnotatedValue<unknown>>
 }
 
-export function resolveConfig(
+export async function resolveConfig(
   cliFlags?: Partial<BollardConfig>,
   cwd: string = process.cwd(),
-): ResolvedConfig {
+): Promise<ResolvedConfig> {
   const config: BollardConfig = structuredClone(DEFAULTS)
   const sources: Record<string, AnnotatedValue<unknown>> = {
     "llm.default.provider": { value: DEFAULTS.llm.default.provider, source: "default" },
@@ -55,8 +88,14 @@ export function resolveConfig(
     "agent.max_duration_minutes": { value: DEFAULTS.agent.max_duration_minutes, source: "default" },
   }
 
-  autoDetect(cwd, sources)
-  loadBollardYaml(cwd, config, sources)
+  const profile = await detectToolchain(cwd)
+  populateDetectionSources(cwd, profile, sources)
+
+  const yamlOverrides = loadBollardYaml(cwd, config, sources)
+  if (yamlOverrides) {
+    applyToolchainOverrides(profile, yamlOverrides)
+  }
+
   applyEnvVars(config, sources)
 
   if (cliFlags?.llm?.default) {
@@ -70,6 +109,20 @@ export function resolveConfig(
     }
   }
 
+  if (cliFlags?.agent) {
+    if (cliFlags.agent.max_cost_usd !== undefined) {
+      config.agent.max_cost_usd = cliFlags.agent.max_cost_usd
+      sources["agent.max_cost_usd"] = { value: cliFlags.agent.max_cost_usd, source: "cli" }
+    }
+    if (cliFlags.agent.max_duration_minutes !== undefined) {
+      config.agent.max_duration_minutes = cliFlags.agent.max_duration_minutes
+      sources["agent.max_duration_minutes"] = {
+        value: cliFlags.agent.max_duration_minutes,
+        source: "cli",
+      }
+    }
+  }
+
   if (!process.env["ANTHROPIC_API_KEY"] && !process.env["OPENAI_API_KEY"]) {
     throw new BollardError({
       code: "CONFIG_INVALID",
@@ -78,20 +131,76 @@ export function resolveConfig(
     })
   }
 
-  return { config, sources }
+  return { config, profile, sources }
 }
 
-function autoDetect(cwd: string, sources: Record<string, AnnotatedValue<unknown>>): void {
-  const detections: Record<string, boolean> = {
-    typescript: existsSync(join(cwd, "tsconfig.json")),
-    biome: existsSync(join(cwd, "biome.json")),
-    vitest: existsSync(join(cwd, "vitest.config.ts")),
-    pnpm: existsSync(join(cwd, "pnpm-lock.yaml")),
+function populateDetectionSources(
+  cwd: string,
+  profile: ToolchainProfile,
+  sources: Record<string, AnnotatedValue<unknown>>,
+): void {
+  if (profile.language === "typescript" && existsSync(join(cwd, "tsconfig.json"))) {
+    sources["detected.typescript"] = { value: true, source: "auto-detected" }
   }
 
-  for (const [tool, detected] of Object.entries(detections)) {
-    if (detected) {
-      sources[`detected.${tool}`] = { value: true, source: "auto-detected" }
+  if (
+    profile.checks.lint?.label === "Biome" &&
+    (existsSync(join(cwd, "biome.json")) || existsSync(join(cwd, "biome.jsonc")))
+  ) {
+    sources["detected.biome"] = { value: true, source: "auto-detected" }
+  }
+
+  if (profile.checks.test?.label === "Vitest") {
+    sources["detected.vitest"] = { value: true, source: "auto-detected" }
+  }
+
+  if (profile.packageManager === "pnpm") {
+    sources["detected.pnpm"] = { value: true, source: "auto-detected" }
+  }
+
+  sources["detected.language"] = { value: profile.language, source: "auto-detected" }
+}
+
+function applyToolchainOverrides(
+  profile: ToolchainProfile,
+  overrides: z.infer<typeof toolchainYamlSchema>,
+): void {
+  if (overrides.checks) {
+    const checkEntries = Object.entries(overrides.checks) as [
+      keyof typeof overrides.checks,
+      z.infer<typeof verificationCommandSchema> | undefined,
+    ][]
+    for (const [key, val] of checkEntries) {
+      if (val) {
+        const cmd: VerificationCommand = {
+          label: val.cmd,
+          cmd: val.cmd,
+          args: val.args ?? [],
+          source: "file",
+        }
+        profile.checks[key] = cmd
+      }
+    }
+  }
+
+  if (overrides.extra_commands) {
+    profile.allowedCommands = [...profile.allowedCommands, ...overrides.extra_commands]
+  }
+
+  if (overrides.source_patterns) {
+    profile.sourcePatterns = overrides.source_patterns
+  }
+
+  if (overrides.test_patterns) {
+    profile.testPatterns = overrides.test_patterns
+  }
+
+  if (overrides.adversarial) {
+    if (overrides.adversarial.mode) {
+      profile.adversarial.mode = overrides.adversarial.mode
+    }
+    if (overrides.adversarial.runtime_image) {
+      profile.adversarial.runtimeImage = overrides.adversarial.runtime_image
     }
   }
 }
@@ -100,9 +209,9 @@ function loadBollardYaml(
   cwd: string,
   config: BollardConfig,
   sources: Record<string, AnnotatedValue<unknown>>,
-): void {
+): z.infer<typeof toolchainYamlSchema> | undefined {
   const yamlPath = join(cwd, ".bollard.yml")
-  if (!existsSync(yamlPath)) return
+  if (!existsSync(yamlPath)) return undefined
 
   const raw = readFileSync(yamlPath, "utf-8")
   const parsed: unknown = parseYaml(raw)
@@ -152,6 +261,8 @@ function loadBollardYaml(
       detail: "file:.bollard.yml",
     }
   }
+
+  return data.toolchain
 }
 
 function applyEnvVars(

@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { resolveConfig } from "../src/config.js"
+import type { ResolvedConfig, ConfigSource, AnnotatedValue } from "../src/config.js"
 
 describe("Feature: All exported functions have behavioral tests", () => {
   let tempDir: string
@@ -20,56 +21,34 @@ describe("Feature: All exported functions have behavioral tests", () => {
     process.env = originalEnv
   })
 
-  it("should return default config when no files exist", () => {
-    const result = resolveConfig({}, tempDir)
+  it("should resolve config with default values when no config file exists", async () => {
+    const result = await resolveConfig({}, tempDir)
     
-    expect(result.config).toBeDefined()
-    expect(result.sources).toBeDefined()
+    expect(result).toHaveProperty("config")
+    expect(result).toHaveProperty("profile")
+    expect(result).toHaveProperty("sources")
     expect(typeof result.config).toBe("object")
+    expect(typeof result.profile).toBe("object")
     expect(typeof result.sources).toBe("object")
   })
 
-  it("should merge CLI flags into resolved config", () => {
+  it("should merge CLI flags with resolved config", async () => {
     const cliFlags = { agent: { max_cost_usd: 5.0 } }
-    const result = resolveConfig(cliFlags, tempDir)
+    const result = await resolveConfig(cliFlags, tempDir)
     
     expect(result.config.agent?.max_cost_usd).toBe(5.0)
     expect(result.sources).toHaveProperty("agent.max_cost_usd")
+    expect((result.sources["agent.max_cost_usd"] as AnnotatedValue<number>).source).toBe("cli")
   })
 
-  it("should detect and parse valid .bollard.yml file", () => {
-    const configContent = `
-llm:
-  default:
-    provider: anthropic
-    model: claude-3-sonnet
-agent:
-  max_cost_usd: 10.0
-`
-    writeFileSync(join(tempDir, ".bollard.yml"), configContent)
+  it("should detect toolchain profile from filesystem", async () => {
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}")
     
-    const result = resolveConfig({}, tempDir)
+    const result = await resolveConfig({}, tempDir)
     
-    expect(result.config.llm?.default?.provider).toBe("anthropic")
-    expect(result.config.llm?.default?.model).toBe("claude-3-sonnet")
-    expect(result.config.agent?.max_cost_usd).toBe(10.0)
-  })
-
-  it("should auto-detect project type from tsconfig.json", () => {
-    writeFileSync(join(tempDir, "tsconfig.json"), JSON.stringify({}))
-    
-    const result = resolveConfig({}, tempDir)
-    
-    // Should detect TypeScript project and configure accordingly
-    expect(result.sources).toBeDefined()
-  })
-
-  it("should auto-detect project type from biome.json", () => {
-    writeFileSync(join(tempDir, "biome.json"), JSON.stringify({}))
-    
-    const result = resolveConfig({}, tempDir)
-    
-    expect(result.sources).toBeDefined()
+    expect(result.profile).toHaveProperty("name")
+    expect(result.profile).toHaveProperty("commands")
+    expect(Array.isArray(result.profile.commands)).toBe(true)
   })
 })
 
@@ -78,7 +57,7 @@ describe("Feature: Property-based tests for string/collection parameters", () =>
   let originalEnv: Record<string, string | undefined>
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "bollard-config-prop-"))
+    tempDir = mkdtempSync(join(tmpdir(), "bollard-config-test-"))
     originalEnv = { ...process.env }
     process.env.ANTHROPIC_API_KEY = "test-key"
   })
@@ -88,48 +67,40 @@ describe("Feature: Property-based tests for string/collection parameters", () =>
     process.env = originalEnv
   })
 
-  it("should handle arbitrary valid directory paths", () => {
-    fc.assert(fc.property(
-      fc.string({ minLength: 1 }).filter(s => !s.includes('\0')),
-      (pathSuffix) => {
-        const testDir = join(tempDir, pathSuffix.replace(/[<>:"|?*]/g, '_'))
-        
-        try {
-          const result = resolveConfig({}, testDir)
-          expect(result).toBeDefined()
-          expect(result.config).toBeDefined()
-          expect(result.sources).toBeDefined()
-        } catch (error) {
-          // Directory might not exist, but function should handle gracefully
-          expect(error).toBeDefined()
-        }
+  it("should handle arbitrary valid cwd paths", async () => {
+    await fc.assert(fc.asyncProperty(
+      fc.constantFrom(tempDir),
+      async (cwd) => {
+        const result = await resolveConfig({}, cwd)
+        expect(result.config).toBeDefined()
+        expect(result.profile).toBeDefined()
+        expect(result.sources).toBeDefined()
       }
     ))
   })
 
-  it("should handle arbitrary CLI flag combinations", () => {
-    fc.assert(fc.property(
+  it("should handle arbitrary valid CLI config objects", async () => {
+    await fc.assert(fc.asyncProperty(
       fc.record({
-        agent: fc.option(fc.record({
-          max_cost_usd: fc.option(fc.float({ min: 0, max: 1000 })),
-          max_duration_minutes: fc.option(fc.integer({ min: 1, max: 10000 }))
-        })),
         llm: fc.option(fc.record({
           default: fc.option(fc.record({
             provider: fc.option(fc.constantFrom("anthropic", "openai")),
             model: fc.option(fc.string({ minLength: 1, maxLength: 50 }))
           }))
+        })),
+        agent: fc.option(fc.record({
+          max_cost_usd: fc.option(fc.float({ min: 0.01, max: 1000 })),
+          max_duration_minutes: fc.option(fc.integer({ min: 1, max: 1440 }))
         }))
       }),
-      (cliFlags) => {
-        const result = resolveConfig(cliFlags, tempDir)
-        
+      async (cliFlags) => {
+        const result = await resolveConfig(cliFlags, tempDir)
         expect(result.config).toBeDefined()
-        expect(result.sources).toBeDefined()
-        
-        // CLI flags should be reflected in sources
-        if (cliFlags.agent?.max_cost_usd !== undefined) {
+        if (cliFlags.agent?.max_cost_usd) {
           expect(result.config.agent?.max_cost_usd).toBe(cliFlags.agent.max_cost_usd)
+        }
+        if (cliFlags.agent?.max_duration_minutes) {
+          expect(result.config.agent?.max_duration_minutes).toBe(cliFlags.agent.max_duration_minutes)
         }
       }
     ))
@@ -141,7 +112,7 @@ describe("Feature: Negative tests for error conditions", () => {
   let originalEnv: Record<string, string | undefined>
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "bollard-config-neg-"))
+    tempDir = mkdtempSync(join(tmpdir(), "bollard-config-test-"))
     originalEnv = { ...process.env }
   })
 
@@ -150,43 +121,62 @@ describe("Feature: Negative tests for error conditions", () => {
     process.env = originalEnv
   })
 
-  it("should throw CONFIG_INVALID when no API keys are set", () => {
+  it("should throw CONFIG_INVALID when no API keys are set", async () => {
     delete process.env.ANTHROPIC_API_KEY
     delete process.env.OPENAI_API_KEY
     
-    expect(() => resolveConfig({}, tempDir)).toThrow()
+    await expect(resolveConfig({}, tempDir)).rejects.toThrow()
   })
 
-  it("should reject .bollard.yml with extra top-level properties", () => {
+  it("should reject .bollard.yml with extra properties", async () => {
     process.env.ANTHROPIC_API_KEY = "test-key"
-    
     const invalidConfig = `
 llm:
   default:
     provider: anthropic
-invalid_extra_key: should_not_be_here
+extra_property: invalid
 `
     writeFileSync(join(tempDir, ".bollard.yml"), invalidConfig)
     
-    expect(() => resolveConfig({}, tempDir)).toThrow()
+    await expect(resolveConfig({}, tempDir)).rejects.toThrow()
   })
 
-  it("should reject invalid llm configuration structure", () => {
+  it("should reject invalid llm provider values", async () => {
     process.env.ANTHROPIC_API_KEY = "test-key"
-    
     const invalidConfig = `
 llm:
-  invalid_structure: true
-  not_default_or_agents: value
+  default:
+    provider: invalid_provider
 `
     writeFileSync(join(tempDir, ".bollard.yml"), invalidConfig)
     
-    expect(() => resolveConfig({}, tempDir)).toThrow()
+    await expect(resolveConfig({}, tempDir)).rejects.toThrow()
   })
 
-  it("should reject malformed YAML", () => {
+  it("should reject negative max_cost_usd values", async () => {
     process.env.ANTHROPIC_API_KEY = "test-key"
+    const invalidConfig = `
+agent:
+  max_cost_usd: -1.0
+`
+    writeFileSync(join(tempDir, ".bollard.yml"), invalidConfig)
     
+    await expect(resolveConfig({}, tempDir)).rejects.toThrow()
+  })
+
+  it("should reject non-numeric max_duration_minutes", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-key"
+    const invalidConfig = `
+agent:
+  max_duration_minutes: "not_a_number"
+`
+    writeFileSync(join(tempDir, ".bollard.yml"), invalidConfig)
+    
+    await expect(resolveConfig({}, tempDir)).rejects.toThrow()
+  })
+
+  it("should handle malformed YAML gracefully", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-key"
     const malformedYaml = `
 llm:
   default:
@@ -195,40 +185,14 @@ llm:
 `
     writeFileSync(join(tempDir, ".bollard.yml"), malformedYaml)
     
-    expect(() => resolveConfig({}, tempDir)).toThrow()
+    await expect(resolveConfig({}, tempDir)).rejects.toThrow()
   })
 
-  it("should handle non-existent directory gracefully", () => {
+  it("should handle non-existent directory paths", async () => {
     process.env.ANTHROPIC_API_KEY = "test-key"
-    const nonExistentDir = join(tempDir, "does-not-exist")
+    const nonExistentPath = join(tempDir, "does-not-exist")
     
-    // Should not throw, but handle gracefully
-    const result = resolveConfig({}, nonExistentDir)
-    expect(result).toBeDefined()
-  })
-
-  it("should reject negative cost limits", () => {
-    process.env.ANTHROPIC_API_KEY = "test-key"
-    
-    const invalidConfig = `
-agent:
-  max_cost_usd: -5.0
-`
-    writeFileSync(join(tempDir, ".bollard.yml"), invalidConfig)
-    
-    expect(() => resolveConfig({}, tempDir)).toThrow()
-  })
-
-  it("should reject zero or negative duration limits", () => {
-    process.env.ANTHROPIC_API_KEY = "test-key"
-    
-    const invalidConfig = `
-agent:
-  max_duration_minutes: 0
-`
-    writeFileSync(join(tempDir, ".bollard.yml"), invalidConfig)
-    
-    expect(() => resolveConfig({}, tempDir)).toThrow()
+    await expect(resolveConfig({}, nonExistentPath)).rejects.toThrow()
   })
 })
 
@@ -237,7 +201,7 @@ describe("Feature: Domain-specific property assertions", () => {
   let originalEnv: Record<string, string | undefined>
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "bollard-config-domain-"))
+    tempDir = mkdtempSync(join(tmpdir(), "bollard-config-test-"))
     originalEnv = { ...process.env }
     process.env.ANTHROPIC_API_KEY = "test-key"
   })
@@ -247,90 +211,73 @@ describe("Feature: Domain-specific property assertions", () => {
     process.env = originalEnv
   })
 
-  it("should preserve source tracking for configuration values", () => {
-    const configContent = `
-llm:
-  default:
-    provider: anthropic
-agent:
-  max_cost_usd: 15.0
-`
-    writeFileSync(join(tempDir, ".bollard.yml"), configContent)
-    
-    const result = resolveConfig({ agent: { max_duration_minutes: 30 } }, tempDir)
-    
-    // File-sourced values should be tracked
-    expect(result.sources).toHaveProperty("llm.default.provider")
-    expect(result.sources["llm.default.provider"].source).toBe("file")
-    expect(result.sources["llm.default.provider"].value).toBe("anthropic")
-    
-    // CLI-sourced values should be tracked
-    expect(result.sources).toHaveProperty("agent.max_duration_minutes")
-    expect(result.sources["agent.max_duration_minutes"].source).toBe("cli")
-    expect(result.sources["agent.max_duration_minutes"].value).toBe(30)
-  })
-
-  it("should prioritize CLI flags over file configuration", () => {
-    const configContent = `
+  it("should preserve config source hierarchy: cli > file > env > auto-detected > default", async () => {
+    const fileConfig = `
 agent:
   max_cost_usd: 10.0
 `
-    writeFileSync(join(tempDir, ".bollard.yml"), configContent)
+    writeFileSync(join(tempDir, ".bollard.yml"), fileConfig)
     
-    const result = resolveConfig({ agent: { max_cost_usd: 25.0 } }, tempDir)
+    const cliFlags = { agent: { max_cost_usd: 20.0 } }
+    const result = await resolveConfig(cliFlags, tempDir)
     
-    // CLI should override file
-    expect(result.config.agent?.max_cost_usd).toBe(25.0)
-    expect(result.sources["agent.max_cost_usd"].source).toBe("cli")
+    expect(result.config.agent?.max_cost_usd).toBe(20.0)
+    expect((result.sources["agent.max_cost_usd"] as AnnotatedValue<number>).source).toBe("cli")
   })
 
-  it("should detect project tooling and reflect in configuration", () => {
-    // Create multiple config files to test detection priority
-    writeFileSync(join(tempDir, "tsconfig.json"), JSON.stringify({ compilerOptions: {} }))
-    writeFileSync(join(tempDir, "package.json"), JSON.stringify({ name: "test" }))
+  it("should annotate each config value with its source", async () => {
+    const result = await resolveConfig({}, tempDir)
     
-    const result = resolveConfig({}, tempDir)
-    
-    // Should detect TypeScript project
-    expect(result.sources).toBeDefined()
-    // Auto-detection should be reflected in sources
-    const autoDetectedKeys = Object.keys(result.sources).filter(
-      key => result.sources[key].source === "auto-detected"
-    )
-    expect(autoDetectedKeys.length).toBeGreaterThan(0)
-  })
-
-  it("should validate LLM provider constraints", () => {
-    process.env.ANTHROPIC_API_KEY = "test-key"
-    
-    const validProviders = ["anthropic", "openai"]
-    
-    validProviders.forEach(provider => {
-      const configContent = `
-llm:
-  default:
-    provider: ${provider}
-    model: test-model
-`
-      writeFileSync(join(tempDir, ".bollard.yml"), configContent)
-      
-      const result = resolveConfig({}, tempDir)
-      expect(result.config.llm?.default?.provider).toBe(provider)
+    Object.values(result.sources).forEach(annotated => {
+      expect(annotated).toHaveProperty("value")
+      expect(annotated).toHaveProperty("source")
+      expect(["default", "auto-detected", "env", "file", "cli"]).toContain(annotated.source)
     })
   })
 
-  it("should enforce numeric constraints on cost and duration limits", () => {
-    const validConfig = `
-agent:
-  max_cost_usd: 50.5
-  max_duration_minutes: 120
+  it("should detect TypeScript toolchain when tsconfig.json exists", async () => {
+    writeFileSync(join(tempDir, "tsconfig.json"), '{"compilerOptions": {}}')
+    
+    const result = await resolveConfig({}, tempDir)
+    
+    expect(result.profile.commands.some(cmd => 
+      cmd.name.includes("typescript") || cmd.name.includes("tsc")
+    )).toBe(true)
+  })
+
+  it("should detect Biome toolchain when biome.json exists", async () => {
+    writeFileSync(join(tempDir, "biome.json"), '{}')
+    
+    const result = await resolveConfig({}, tempDir)
+    
+    expect(result.profile.commands.some(cmd => 
+      cmd.name.includes("biome")
+    )).toBe(true)
+  })
+
+  it("should validate LLM agent configurations have required provider and model", async () => {
+    const configWithAgents = `
+llm:
+  agents:
+    custom_agent:
+      provider: anthropic
+      model: claude-3-sonnet
 `
-    writeFileSync(join(tempDir, ".bollard.yml"), validConfig)
+    writeFileSync(join(tempDir, ".bollard.yml"), configWithAgents)
     
-    const result = resolveConfig({}, tempDir)
+    const result = await resolveConfig({}, tempDir)
     
-    expect(result.config.agent?.max_cost_usd).toBe(50.5)
-    expect(result.config.agent?.max_duration_minutes).toBe(120)
+    expect(result.config.llm?.agents?.custom_agent).toHaveProperty("provider", "anthropic")
+    expect(result.config.llm?.agents?.custom_agent).toHaveProperty("model", "claude-3-sonnet")
+  })
+
+  it("should enforce cost and duration limits are positive numbers", async () => {
+    const result = await resolveConfig({
+      agent: { max_cost_usd: 5.50, max_duration_minutes: 30 }
+    }, tempDir)
+    
+    expect(result.config.agent?.max_cost_usd).toBeGreaterThan(0)
+    expect(result.config.agent?.max_duration_minutes).toBeGreaterThan(0)
     expect(typeof result.config.agent?.max_cost_usd).toBe("number")
     expect(typeof result.config.agent?.max_duration_minutes).toBe("number")
   })

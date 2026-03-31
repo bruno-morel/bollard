@@ -7,6 +7,7 @@ import { executeAgent } from "@bollard/agents/src/executor.js"
 import { createPlannerAgent } from "@bollard/agents/src/planner.js"
 import { createTesterAgent } from "@bollard/agents/src/tester.js"
 import type { AgentContext, ExecutorOptions } from "@bollard/agents/src/types.js"
+import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
@@ -16,7 +17,33 @@ const execFileAsync = promisify(execFile)
 const MAX_PRELOAD_CHARS_PER_FILE = 10_000
 const MAX_PRELOAD_FILES = 10
 
-export async function buildProjectTree(workDir: string): Promise<string> {
+function buildFileFilter(profile?: ToolchainProfile): (entry: string) => boolean {
+  if (profile) {
+    const ignores = new Set(profile.ignorePatterns)
+    const srcExts = profile.sourcePatterns
+      .filter((p) => p.startsWith("**/*."))
+      .map((p) => p.replace("**/*", ""))
+    return (e: string) => {
+      if (ignores.has(e)) return false
+      for (const ig of ignores) {
+        if (e.includes(ig)) return false
+      }
+      if (srcExts.length === 0) return true
+      return srcExts.some((ext) => e.endsWith(ext)) || e.endsWith(".md")
+    }
+  }
+
+  return (e: string) =>
+    (e.endsWith(".ts") || e.endsWith(".md")) &&
+    !e.includes("node_modules") &&
+    !e.includes("dist") &&
+    !e.includes(".tsbuildinfo")
+}
+
+export async function buildProjectTree(
+  workDir: string,
+  profile?: ToolchainProfile,
+): Promise<string> {
   try {
     const rootEntries = await readdir(workDir)
     const rootFiles = rootEntries
@@ -26,14 +53,9 @@ export async function buildProjectTree(workDir: string): Promise<string> {
     const pkgEntries = await readdir(resolve(workDir, "packages"), {
       recursive: true,
     })
+    const fileFilter = buildFileFilter(profile)
     const sourceFiles = (pkgEntries as string[])
-      .filter(
-        (e) =>
-          (e.endsWith(".ts") || e.endsWith(".md")) &&
-          !e.includes("node_modules") &&
-          !e.includes("dist") &&
-          !e.includes(".tsbuildinfo"),
-      )
+      .filter(fileFilter)
       .sort()
       .map((f) => `  packages/${f}`)
 
@@ -89,13 +111,46 @@ async function preloadAffectedFiles(plan: unknown, workDir: string): Promise<str
   return `\n\n## Pre-loaded File Contents\nThese files from the plan have been pre-read. Do NOT call read_file on these — the contents are already here.\n\n${sections.join("\n\n")}`
 }
 
-function createVerificationHook(workDir: string): (text: string) => Promise<string | null> {
+function createVerificationHook(
+  workDir: string,
+  profile?: ToolchainProfile,
+): (text: string) => Promise<string | null> {
   return async (): Promise<string | null> => {
-    const checks = [
-      { label: "typecheck", cmd: "pnpm", args: ["run", "typecheck"] },
-      { label: "lint", cmd: "pnpm", args: ["run", "lint"] },
-      { label: "test", cmd: "pnpm", args: ["run", "test"] },
-    ]
+    const checks = profile
+      ? [
+          ...(profile.checks.typecheck
+            ? [
+                {
+                  label: "typecheck",
+                  cmd: profile.checks.typecheck.cmd,
+                  args: profile.checks.typecheck.args,
+                },
+              ]
+            : []),
+          ...(profile.checks.lint
+            ? [
+                {
+                  label: "lint",
+                  cmd: profile.checks.lint.cmd,
+                  args: profile.checks.lint.args,
+                },
+              ]
+            : []),
+          ...(profile.checks.test
+            ? [
+                {
+                  label: "test",
+                  cmd: profile.checks.test.cmd,
+                  args: profile.checks.test.args,
+                },
+              ]
+            : []),
+        ]
+      : [
+          { label: "typecheck", cmd: "pnpm", args: ["run", "typecheck"] },
+          { label: "lint", cmd: "pnpm", args: ["run", "lint"] },
+          { label: "test", cmd: "pnpm", args: ["run", "test"] },
+        ]
 
     const failures: string[] = []
 
@@ -116,7 +171,7 @@ function createVerificationHook(workDir: string): (text: string) => Promise<stri
           err && typeof err === "object" && "stderr" in err
             ? String((err as { stderr: string }).stderr)
             : String(err)
-        failures.push(`## ${check.label} FAILED\n${(`${stdout}\n${stderr}`).slice(0, 3000)}`)
+        failures.push(`## ${check.label} FAILED\n${`${stdout}\n${stderr}`.slice(0, 3000)}`)
       }
     }
 
@@ -187,12 +242,13 @@ function buildTesterMessage(ctx: PipelineContext): string {
 export async function createAgenticHandler(
   config: BollardConfig,
   workDir: string,
+  profile?: ToolchainProfile,
 ): Promise<(node: BlueprintNode, ctx: PipelineContext) => Promise<NodeResult>> {
   const llmClient = new LLMClient(config)
   const agents = {
-    planner: await createPlannerAgent(),
-    coder: await createCoderAgent(),
-    tester: await createTesterAgent(),
+    planner: await createPlannerAgent(profile),
+    coder: await createCoderAgent(profile),
+    tester: await createTesterAgent(profile),
   }
 
   return async (node: BlueprintNode, ctx: PipelineContext): Promise<NodeResult> => {
@@ -230,13 +286,14 @@ export async function createAgenticHandler(
     const agentCtx: AgentContext = {
       pipelineCtx: ctx,
       workDir,
+      ...(profile?.allowedCommands ? { allowedCommands: profile.allowedCommands } : {}),
     }
 
     let userMessage = `Task: ${ctx.task}`
     let executorOptions: ExecutorOptions | undefined
 
     if (agentRole === "planner") {
-      const projectTree = await buildProjectTree(workDir)
+      const projectTree = await buildProjectTree(workDir, profile)
       if (projectTree) {
         userMessage = `Task: ${ctx.task}\n\n${projectTree}`
       }
@@ -246,7 +303,7 @@ export async function createAgenticHandler(
       const preloaded = await preloadAffectedFiles(ctx.plan, workDir)
       userMessage = `Task: ${ctx.task}\n\nApproved Plan:\n${JSON.stringify(ctx.plan, null, 2)}${preloaded}`
       executorOptions = {
-        postCompletionHook: createVerificationHook(workDir),
+        postCompletionHook: createVerificationHook(workDir, profile),
         maxVerificationRetries: 3,
       }
     }

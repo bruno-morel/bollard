@@ -18,8 +18,8 @@ afterEach(() => {
 })
 
 describe("resolveConfig", () => {
-  it("returns default values when no overrides exist", () => {
-    const { config, sources } = resolveConfig(undefined, tempDir)
+  it("returns default values when no overrides exist", async () => {
+    const { config, sources } = await resolveConfig(undefined, tempDir)
 
     expect(config.llm.default.provider).toBe("anthropic")
     expect(config.llm.default.model).toBe("claude-sonnet-4-20250514")
@@ -28,35 +28,36 @@ describe("resolveConfig", () => {
     expect(sources["llm.default.provider"]?.source).toBe("default")
   })
 
-  it("overrides model from BOLLARD_MODEL env var", () => {
+  it("overrides model from BOLLARD_MODEL env var", async () => {
     vi.stubEnv("BOLLARD_MODEL", "claude-haiku-3-5-20241022")
 
-    const { config, sources } = resolveConfig(undefined, tempDir)
+    const { config, sources } = await resolveConfig(undefined, tempDir)
 
     expect(config.llm.default.model).toBe("claude-haiku-3-5-20241022")
     expect(sources["llm.default.model"]?.source).toBe("env")
     expect(sources["llm.default.model"]?.detail).toBe("env:BOLLARD_MODEL")
   })
 
-  it("auto-detects tsconfig.json", () => {
+  it("auto-detects tsconfig.json", async () => {
     writeFileSync(join(tempDir, "tsconfig.json"), "{}")
 
-    const { sources } = resolveConfig(undefined, tempDir)
+    const { sources } = await resolveConfig(undefined, tempDir)
 
     expect(sources["detected.typescript"]?.source).toBe("auto-detected")
     expect(sources["detected.typescript"]?.value).toBe(true)
   })
 
-  it("auto-detects biome.json", () => {
+  it("auto-detects biome.json", async () => {
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}")
     writeFileSync(join(tempDir, "biome.json"), "{}")
 
-    const { sources } = resolveConfig(undefined, tempDir)
+    const { sources } = await resolveConfig(undefined, tempDir)
 
     expect(sources["detected.biome"]?.source).toBe("auto-detected")
     expect(sources["detected.biome"]?.value).toBe(true)
   })
 
-  it("parses .bollard.yml and merges values", () => {
+  it("parses .bollard.yml and merges values", async () => {
     const yaml = [
       "llm:",
       "  default:",
@@ -67,7 +68,7 @@ describe("resolveConfig", () => {
     ].join("\n")
     writeFileSync(join(tempDir, ".bollard.yml"), yaml)
 
-    const { config, sources } = resolveConfig(undefined, tempDir)
+    const { config, sources } = await resolveConfig(undefined, tempDir)
 
     expect(config.llm.default.provider).toBe("mock")
     expect(config.llm.default.model).toBe("test-model")
@@ -75,36 +76,59 @@ describe("resolveConfig", () => {
     expect(sources["llm.default.provider"]?.source).toBe("file")
   })
 
-  it("rejects invalid .bollard.yml with unknown keys", () => {
+  it("rejects invalid .bollard.yml with unknown keys", async () => {
     writeFileSync(join(tempDir, ".bollard.yml"), "unknown_key: true\n")
 
-    expect(() => resolveConfig(undefined, tempDir)).toThrow(BollardError)
+    await expect(resolveConfig(undefined, tempDir)).rejects.toThrow(BollardError)
     try {
-      resolveConfig(undefined, tempDir)
+      await resolveConfig(undefined, tempDir)
     } catch (err) {
       expect(BollardError.hasCode(err, "CONFIG_INVALID")).toBe(true)
     }
   })
 
-  it("env var overrides .bollard.yml value", () => {
+  it("env var overrides .bollard.yml value", async () => {
     const yaml = ["llm:", "  default:", "    model: yaml-model"].join("\n")
     writeFileSync(join(tempDir, ".bollard.yml"), yaml)
     vi.stubEnv("BOLLARD_MODEL", "env-model")
 
-    const { config } = resolveConfig(undefined, tempDir)
+    const { config } = await resolveConfig(undefined, tempDir)
 
     expect(config.llm.default.model).toBe("env-model")
   })
 
-  it("throws CONFIG_INVALID when no API key is set", () => {
+  it("throws CONFIG_INVALID when no API key is set", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "")
     vi.stubEnv("OPENAI_API_KEY", "")
 
-    expect(() => resolveConfig(undefined, tempDir)).toThrow(BollardError)
+    await expect(resolveConfig(undefined, tempDir)).rejects.toThrow(BollardError)
     try {
-      resolveConfig(undefined, tempDir)
+      await resolveConfig(undefined, tempDir)
     } catch (err) {
       expect(BollardError.hasCode(err, "CONFIG_INVALID")).toBe(true)
     }
+  })
+
+  it("includes ToolchainProfile in resolved config", async () => {
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}")
+    writeFileSync(join(tempDir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'")
+
+    const { profile } = await resolveConfig(undefined, tempDir)
+
+    expect(profile.language).toBe("typescript")
+    expect(profile.packageManager).toBe("pnpm")
+    expect(profile.checks.typecheck?.label).toBe("tsc")
+  })
+
+  it("applies .bollard.yml toolchain overrides", async () => {
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}")
+    writeFileSync(join(tempDir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'")
+    const yaml = ["toolchain:", "  extra_commands:", '    - "make"', '    - "docker"'].join("\n")
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    const { profile } = await resolveConfig(undefined, tempDir)
+
+    expect(profile.allowedCommands).toContain("make")
+    expect(profile.allowedCommands).toContain("docker")
   })
 })

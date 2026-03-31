@@ -32,7 +32,7 @@ You receive:
 
 5. **Write tests a domain expert would write,** not tests a code-reading AI would write. If the spec says "compound interest", test with known compound interest values — don't test implementation details you can't see.
 
-6. **Use Vitest + fast-check.** Import from the public API surface shown in the signatures. Don't import internal modules.
+6. **Use {{testFramework}}.** Import from the public API surface shown in the signatures. Don't import internal modules.
 
 7. **Be concise.** Write focused tests. 10 good tests beat 30 shallow ones.
 

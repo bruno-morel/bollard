@@ -29,6 +29,9 @@ importers:
 
   packages/agents:
     dependencies:
+      '@bollard/detect':
+        specifier: workspace:*
+        version: link:../detect
       '@bollard/engine':
         specifier: workspace:*
         version: link:../engine
@@ -41,6 +44,9 @@ importers:
       '@bollard/agents':
         specifier: workspace:*
         version: link:../agents
+      '@bollard/detect':
+        specifier: workspace:*
+        version: link:../detect
       '@bollard/engine':
         specifier: workspace:*
         version: link:../engine
@@ -56,6 +62,9 @@ importers:
       '@bollard/blueprints':
         specifier: workspace:*
         version: link:../blueprints
+      '@bollard/detect':
+        specifier: workspace:*
+        version: link:../detect
       '@bollard/engine':
         specifier: workspace:*
         version: link:../engine
@@ -72,8 +81,13 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
 
+  packages/detect: {}
+
   packages/engine:
     dependencies:
+      '@bollard/detect':
+        specifier: workspace:*
+        version: link:../detect
       zod:
         specifier: ^3.24.2
         version: 3.25.76
@@ -89,6 +103,9 @@ importers:
 
   packages/verify:
     dependencies:
+      '@bollard/detect':
+        specifier: workspace:*
+        version: link:../detect
       '@bollard/engine':
         specifier: workspace:*
         version: link:../engine

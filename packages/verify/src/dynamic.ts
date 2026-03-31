@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
+import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { NodeResult } from "@bollard/engine/src/blueprint.js"
 
 const execFileAsync = promisify(execFile)
@@ -19,6 +20,7 @@ function stripAnsi(text: string): string {
   return text.replace(ANSI_PATTERN, "")
 }
 
+// TODO: Stage 2 -- add parsers for pytest, go test, cargo test
 function parseSummary(
   output: string,
 ): Pick<TestRunResult, "passed" | "failed" | "total" | "failedTests"> {
@@ -40,15 +42,31 @@ function parseSummary(
   return { passed: 0, failed: failedNames.length || 0, total: 0, failedTests: failedNames }
 }
 
-export async function runTests(workDir: string, testFiles?: string[]): Promise<TestRunResult> {
-  const args = ["exec", "vitest", "run"]
-  if (testFiles && testFiles.length > 0) {
-    args.push(...testFiles)
+export async function runTests(
+  workDir: string,
+  testFiles?: string[],
+  profile?: ToolchainProfile,
+): Promise<TestRunResult> {
+  let cmd: string
+  let args: string[]
+
+  if (profile?.checks.test) {
+    cmd = profile.checks.test.cmd
+    args = [...profile.checks.test.args]
+    if (testFiles && testFiles.length > 0) {
+      args.push(...testFiles)
+    }
+  } else {
+    cmd = "pnpm"
+    args = ["exec", "vitest", "run"]
+    if (testFiles && testFiles.length > 0) {
+      args.push(...testFiles)
+    }
   }
 
   const startMs = Date.now()
   try {
-    const { stdout, stderr } = await execFileAsync("pnpm", args, {
+    const { stdout, stderr } = await execFileAsync(cmd, args, {
       cwd: workDir,
       maxBuffer: 5 * 1024 * 1024,
       timeout: 300_000,
@@ -84,18 +102,22 @@ export async function runTests(workDir: string, testFiles?: string[]): Promise<T
       total: 1,
       duration_ms: Date.now() - startMs,
       output: combined.slice(0, 5000),
-      failedTests: ["(vitest execution failed)"],
+      failedTests: ["(test execution failed)"],
     }
   }
 }
 
-export function createTestRunNode(workDir: string, testFiles?: string[]) {
+export function createTestRunNode(
+  workDir: string,
+  testFiles?: string[],
+  profile?: ToolchainProfile,
+) {
   return {
     id: "run-tests",
     name: "Run Tests",
     type: "deterministic" as const,
     execute: async (): Promise<NodeResult> => {
-      const result = await runTests(workDir, testFiles)
+      const result = await runTests(workDir, testFiles, profile)
       if (result.failed > 0) {
         return {
           status: "fail" as const,

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto"
+import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { NodeResult } from "./blueprint.js"
 import { CostTracker } from "./cost-tracker.js"
 
@@ -37,6 +38,7 @@ export interface PipelineContext {
   mutationScore?: number
   generatedProbes?: unknown[]
   deploymentManifest?: unknown
+  toolchainProfile?: ToolchainProfile
   costTracker: CostTracker
   log: {
     debug: (message: string, data?: Record<string, unknown>) => void

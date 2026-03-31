@@ -1,0 +1,11 @@
+{
+  "name": "@bollard/detect",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/types.ts",
+    "./src/*": "./src/*"
+  },
+  "dependencies": {}
+}

@@ -8,6 +8,7 @@
     "./src/*": "./src/*"
   },
   "dependencies": {
+    "@bollard/detect": "workspace:*",
     "@bollard/engine": "workspace:*",
     "typescript": "^5.7.3"
   }

@@ -29,6 +29,7 @@
     { "path": "packages/cli" },
     { "path": "packages/agents" },
     { "path": "packages/verify" },
-    { "path": "packages/blueprints" }
+    { "path": "packages/blueprints" },
+    { "path": "packages/detect" }
   ]
 }

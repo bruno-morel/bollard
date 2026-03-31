@@ -1,0 +1,12 @@
+[project]
+name = "test-project"
+version = "0.1.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.mypy]
+strict = true

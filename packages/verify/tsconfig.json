@@ -8,6 +8,7 @@
   "include": ["src"],
   "exclude": ["node_modules", "dist", "tests"],
   "references": [
-    { "path": "../engine" }
+    { "path": "../engine" },
+    { "path": "../detect" }
   ]
 }

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
+import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { NodeResult } from "@bollard/engine/src/blueprint.js"
 
 const execFileAsync = promisify(execFile)
@@ -11,10 +12,44 @@ export interface StaticCheckResult {
   durationMs: number
 }
 
-export async function runStaticChecks(workDir: string): Promise<{
-  results: StaticCheckResult[]
-  allPassed: boolean
-}> {
+function buildChecksFromProfile(
+  profile: ToolchainProfile,
+): { name: string; cmd: string; args: string[] }[] {
+  const checks: { name: string; cmd: string; args: string[] }[] = []
+  if (profile.checks.typecheck) {
+    checks.push({
+      name: "typecheck",
+      cmd: profile.checks.typecheck.cmd,
+      args: profile.checks.typecheck.args,
+    })
+  }
+  if (profile.checks.lint) {
+    checks.push({
+      name: "lint",
+      cmd: profile.checks.lint.cmd,
+      args: profile.checks.lint.args,
+    })
+  }
+  if (profile.checks.audit) {
+    checks.push({
+      name: "audit",
+      cmd: profile.checks.audit.cmd,
+      args: profile.checks.audit.args,
+    })
+  }
+  if (profile.checks.secretScan) {
+    checks.push({
+      name: "secrets",
+      cmd: profile.checks.secretScan.cmd,
+      args: profile.checks.secretScan.args,
+    })
+  }
+  return checks
+}
+
+async function buildDefaultChecks(
+  workDir: string,
+): Promise<{ name: string; cmd: string; args: string[] }[]> {
   const checks = [
     { name: "typecheck", cmd: "pnpm", args: ["run", "typecheck"] },
     { name: "lint", cmd: "pnpm", args: ["run", "lint"] },
@@ -31,6 +66,18 @@ export async function runStaticChecks(workDir: string): Promise<{
   } catch {
     // gitleaks not installed — skip
   }
+
+  return checks
+}
+
+export async function runStaticChecks(
+  workDir: string,
+  profile?: ToolchainProfile,
+): Promise<{
+  results: StaticCheckResult[]
+  allPassed: boolean
+}> {
+  const checks = profile ? buildChecksFromProfile(profile) : await buildDefaultChecks(workDir)
 
   const results: StaticCheckResult[] = []
 
@@ -68,13 +115,13 @@ export async function runStaticChecks(workDir: string): Promise<{
   }
 }
 
-export function createStaticCheckNode(workDir: string) {
+export function createStaticCheckNode(workDir: string, profile?: ToolchainProfile) {
   return {
     id: "static-checks",
     name: "Static Verification",
     type: "deterministic" as const,
     execute: async (): Promise<NodeResult> => {
-      const { results, allPassed } = await runStaticChecks(workDir)
+      const { results, allPassed } = await runStaticChecks(workDir, profile)
       if (!allPassed) {
         const failures = results.filter((r) => !r.passed).map((r) => r.check)
         return {

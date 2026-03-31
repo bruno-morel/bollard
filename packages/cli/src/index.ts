@@ -73,7 +73,7 @@ function cliProgress(event: ProgressEvent): void {
   }
 }
 
-function createSimpleAgenticHandler(config: ReturnType<typeof resolveConfig>["config"]) {
+function createSimpleAgenticHandler(config: Awaited<ReturnType<typeof resolveConfig>>["config"]) {
   const llmClient = new LLMClient(config)
 
   return async (node: BlueprintNode, ctx: PipelineContext): Promise<NodeResult> => {
@@ -191,12 +191,12 @@ async function runPlanCommand(args: string[]): Promise<void> {
   log(`${DIM}Agent:${RESET} planner (read-only tools)`)
   log("")
 
-  const { config } = resolveConfig()
+  const { config, profile } = await resolveConfig()
   const { executeAgent } = await import("@bollard/agents/src/executor.js")
   const { createPlannerAgent } = await import("@bollard/agents/src/planner.js")
   const { createContext } = await import("@bollard/engine/src/context.js")
 
-  const planner = await createPlannerAgent()
+  const planner = await createPlannerAgent(profile)
   const llmClient = new LLMClient(config)
   const { provider, model } = llmClient.forAgent("planner")
 
@@ -263,7 +263,7 @@ async function runRunCommand(args: string[]): Promise<void> {
     process.exit(1)
   }
 
-  const { config } = resolveConfig()
+  const { config, profile } = await resolveConfig()
 
   if (blueprintName === "demo") {
     header("run demo")
@@ -288,7 +288,7 @@ async function runRunCommand(args: string[]): Promise<void> {
     )
     log("")
 
-    const handler = await createAgenticHandler(config, workDir)
+    const handler = await createAgenticHandler(config, workDir, profile)
     const result = await runBlueprint(
       blueprint,
       task,
@@ -321,7 +321,7 @@ async function runEvalCommand(args: string[]): Promise<void> {
 
   log(`${DIM}Running ${cases.length} eval case(s)...${RESET}\n`)
 
-  const { config } = resolveConfig()
+  const { config } = await resolveConfig()
   const { runEvals } = await import("@bollard/engine/src/eval-runner.js")
   const llmClient = new LLMClient(config)
   const { provider, model } = llmClient.forAgent("default")
@@ -370,17 +370,39 @@ async function main(): Promise<void> {
   }
 
   if (command === "config" && rest[0] === "show") {
-    const { config, sources } = resolveConfig()
+    const { config, profile, sources } = await resolveConfig()
     const showSources = rest.includes("--sources")
-    const output = showSources ? { config, sources } : config
+    const output = showSources ? { config, profile, sources } : config
     process.stdout.write(`${JSON.stringify(output, null, 2)}\n`)
     return
   }
 
   if (command === "init") {
     header("init")
-    const { sources } = resolveConfig()
+    const { profile, sources } = await resolveConfig()
     log("Detected project configuration:\n")
+    log(`  ${BOLD}Language:${RESET}         ${profile.language}`)
+    if (profile.packageManager) {
+      log(`  ${BOLD}Package manager:${RESET}  ${profile.packageManager}`)
+    }
+    if (profile.checks.typecheck) {
+      log(`  ${BOLD}Type checker:${RESET}     ${profile.checks.typecheck.label}`)
+    }
+    if (profile.checks.lint) {
+      log(`  ${BOLD}Linter:${RESET}           ${profile.checks.lint.label}`)
+    }
+    if (profile.checks.test) {
+      log(`  ${BOLD}Test framework:${RESET}   ${profile.checks.test.label}`)
+    }
+    if (profile.checks.audit) {
+      log(`  ${BOLD}Dep audit:${RESET}        ${profile.checks.audit.label}`)
+    }
+    if (profile.checks.secretScan) {
+      log(`  ${BOLD}Secret scan:${RESET}      ${profile.checks.secretScan.label}`)
+    }
+    log("")
+
+    log("Detection sources:\n")
     for (const [key, val] of Object.entries(sources)) {
       if (val.source === "auto-detected") {
         log(`  ${GREEN}✓${RESET} ${key}`)
@@ -388,6 +410,18 @@ async function main(): Promise<void> {
         log(`  ${DIM}· ${key} (${val.source})${RESET}`)
       }
     }
+
+    log("")
+    log("Verification layers:")
+    if (profile.checks.test) {
+      log(
+        `  Layer 1 (project tests):     ${profile.checks.test.cmd} ${profile.checks.test.args.join(" ")}`,
+      )
+    } else {
+      log(`  Layer 1 (project tests):     ${DIM}(no test framework detected)${RESET}`)
+    }
+    log("  Layer 2 (adversarial tests): bollard/verify container (Stage 2+)")
+    log(`  Layer 3 (mutation testing):  ${DIM}(Stage 3+)${RESET}`)
     log("")
     return
   }

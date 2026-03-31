@@ -5,8 +5,8 @@ import { promisify } from "node:util"
 import type { Blueprint, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
-import { createTestRunNode } from "@bollard/verify/src/dynamic.js"
-import { createStaticCheckNode } from "@bollard/verify/src/static.js"
+import { runTests } from "@bollard/verify/src/dynamic.js"
+import { runStaticChecks } from "@bollard/verify/src/static.js"
 import {
   extractPrivateIdentifiers,
   extractSignaturesFromFiles,
@@ -14,15 +14,33 @@ import {
 
 const execFileAsync = promisify(execFile)
 
-function getAffectedTsFiles(plan: unknown): string[] {
+function getAffectedSourceFiles(ctx: PipelineContext): string[] {
+  const plan = ctx.plan
   if (!plan || typeof plan !== "object") return []
   const af = (plan as Record<string, unknown>)["affected_files"] as
     | Record<string, string[]>
     | undefined
   if (!af) return []
-  return [...(af["modify"] ?? []), ...(af["create"] ?? [])].filter(
-    (f) => f.endsWith(".ts") && !f.endsWith(".test.ts"),
-  )
+
+  const allFiles = [...(af["modify"] ?? []), ...(af["create"] ?? [])]
+  const profile = ctx.toolchainProfile
+
+  if (profile) {
+    const srcExts = profile.sourcePatterns
+      .filter((p) => p.startsWith("**/*."))
+      .map((p) => p.replace("**/*", ""))
+    const testExts = profile.testPatterns
+      .filter((p) => p.startsWith("**/*."))
+      .map((p) => p.replace("**/*", ""))
+
+    return allFiles.filter((f) => {
+      if (testExts.some((ext) => f.endsWith(ext))) return false
+      if (f.includes(".test.") || f.includes(".spec.") || f.includes("test_")) return false
+      return srcExts.length === 0 || srcExts.some((ext) => f.endsWith(ext))
+    })
+  }
+
+  return allFiles.filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
 }
 
 export function createImplementFeatureBlueprint(workDir: string): Blueprint {
@@ -74,14 +92,39 @@ export function createImplementFeatureBlueprint(workDir: string): Blueprint {
         onFailure: "stop",
       },
 
-      createStaticCheckNode(workDir),
+      {
+        id: "static-checks",
+        name: "Static Verification",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const { results, allPassed } = await runStaticChecks(workDir, ctx.toolchainProfile)
+          if (!allPassed) {
+            const failures = results.filter((r) => !r.passed).map((r) => r.check)
+            return {
+              status: "fail",
+              data: results,
+              error: {
+                code: "STATIC_CHECK_FAILED",
+                message: `Static checks failed: ${failures.join(", ")}`,
+              },
+            }
+          }
+          return { status: "ok", data: results }
+        },
+      },
 
       {
         id: "extract-signatures",
         name: "Extract Type Signatures",
         type: "deterministic",
         execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const files = getAffectedTsFiles(ctx.plan)
+          const profile = ctx.toolchainProfile
+          if (profile && profile.language !== "typescript") {
+            // TODO: Stage 2 -- add signature extraction for non-TS languages
+            return { status: "ok", data: { filesExtracted: 0, signatures: [] } }
+          }
+
+          const files = getAffectedSourceFiles(ctx)
           if (files.length === 0) {
             return { status: "ok", data: { filesExtracted: 0, signatures: [] } }
           }
@@ -124,7 +167,7 @@ export function createImplementFeatureBlueprint(workDir: string): Blueprint {
             }
           }
 
-          const files = getAffectedTsFiles(ctx.plan)
+          const files = getAffectedSourceFiles(ctx)
           const leakedTokens: string[] = []
 
           for (const filePath of files) {
@@ -173,7 +216,25 @@ export function createImplementFeatureBlueprint(workDir: string): Blueprint {
         },
       },
 
-      createTestRunNode(workDir),
+      {
+        id: "run-tests",
+        name: "Run Tests",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const result = await runTests(workDir, undefined, ctx.toolchainProfile)
+          if (result.failed > 0) {
+            return {
+              status: "fail",
+              data: result,
+              error: {
+                code: "TEST_FAILED",
+                message: `${result.failed}/${result.total} tests failed: ${result.failedTests.join(", ")}`,
+              },
+            }
+          }
+          return { status: "ok", data: result }
+        },
+      },
 
       {
         id: "generate-diff",

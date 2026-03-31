@@ -12,6 +12,7 @@ services:
       - agents_modules:/app/packages/agents/node_modules
       - verify_modules:/app/packages/verify/node_modules
       - blueprints_modules:/app/packages/blueprints/node_modules
+      - detect_modules:/app/packages/detect/node_modules
     working_dir: /app
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
@@ -26,3 +27,4 @@ volumes:
   agents_modules:
   verify_modules:
   blueprints_modules:
+  detect_modules:
