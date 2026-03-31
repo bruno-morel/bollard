@@ -89,4 +89,29 @@ describe("fillPromptTemplate", () => {
     const result = fillPromptTemplate(template, TS_PROFILE)
     expect(result).toBe("# Rules\n1. Follow patterns\n2. Use Vitest")
   })
+
+  it("returns input unchanged when template has no placeholders", () => {
+    const template = "This is a plain template with no variables."
+    const result = fillPromptTemplate(template, TS_PROFILE)
+    expect(result).toBe(template)
+  })
+
+  it("leaves unknown placeholders as-is", () => {
+    const template = "Known: {{language}}, Unknown: {{unknownVar}}"
+    const result = fillPromptTemplate(template, TS_PROFILE)
+    expect(result).toContain("Known: Typescript")
+    expect(result).toContain("Unknown: {{unknownVar}}")
+  })
+
+  it("handles template with only unknown placeholders", () => {
+    const template = "{{foo}} and {{bar}} and {{baz}}"
+    const result = fillPromptTemplate(template, TS_PROFILE)
+    expect(result).toBe("{{foo}} and {{bar}} and {{baz}}")
+  })
+
+  it("replaces multiple occurrences of the same placeholder", () => {
+    const template = "First: {{language}}, again: {{language}}"
+    const result = fillPromptTemplate(template, TS_PROFILE)
+    expect(result).toBe("First: Typescript, again: Typescript")
+  })
 })
