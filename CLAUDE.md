@@ -216,8 +216,9 @@ bollard/
 ## Current Test Stats
 
 - **24 test files, 269 tests passing** (0 skipped, 0 failing)
-- **Source:** ~5800 LOC across 7 packages
-- **Tests:** ~3690 LOC (+ ~6850 LOC adversarial tests)
+- **30 adversarial test files** (separate Vitest config: `vitest.adversarial.config.ts`)
+- **Source:** ~5200 LOC across 7 packages
+- **Tests:** ~3690 LOC (+ ~7670 LOC adversarial tests)
 - **Prompts:** ~238 LOC (planner.md + coder.md + tester.md)
 
 ## Key Types (Source of Truth)
@@ -445,7 +446,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - CI integration, run history, self-improvement — Stage 4
 
 ### Size (current):
-- Total: ~5800 source, ~3690 test (+~6850 adversarial), ~238 prompt across 7 packages
+- Total: ~5200 source, ~3690 test (+~7670 adversarial), ~238 prompt across 7 packages
 
 ## Design Principles
 

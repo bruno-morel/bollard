@@ -468,3 +468,26 @@ Three pipeline runs using `bollard run implement-feature` on the Bollard codebas
 - **Source LOC:** ~4970 (was ~4600)
 - **Test LOC:** ~3415 + ~6856 adversarial
 - **Stage 1.5 verification pass adversarial results:** 477 pass / 146 fail (66.7% pass rate, up from 50.4%)
+
+---
+
+## Stage 2 Verification Pass (2026-04-01)
+
+Full regeneration of all adversarial tests after Stage 2 agent infrastructure.
+
+**Results:** 306 pass / 180 fail (486 total) — **62.96% pass rate**
+
+This is a complete regeneration (all test files rewritten by the tester agent), not
+an incremental run against the same tests. Direct comparison with the Stage 1.5
+baseline (477/146 = 76.6%) is not meaningful — different tests were generated.
+
+**Cost:** ~$1.33 for 29 files (1 skipped: blueprint.ts)
+
+### Post-Stage-2 Codebase State
+
+- **Test files:** 24 (main suite)
+- **Tests passing:** 269
+- **Adversarial test files:** 30
+- **Source LOC:** ~5200 across 7 packages
+- **Test LOC:** ~3690 + ~7670 adversarial
+- **Prompt LOC:** ~238
