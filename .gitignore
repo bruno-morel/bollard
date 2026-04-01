@@ -5,3 +5,4 @@ dist/
 .env
 .pnpm-store/
 .bollard/runs/
+_tmp_*/
