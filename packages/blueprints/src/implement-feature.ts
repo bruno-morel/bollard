@@ -122,12 +122,12 @@ export function createImplementFeatureBlueprint(workDir: string): Blueprint {
           const profile = ctx.toolchainProfile
           if (profile && profile.language !== "typescript") {
             // TODO: Stage 2 -- add signature extraction for non-TS languages
-            return { status: "ok", data: { filesExtracted: 0, signatures: [] } }
+            return { status: "ok", data: { filesExtracted: 0, signatures: [], types: [] } }
           }
 
           const files = getAffectedSourceFiles(ctx)
           if (files.length === 0) {
-            return { status: "ok", data: { filesExtracted: 0, signatures: [] } }
+            return { status: "ok", data: { filesExtracted: 0, signatures: [], types: [] } }
           }
 
           const fullPaths = files.map((f) => resolve(workDir, f))

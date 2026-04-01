@@ -17,6 +17,7 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - BOLLARD_AUTO_APPROVE=${BOLLARD_AUTO_APPROVE:-}
+      - NODE_OPTIONS=--disable-warning=DEP0040
     entrypoint: ["pnpm"]
 
 volumes:

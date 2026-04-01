@@ -419,3 +419,52 @@ The retroactive adversarial testing pipeline is tuned and validated. Over 4 pass
 4. **Pass 4** eliminated the fabrication pattern with Rule 14 (return type authority) and Rule 15 (valid-domain property tests). Worst-file pass rate reached 69.8% with no dominant failure pattern remaining.
 
 **The adversarial pipeline is ready for Stage 1.5/Stage 2 work.** The tester agent produces meaningful blind tests that find real bugs. The remaining ~30% failure rate on worst-case files is irreducible LLM variance — diverse edge cases, not systematic prompt gaps. The pipeline's value is proven: 3 bugs found, 8 prompt rules refined, and a context hints architecture validated for the planner → tester handoff in the implement-feature pipeline.
+
+---
+
+## Bollard-on-Bollard Results (2026-03-31)
+
+Three pipeline runs using `bollard run implement-feature` on the Bollard codebase itself.
+
+### Run Summary
+
+| Run | Task | Status | Cost | Duration | Planner | Coder | Tests Added |
+|-----|------|--------|------|----------|---------|-------|-------------|
+| 1 | JS language detector | Coder exceeded max turns | $0.12 | 15.7 min | 4 turns | 40 (max) | +10 |
+| 2 | --profile flag | Tests failed (adversarial type errors) | $1.87 | 17.5 min | 3 turns | 39 | +2 |
+| 3 | diff command | Coder exceeded max turns | $0.12 | 16.3 min | 3 turns | 40 (max) | +6 |
+| **Total** | | | **$2.11** | **~50 min** | **10** | **119** | **+18** |
+
+### 14 Findings (Triaged)
+
+**Fixed by Stage 2 prompt (10 findings):**
+
+| # | Finding | Root Cause | Stage 2 Fix |
+|---|---------|-----------|-------------|
+| 1 | Coder max turns (40) insufficient | Verification loops eat budget | Increase to 60 + turn budget guidance |
+| 3 | Coder rewrites entire files | Only `write_file` (full overwrite) available | Add `edit_file` tool |
+| 4 | Adversarial tester produces type-incorrect tests | Only sees function signatures, not referenced types | Deepen type extractor to include type definitions |
+| 5 | Adversarial test placed in src/ not tests/ | Path derived from source file, not test patterns | Derive path from `profile.testPatterns` |
+| 6 | Markdown fences written to .ts files | Tester wraps output in fences, write-tests node doesn't strip | Strip fences in write-tests node |
+| 7 | Verification hook feedback loop wastes turns | 2+ turns per typecheck failure cycle | Skip verification above 80% turn budget |
+| 8 | JS detector didn't use derive functions | Coder hardcoded patterns | edit_file prevents full rewrites |
+| 9 | derive.ts incorrectly shared TS/JS patterns | Coder modified shared switch case | edit_file prevents full rewrites |
+| 10 | Missing `**/*.jsx` in source patterns | Coder hardcoded instead of using derive | edit_file prevents full rewrites |
+| 12 | No write-file diff/patch mode | Root cause of #3 | edit_file tool |
+
+**Deferred (4 findings):**
+
+| # | Finding | Why Deferred | Tracked For |
+|---|---------|-------------|-------------|
+| 2 | Wrong profile detected (JS instead of TS) | Likely transient; code looks correct post-fix | Monitor in future runs |
+| 11 | Coder rewrote eval command with wrong API | LLM hallucination; edit_file eliminates the rewrite trigger | Stage 3 if recurs |
+| 13 | Type extraction too shallow (duplicate of #4) | Addressed as part of #4 | N/A |
+| 14 | No rollback on coder max-turns failure | Human gate at approve-pr catches partial state | Stage 3 git stash |
+
+### Post-Run Codebase State
+
+- **Test files:** 23 (was 21 pre-bollard-on-bollard)
+- **Tests passing:** 240 (was 222)
+- **Source LOC:** ~4970 (was ~4600)
+- **Test LOC:** ~3415 + ~6856 adversarial
+- **Stage 1.5 verification pass adversarial results:** 477 pass / 146 fail (66.7% pass rate, up from 50.4%)
