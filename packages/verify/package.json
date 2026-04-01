@@ -10,6 +10,7 @@
   "dependencies": {
     "@bollard/detect": "workspace:*",
     "@bollard/engine": "workspace:*",
+    "@bollard/llm": "workspace:*",
     "typescript": "^5.7.3"
   }
 }

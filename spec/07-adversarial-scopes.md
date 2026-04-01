@@ -774,7 +774,7 @@ packages/
 │       └── behavioral-extractor.ts  # NEW: topology, endpoints, config, failure modes
 │       └── fault-injector.ts        # NEW: Docker-level fault injection orchestration
 │
-├── observe/                          # Production feedback loop (moved from Stage 3)
+├── observe/                          # Production feedback loop (Stage 4)
 │   └── src/
 │       ├── probe-runner.ts
 │       ├── probe-scheduler.ts

@@ -114,4 +114,63 @@ describe("fillPromptTemplate", () => {
     const result = fillPromptTemplate(template, TS_PROFILE)
     expect(result).toBe("First: Typescript, again: Typescript")
   })
+
+  it("handles {{#if isTypeScript}}...{{/if}} blocks", () => {
+    const template = "Before {{#if isTypeScript}}TS content{{/if}} after"
+    const result = fillPromptTemplate(template, TS_PROFILE)
+    expect(result).toBe("Before TS content after")
+  })
+
+  it("removes {{#if isTypeScript}} block for non-TS profile", () => {
+    const template = "Before {{#if isTypeScript}}TS content{{/if}} after"
+    const result = fillPromptTemplate(template, PY_PROFILE)
+    expect(result).toBe("Before  after")
+  })
+
+  it("handles {{#if isPython}}...{{else}}...{{/if}}", () => {
+    const template = "{{#if isPython}}Python path{{else}}Other path{{/if}}"
+    const pyResult = fillPromptTemplate(template, PY_PROFILE)
+    expect(pyResult).toBe("Python path")
+    const tsResult = fillPromptTemplate(template, TS_PROFILE)
+    expect(tsResult).toBe("Other path")
+  })
+
+  it("handles {{else if}} chains", () => {
+    const template =
+      "{{#if isTypeScript}}TS{{else if isPython}}PY{{else if isGo}}GO{{else}}OTHER{{/if}}"
+    expect(fillPromptTemplate(template, TS_PROFILE)).toBe("TS")
+    expect(fillPromptTemplate(template, PY_PROFILE)).toBe("PY")
+
+    const goProfile: ToolchainProfile = {
+      ...TS_PROFILE,
+      language: "go",
+      packageManager: "go",
+    }
+    expect(fillPromptTemplate(template, goProfile)).toBe("GO")
+
+    const unknownProfile: ToolchainProfile = {
+      ...TS_PROFILE,
+      language: "ruby",
+    }
+    expect(fillPromptTemplate(template, unknownProfile)).toBe("OTHER")
+  })
+
+  it("processes conditionals before variable replacement", () => {
+    const template = "{{#if isTypeScript}}Framework: {{testFramework}}{{/if}}"
+    const result = fillPromptTemplate(template, TS_PROFILE)
+    expect(result).toBe("Framework: Vitest")
+  })
+
+  it("handles multiline conditional blocks", () => {
+    const template = [
+      "{{#if isPython}}",
+      "import pytest",
+      "def test_something():",
+      "    pass",
+      "{{/if}}",
+    ].join("\n")
+    const result = fillPromptTemplate(template, PY_PROFILE)
+    expect(result).toContain("import pytest")
+    expect(result).toContain("def test_something():")
+  })
 })

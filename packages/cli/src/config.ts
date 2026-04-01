@@ -123,11 +123,15 @@ export async function resolveConfig(
     }
   }
 
-  if (!process.env["ANTHROPIC_API_KEY"] && !process.env["OPENAI_API_KEY"]) {
+  if (
+    !process.env["ANTHROPIC_API_KEY"] &&
+    !process.env["OPENAI_API_KEY"] &&
+    !process.env["GOOGLE_API_KEY"]
+  ) {
     throw new BollardError({
       code: "CONFIG_INVALID",
       message:
-        "No LLM API key found. Set ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable.",
+        "No LLM API key found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY environment variable.",
     })
   }
 
@@ -201,6 +205,9 @@ function applyToolchainOverrides(
     }
     if (overrides.adversarial.runtime_image) {
       profile.adversarial.runtimeImage = overrides.adversarial.runtime_image
+    }
+    if (overrides.adversarial.persist !== undefined) {
+      profile.adversarial.persist = overrides.adversarial.persist
     }
   }
 }

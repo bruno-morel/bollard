@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest"
 import { LLMClient } from "../src/client.js"
 import { MockProvider } from "../src/mock.js"
 import { AnthropicProvider } from "../src/providers/anthropic.js"
+import { GoogleProvider } from "../src/providers/google.js"
+import { OpenAIProvider } from "../src/providers/openai.js"
 import type { LLMResponse } from "../src/types.js"
 
 function makeResponse(text: string): LLMResponse {
@@ -109,6 +111,78 @@ describe("LLMClient", () => {
       client.forAgent("any")
     } catch (err) {
       expect(BollardError.hasCode(err, "PROVIDER_NOT_FOUND")).toBe(true)
+    }
+  })
+
+  it("resolves openai provider when OPENAI_API_KEY is set", () => {
+    const origKey = process.env["OPENAI_API_KEY"]
+    process.env["OPENAI_API_KEY"] = "test-key"
+    try {
+      const config = mockConfig({
+        llm: { default: { provider: "openai", model: "gpt-4o" } },
+      })
+      const client = new LLMClient(config)
+      const { provider } = client.forAgent("any")
+      expect(provider).toBeInstanceOf(OpenAIProvider)
+      expect(provider.name).toBe("openai")
+    } finally {
+      if (origKey !== undefined) {
+        process.env["OPENAI_API_KEY"] = origKey
+      } else {
+        process.env["OPENAI_API_KEY"] = ""
+      }
+    }
+  })
+
+  it("resolves google provider when GOOGLE_API_KEY is set", () => {
+    const origKey = process.env["GOOGLE_API_KEY"]
+    process.env["GOOGLE_API_KEY"] = "test-key"
+    try {
+      const config = mockConfig({
+        llm: { default: { provider: "google", model: "gemini-2.0-flash" } },
+      })
+      const client = new LLMClient(config)
+      const { provider } = client.forAgent("any")
+      expect(provider).toBeInstanceOf(GoogleProvider)
+      expect(provider.name).toBe("google")
+    } finally {
+      if (origKey !== undefined) {
+        process.env["GOOGLE_API_KEY"] = origKey
+      } else {
+        process.env["GOOGLE_API_KEY"] = ""
+      }
+    }
+  })
+
+  it("throws CONFIG_INVALID when OPENAI_API_KEY is missing", () => {
+    const origKey = process.env["OPENAI_API_KEY"]
+    process.env["OPENAI_API_KEY"] = ""
+    try {
+      const config = mockConfig({
+        llm: { default: { provider: "openai", model: "gpt-4o" } },
+      })
+      const client = new LLMClient(config)
+      expect(() => client.forAgent("any")).toThrow(BollardError)
+    } finally {
+      if (origKey !== undefined) {
+        process.env["OPENAI_API_KEY"] = origKey
+      }
+    }
+  })
+
+  it("throws CONFIG_INVALID when GOOGLE_API_KEY is missing", () => {
+    const origKey = process.env["GOOGLE_API_KEY"]
+    process.env["GOOGLE_API_KEY"] = ""
+    try {
+      const config = mockConfig({
+        llm: { default: { provider: "google", model: "gemini-2.0-flash" } },
+      })
+      const client = new LLMClient(config)
+      expect(() => client.forAgent("any")).toThrow(BollardError)
+    } finally {
+      if (origKey !== undefined) {
+        process.env["GOOGLE_API_KEY"] = origKey
+      }
     }
   })
 })

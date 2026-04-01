@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import type { LLMProvider, LLMResponse } from "@bollard/llm/src/types.js"
 import { describe, expect, it } from "vitest"
 import {
   type ExtractionResult,
@@ -13,6 +14,27 @@ import {
   getExtractor,
   resolveReferencedTypes,
 } from "../src/type-extractor.js"
+
+function createMockProvider(responseText: string): LLMProvider {
+  return {
+    name: "mock",
+    chat: async () => ({
+      content: [{ type: "text" as const, text: responseText }],
+      stopReason: "end_turn" as const,
+      usage: { inputTokens: 100, outputTokens: 200 },
+      costUsd: 0.001,
+    }),
+  }
+}
+
+function createErrorProvider(): LLMProvider {
+  return {
+    name: "error-mock",
+    chat: async () => {
+      throw new Error("LLM unavailable")
+    },
+  }
+}
 
 const THIS_DIR = dirname(fileURLToPath(import.meta.url))
 const PACKAGES_DIR = resolve(THIS_DIR, "../..")
@@ -281,14 +303,6 @@ describe("SignatureExtractor implementations", () => {
     expect(result.types.length).toBeGreaterThan(0)
   })
 
-  it("LlmFallbackExtractor returns empty result", async () => {
-    const extractor = new LlmFallbackExtractor()
-    const result = await extractor.extract(["anything.py"])
-
-    expect(result.signatures).toHaveLength(0)
-    expect(result.types).toHaveLength(0)
-  })
-
   it("getExtractor returns TsCompilerExtractor for typescript", () => {
     const extractor = getExtractor("typescript")
     expect(extractor).toBeInstanceOf(TsCompilerExtractor)
@@ -298,5 +312,102 @@ describe("SignatureExtractor implementations", () => {
     expect(getExtractor("python")).toBeInstanceOf(LlmFallbackExtractor)
     expect(getExtractor("go")).toBeInstanceOf(LlmFallbackExtractor)
     expect(getExtractor("rust")).toBeInstanceOf(LlmFallbackExtractor)
+  })
+
+  it("getExtractor with provider returns LlmFallbackExtractor for python", () => {
+    const provider = createMockProvider("{}")
+    const extractor = getExtractor("python", provider, "test-model")
+    expect(extractor).toBeInstanceOf(LlmFallbackExtractor)
+  })
+
+  it("getExtractor without provider returns noop LlmFallbackExtractor", () => {
+    const extractor = getExtractor("python")
+    expect(extractor).toBeInstanceOf(LlmFallbackExtractor)
+  })
+})
+
+describe("LlmFallbackExtractor", () => {
+  const VALID_JSON = JSON.stringify({
+    signatures: [
+      {
+        filePath: "src/auth.py",
+        signatures: "def login(user: str, password: str) -> Token: ...",
+        types: "class Token:\n    value: str\n    expires_at: int",
+        imports: "from dataclasses import dataclass",
+      },
+    ],
+    types: [
+      {
+        name: "Token",
+        kind: "interface",
+        definition: "class Token:\n    value: str\n    expires_at: int",
+        filePath: "src/auth.py",
+      },
+    ],
+  })
+
+  it("parses structured JSON from MockProvider into ExtractionResult", async () => {
+    const provider = createMockProvider(VALID_JSON)
+    const extractor = new LlmFallbackExtractor(provider, "test-model")
+    const result = await extractor.extract([resolve(PACKAGES_DIR, "engine/src/errors.ts")])
+
+    expect(result.signatures).toHaveLength(1)
+    expect(result.signatures[0]?.filePath).toBe("src/auth.py")
+    expect(result.signatures[0]?.signatures).toContain("login")
+    expect(result.types).toHaveLength(1)
+    expect(result.types[0]?.name).toBe("Token")
+    expect(result.types[0]?.kind).toBe("interface")
+  })
+
+  it("returns empty result when provider returns garbage", async () => {
+    const provider = createMockProvider("this is not json at all!!!")
+    const extractor = new LlmFallbackExtractor(provider, "test-model")
+    const result = await extractor.extract([resolve(PACKAGES_DIR, "engine/src/errors.ts")])
+
+    expect(result.signatures).toHaveLength(0)
+    expect(result.types).toHaveLength(0)
+  })
+
+  it("returns empty result when provider returns empty content", async () => {
+    const provider = createMockProvider("")
+    const extractor = new LlmFallbackExtractor(provider, "test-model")
+    const result = await extractor.extract([resolve(PACKAGES_DIR, "engine/src/errors.ts")])
+
+    expect(result.signatures).toHaveLength(0)
+    expect(result.types).toHaveLength(0)
+  })
+
+  it("returns empty result when provider throws", async () => {
+    const provider = createErrorProvider()
+    const extractor = new LlmFallbackExtractor(provider, "test-model")
+    const result = await extractor.extract([resolve(PACKAGES_DIR, "engine/src/errors.ts")])
+
+    expect(result.signatures).toHaveLength(0)
+    expect(result.types).toHaveLength(0)
+  })
+
+  it("returns empty result for empty file list", async () => {
+    const provider = createMockProvider(VALID_JSON)
+    const extractor = new LlmFallbackExtractor(provider, "test-model")
+    const result = await extractor.extract([])
+
+    expect(result.signatures).toHaveLength(0)
+    expect(result.types).toHaveLength(0)
+  })
+
+  it("filters out types with invalid kind", async () => {
+    const json = JSON.stringify({
+      signatures: [],
+      types: [
+        { name: "Good", kind: "interface", definition: "interface Good {}", filePath: "a.py" },
+        { name: "Bad", kind: "unknown-kind", definition: "???", filePath: "b.py" },
+      ],
+    })
+    const provider = createMockProvider(json)
+    const extractor = new LlmFallbackExtractor(provider, "test-model")
+    const result = await extractor.extract([resolve(PACKAGES_DIR, "engine/src/errors.ts")])
+
+    expect(result.types).toHaveLength(1)
+    expect(result.types[0]?.name).toBe("Good")
   })
 })

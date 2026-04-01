@@ -63,5 +63,6 @@ export interface ToolchainProfile {
   adversarial: {
     mode: "blackbox" | "in-language" | "both"
     runtimeImage?: string
+    persist?: boolean
   }
 }

@@ -2,6 +2,8 @@ import type { BollardConfig } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import { MockProvider } from "./mock.js"
 import { AnthropicProvider } from "./providers/anthropic.js"
+import { GoogleProvider } from "./providers/google.js"
+import { OpenAIProvider } from "./providers/openai.js"
 import type { LLMProvider, LLMResponse } from "./types.js"
 
 export class LLMClient {
@@ -34,6 +36,28 @@ export class LLMClient {
           })
         }
         provider = new AnthropicProvider(apiKey)
+        break
+      }
+      case "openai": {
+        const openaiKey = process.env["OPENAI_API_KEY"]
+        if (!openaiKey) {
+          throw new BollardError({
+            code: "CONFIG_INVALID",
+            message: "OPENAI_API_KEY environment variable is not set",
+          })
+        }
+        provider = new OpenAIProvider(openaiKey)
+        break
+      }
+      case "google": {
+        const googleKey = process.env["GOOGLE_API_KEY"]
+        if (!googleKey) {
+          throw new BollardError({
+            code: "CONFIG_INVALID",
+            message: "GOOGLE_API_KEY environment variable is not set",
+          })
+        }
+        provider = new GoogleProvider(googleKey)
         break
       }
       case "mock":

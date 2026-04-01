@@ -254,9 +254,11 @@ Task arrives
       (batch) notification             + escalation
 ```
 
-Key insight: **verification is the same regardless of risk tier.** Every change goes through all six verification layers (static, dynamic, mutation, semantic review, etc.). The risk tier only affects the **gating behavior** — whether a human needs to approve before/after, and how urgently they're notified.
+Key insight: **verification is the same regardless of risk tier.** Every change goes through all verification layers — static checks, all enabled adversarial scopes (boundary, contract, behavioral), mutation testing, and semantic review. The risk tier only affects the **gating behavior** — whether a human needs to approve before/after, and how urgently they're notified.
 
-This means a low-risk change is still adversarially tested and mutation-tested. The agent doesn't get to skip verification just because the change is low-risk. Trust but verify means: *trust enough to not block, but verify everything anyway.*
+This means a low-risk change is still adversarially tested across all enabled scopes and mutation-tested. The agent doesn't get to skip verification just because the change is low-risk. Trust but verify means: *trust enough to not block, but verify everything anyway.*
+
+**Adversarial scope coverage as a risk signal.** When a scope is disabled or unavailable (e.g., behavioral scope requires Docker, which isn't present), the risk model records this as reduced verification coverage. A change verified by only one adversarial scope has weaker guarantees than one verified by all three. This doesn't automatically elevate the risk tier, but it's visible in the verification summary and the PR body — the human reviewer sees exactly which scopes ran and which concerns were probed. See [07-adversarial-scopes.md](07-adversarial-scopes.md) for the scope × concern matrix.
 
 ### Bootstrap Override: All Gates On
 

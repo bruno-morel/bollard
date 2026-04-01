@@ -94,9 +94,13 @@ Every layer is enabled by default if the tooling exists. There's no `verificatio
 | Secret scanning | Always (gitleaks is zero-config) | Never — this is a safety net, not optional |
 | Dependency audit | Always (pnpm audit, pip-audit, govulncheck, cargo-audit, etc.) | Never |
 | Test execution (Layer 1) | Test runner detected | No test runner (Bollard warns, risk score elevated) |
-| Adversarial tests (Layer 2) | Stage 2+ | Pre-Stage 2 |
+| Adversarial tests — boundary scope | Stage 2+ | Pre-Stage 2 |
+| Adversarial tests — contract scope | Stage 3+ | Pre-Stage 3 |
+| Adversarial tests — behavioral scope | Stage 4+ | Pre-Stage 4 |
 | Mutation testing (Layer 3) | Test runner detected + Stage 3 | No tests to run against |
 | Contract testing | `pact.config.*` exists | No Pact setup |
+
+Each adversarial scope probes four cross-cutting concerns (correctness, security, performance, resilience) with weighted attention per scope. See [07-adversarial-scopes.md](07-adversarial-scopes.md) for the full scope × concern matrix, agent definitions, integration modes, and lifecycle options.
 
 ### Risk Thresholds
 
@@ -194,6 +198,17 @@ llm:
     coder:
       provider: anthropic
       model: claude-sonnet-4-20250514
+
+# Adversarial scope overrides (see 07-adversarial-scopes.md)
+# Most projects use auto-detected defaults — add only what you need to override.
+adversarial:
+  concerns:                       # global concern weight overrides
+    performance: low              # this is a CLI tool, perf is less critical
+  boundary:
+    lifecycle: persistent         # keep boundary tests across runs
+  behavioral:
+    concerns:
+      security: off               # pure library, no attack surface
 ```
 
 Still short. And most of this is optional — you only add sections when the defaults don't work.

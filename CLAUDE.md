@@ -6,7 +6,14 @@
 
 Bollard is an **artifact integrity framework** for AI-assisted software development. It ensures every artifact (code, tests, docs, infra) is produced, adversarially verified, and mechanically proven sound before shipping. The core innovation: separate the producer from the verifier, then prove the verification itself is meaningful (via mutation testing).
 
-Bollard is currently at **Stage 2** (adversarial verification infrastructure). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 fixes critical agent infrastructure issues discovered during bollard-on-bollard pipeline runs: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. The second half of Stage 2 (Docker-isolated verification containers) is a separate effort. Stage 3 adds per-language mutation testing, semantic review, and the production feedback loop.
+Bollard has completed **Stage 2** (adversarial verification infrastructure). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 (first half) fixed critical agent infrastructure issues: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. Stage 2 (second half) added Docker-isolated verification containers, LLM fallback signature extraction for non-TS languages, in-language adversarial test generation, adversarial test lifecycle (ephemeral + persistent-native), MCP server (`@bollard/mcp`), and OpenAI + Google LLM providers.
+
+The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md)):
+- **Stage 3:** Contract-scope adversarial testing + mutation testing + semantic review
+- **Stage 4:** Behavioral-scope adversarial testing + production feedback loop
+- **Stage 5:** Self-hosting + self-improvement
+
+Stage 2's single adversarial tester (now called the **boundary-scope** tester) is the first of three adversarial scopes. Each scope has its own agent, context, and execution mode, probing four cross-cutting concerns (correctness, security, performance, resilience) with per-scope weights.
 
 ### What works right now
 
@@ -24,15 +31,19 @@ docker compose run --rm dev --filter @bollard/cli run start -- run implement-fea
 docker compose run --rm dev --filter @bollard/cli run start -- eval planner
 ```
 
-### Known limitations at Stage 2
+### Known limitations (post Stage 2)
 
-- No Docker isolation — tools run in the host container with path-traversal guards only. Docker-isolated verification containers are the second half of Stage 2.
-- Non-TypeScript adversarial tests use blackbox mode only (no in-language mutation yet).
+- Docker-isolated verification requires Docker-in-Docker (`docker.sock` mount) — degrades gracefully when unavailable.
+- Only boundary-scope adversarial testing exists — contract and behavioral scopes are Stage 3 and Stage 4 respectively.
+- Cross-cutting concerns (security, performance, resilience) are not yet in the boundary tester prompt — currently correctness only. Stage 3 adds weighted concern lenses to all scope agents.
+- Per-language mutation testing not yet implemented — Stage 3.
 - Test output parsing is Vitest-specific (`parseSummary`) — future work will add parsers for pytest, go test, cargo test.
-- Signature extraction only works for TypeScript — `LlmFallbackExtractor` stub exists but is not yet implemented.
-- No MCP server yet.
-- No OpenAI/Google providers — Anthropic only.
+- Deterministic type extractors for Python/Go/Rust not yet implemented — `LlmFallbackExtractor` covers these via LLM.
+- No contract extractor (dependency graph, interface boundaries) — Stage 3.
+- No behavioral extractor (topology, endpoints, failure modes) — Stage 4.
 - No rollback on coder max-turns failure — partially-written files remain on disk.
+- No semantic review agent — Stage 3.
+- No production feedback loop (probes, drift detection) — Stage 4.
 
 ## Tech Stack (Non-Negotiable)
 
@@ -100,7 +111,12 @@ Pass `ANTHROPIC_API_KEY` via a `.env` file at the project root.
 bollard/
 ├── Dockerfile                    # Node 22 + pnpm dev image
 ├── compose.yaml                  # Docker Compose for all dev commands
-├── .env                          # ANTHROPIC_API_KEY (gitignored)
+├── docker/
+│   ├── Dockerfile.verify         # Black-box adversarial test container (Node 22 + vitest)
+│   ├── Dockerfile.verify-python  # Node + Python 3 runtime
+│   ├── Dockerfile.verify-go      # Node + Go 1.22
+│   └── Dockerfile.verify-rust    # Node + Rust toolchain
+├── .env                          # ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY (gitignored)
 ├── package.json                  # root workspace
 ├── pnpm-workspace.yaml           # packages: ["packages/*"]
 ├── tsconfig.json                 # shared strict config (all packages extend this)
@@ -139,15 +155,19 @@ bollard/
 │   │       ├── cost-tracker.test.ts
 │   │       └── eval-runner.test.ts
 │   │
-│   ├── llm/                      ← LLM ABSTRACTION (Stage 0)
+│   ├── llm/                      ← LLM ABSTRACTION (Stage 0 + Stage 2)
 │   │   ├── src/
 │   │   │   ├── types.ts          # LLMProvider, LLMRequest, LLMResponse, LLMMessage, etc.
 │   │   │   ├── client.ts         # LLMClient — resolves provider per-agent from config
 │   │   │   ├── providers/
-│   │   │   │   └── anthropic.ts  # AnthropicProvider (~80 LOC)
+│   │   │   │   ├── anthropic.ts  # AnthropicProvider (~80 LOC)
+│   │   │   │   ├── openai.ts     # OpenAIProvider — maps to Chat Completions API
+│   │   │   │   └── google.ts     # GoogleProvider — maps to Generative AI API
 │   │   │   └── mock.ts           # MockProvider — deterministic mock for testing
 │   │   └── tests/
-│   │       └── client.test.ts    # Includes live Anthropic smoke test (skips if no key/credits)
+│   │       ├── client.test.ts    # Provider resolution + live smoke tests
+│   │       ├── openai.test.ts    # OpenAI mapping + live smoke test (skips if no key)
+│   │       └── google.test.ts    # Google mapping + live smoke test (skips if no key)
 │   │
 │   ├── agents/                   ← AGENT INFRASTRUCTURE (Stage 1 + 1.5)
 │   │   ├── src/
@@ -172,7 +192,7 @@ bollard/
 │   │   ├── prompts/
 │   │   │   ├── planner.md        # System prompt with {{language}}, {{packageManager}}, etc. placeholders
 │   │   │   ├── coder.md          # System prompt with {{testFramework}}, {{typecheck}}, {{linter}} placeholders
-│   │   │   └── tester.md         # System prompt with {{testFramework}} placeholder
+│   │   │   └── tester.md         # System prompt with {{testFramework}}, {{#if}} language conditionals
 │   │   └── tests/
 │   │       ├── executor.test.ts  # 19 tests — multi-turn, max turns, errors, cost, verification
 │   │       ├── tools.test.ts     # 17 tests — all 6 tools + path traversal guards
@@ -181,45 +201,56 @@ bollard/
 │   │       ├── coder.test.ts     # 5 tests — prompt loading, full toolset, turns, maxTurns
 │   │       └── tester.test.ts    # 5 tests — prompt loading, test generation
 │   │
-│   ├── verify/                   ← VERIFICATION (Stage 1 + 1.5)
+│   ├── verify/                   ← VERIFICATION (Stage 1 + 1.5 + Stage 2)
 │   │   ├── src/
 │   │   │   ├── static.ts         # runStaticChecks(workDir, profile?) — profile-driven or hardcoded fallback
 │   │   │   ├── dynamic.ts        # runTests(workDir, testFiles?, profile?) — profile-driven test execution
-│   │   │   └── type-extractor.ts # extractSignaturesFromFiles, extractTypeDefinitions, resolveReferencedTypes, SignatureExtractor
+│   │   │   ├── type-extractor.ts # SignatureExtractor, TsCompilerExtractor, LlmFallbackExtractor
+│   │   │   ├── compose-generator.ts  # generateVerifyCompose — dynamic compose.verify.yml from ToolchainProfile
+│   │   │   └── test-lifecycle.ts # resolveTestOutputDir, writeTestMetadata, integrateWithTestRunner
 │   │   └── tests/
 │   │       ├── static.test.ts    # 4 tests — structure + live integration
 │   │       ├── dynamic.test.ts   # 2 tests — integration test
-│   │       └── type-extractor.test.ts  # 23 tests — signatures, type definitions, reference resolution, extractors
+│   │       ├── type-extractor.test.ts  # 30 tests — signatures, types, LLM fallback, extractors
+│   │       ├── compose-generator.test.ts  # 6 tests — YAML generation per language/mode
+│   │       └── test-lifecycle.test.ts  # 7 tests — lifecycle resolution, output dirs, metadata
 │   │
 │   ├── blueprints/               ← BLUEPRINT DEFINITIONS (Stage 1 + 1.5 + 2)
 │   │   ├── src/
-│   │   │   ├── implement-feature.ts  # 11-node pipeline with profile-driven checks
-│   │   │   └── write-tests-helpers.ts  # deriveAdversarialTestPath, stripMarkdownFences (Stage 2)
+│   │   │   ├── implement-feature.ts  # 12-node pipeline with profile-driven checks + docker-verify
+│   │   │   └── write-tests-helpers.ts  # deriveAdversarialTestPath (all languages), stripMarkdownFences
 │   │   └── tests/
-│   │       ├── implement-feature.test.ts  # 11 tests — node order, types, structure
+│   │       ├── implement-feature.test.ts  # 12 tests — node order, types, structure
 │   │       └── write-tests-helpers.test.ts  # 11 tests — test path derivation, fence stripping
 │   │
-│   └── cli/                      ← CLI (Stage 0 + Stage 1 + Stage 1.5)
+│   ├── cli/                      ← CLI (Stage 0 + Stage 1 + Stage 1.5 + Stage 2)
+│   │   ├── src/
+│   │   │   ├── index.ts          # Entry: parse args, route commands, progress output
+│   │   │   ├── config.ts         # detectToolchain + .bollard.yml overrides + ToolchainProfile
+│   │   │   ├── agent-handler.ts  # Multi-turn agentic handler (threads profile to agents)
+│   │   │   ├── diff.ts           # diffToolchainProfile — compare profile vs Stage 1 defaults
+│   │   │   └── human-gate.ts     # Interactive human approval via stdin
+│   │   └── tests/
+│   │       ├── config.test.ts    # 10 tests — defaults, detection, YAML, profile
+│   │       ├── profile-flag.test.ts  # 2 tests — verify --profile flag
+│   │       ├── diff.test.ts      # 6 tests — diff helper
+│   │       └── config.adversarial.test.ts
+│   │
+│   └── mcp/                      ← MCP SERVER (Stage 2)
 │       ├── src/
-│       │   ├── index.ts          # Entry: parse args, route commands, progress output
-│       │   ├── config.ts         # detectToolchain + .bollard.yml overrides + ToolchainProfile
-│       │   ├── agent-handler.ts  # Multi-turn agentic handler (threads profile to agents)
-│       │   ├── diff.ts           # diffToolchainProfile — compare profile vs Stage 1 defaults
-│       │   └── human-gate.ts     # Interactive human approval via stdin
+│       │   ├── server.ts         # MCP server entry point (stdio transport)
+│       │   └── tools.ts          # 6 MCP tools: verify, plan, implement, eval, config, profile
 │       └── tests/
-│           ├── config.test.ts    # 10 tests — defaults, detection, YAML, profile
-│           ├── profile-flag.test.ts  # 2 tests — verify --profile flag
-│           ├── diff.test.ts      # 6 tests — diff helper (unchanged/differ/new/removed scenarios)
-│           └── config.adversarial.test.ts  # Adversarial config tests
+│           └── tools.test.ts     # 13 tests — tool definitions, schemas, handlers
 ```
 
 ## Current Test Stats
 
-- **24 test files, 269 tests passing** (0 skipped, 0 failing)
+- **29 test files, 340 tests passing** (2 skipped for live API tests, 0 failing)
 - **30 adversarial test files** (separate Vitest config: `vitest.adversarial.config.ts`)
-- **Source:** ~5200 LOC across 7 packages
-- **Tests:** ~3690 LOC (+ ~7670 LOC adversarial tests)
-- **Prompts:** ~238 LOC (planner.md + coder.md + tester.md)
+- **Source:** ~5950 LOC across 8 packages
+- **Tests:** ~4650 LOC (+ ~7670 LOC adversarial tests)
+- **Prompts:** ~201 LOC (planner.md + coder.md + tester.md)
 
 ## Key Types (Source of Truth)
 
@@ -234,9 +265,9 @@ bollard/
 - `LanguageId` is a string union: `"typescript" | "javascript" | "python" | "go" | "rust" | "java" | "kotlin" | "ruby" | "csharp" | "elixir" | "unknown"`.
 - `PackageManagerId` is a string union: `"pnpm" | "npm" | "yarn" | "bun" | "poetry" | "pipenv" | "uv" | "pip" | "go" | "cargo" | "bundler" | "gradle" | "maven"`.
 - `VerificationCommand { label: string; cmd: string; args: string[]; source: ConfigSource }` — a single executable check.
-- `ToolchainProfile { language: LanguageId; packageManager?: PackageManagerId; checks: { typecheck?, lint?, test?, audit?, secretScan? }; mutation?; sourcePatterns: string[]; testPatterns: string[]; ignorePatterns: string[]; allowedCommands: string[]; adversarial: { mode, runtimeImage? } }` — computed on every run from auto-detection + `.bollard.yml` overrides.
+- `ToolchainProfile { language: LanguageId; packageManager?: PackageManagerId; checks: { typecheck?, lint?, test?, audit?, secretScan? }; mutation?; sourcePatterns: string[]; testPatterns: string[]; ignorePatterns: string[]; allowedCommands: string[]; adversarial: { mode, runtimeImage?, persist? } }` — computed on every run from auto-detection + `.bollard.yml` overrides.
 - `detectToolchain(cwd): Promise<ToolchainProfile>` — orchestrator that runs per-language detectors (TypeScript → Python → Go → Rust → fallback) and returns the first match.
-- `fillPromptTemplate(template, profile): string` — replaces `{{language}}`, `{{packageManager}}`, `{{typecheck}}`, `{{linter}}`, `{{testFramework}}`, `{{auditTool}}`, `{{allowedCommands}}`, `{{sourcePatterns}}`, `{{testPatterns}}` in agent prompts.
+- `fillPromptTemplate(template, profile): string` — replaces `{{variable}}` placeholders and processes `{{#if isTypeScript}}...{{else if isPython}}...{{/if}}` conditional blocks in agent prompts. Variables: `{{language}}`, `{{packageManager}}`, `{{typecheck}}`, `{{linter}}`, `{{testFramework}}`, `{{auditTool}}`, `{{allowedCommands}}`, `{{sourcePatterns}}`, `{{testPatterns}}`. Booleans: `isTypeScript`, `isPython`, `isGo`, `isRust`.
 
 ### Blueprint types (packages/engine/src/blueprint.ts)
 
@@ -297,9 +328,9 @@ All tools enforce path-traversal protection: resolved path must start with `work
 
 - **Planner** (`createPlannerAgent(profile?)`): read-only tools, temperature 0.2, max 25 turns. Produces structured JSON plan with summary, acceptance criteria, affected files, risk assessment, steps.
 - **Coder** (`createCoderAgent(profile?)`): all 6 tools, temperature 0.3, max 60 turns. Implements plans, writes tests. Prefers `edit_file` for existing files, `write_file` for new files. Verification hook skipped after 80% of turns to prevent budget exhaustion.
-- **Tester** (`createTesterAgent(profile?)`): no tools, temperature 0.3, max 5 turns. Generates adversarial tests from type signatures and referenced type definitions.
+- **Tester** (`createTesterAgent(profile?)`): no tools, temperature 0.3, max 5 turns. Generates adversarial tests from type signatures and referenced type definitions. Language-aware: generates tests in the project's own language/framework (TypeScript/vitest, Python/pytest, Go/testing, Rust/cargo test).
 
-All agent creation functions accept an optional `ToolchainProfile` — when provided, prompt `{{placeholders}}` are filled with detected language/tool values.
+All agent creation functions accept an optional `ToolchainProfile` — when provided, prompt `{{placeholders}}` and `{{#if}}` conditionals are filled with detected language/tool values.
 
 ### Static verification (packages/verify/src/static.ts)
 
@@ -315,19 +346,20 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 
 ### implement-feature blueprint (packages/blueprints/src/implement-feature.ts)
 
-11-node pipeline:
+12-node pipeline:
 
 1. **create-branch** (deterministic) — `git checkout -b bollard/{runId}`
 2. **generate-plan** (agentic/planner) — planner agent explores codebase, produces JSON plan
 3. **approve-plan** (human_gate) — shows plan, waits for human approval
 4. **implement** (agentic/coder) — coder agent implements plan with full toolset
 5. **static-checks** (deterministic) — profile-driven typecheck + lint + audit + secretScan
-6. **extract-signatures** (deterministic) — extract function signatures + referenced type definitions from affected files (TS only; other languages return empty via `LlmFallbackExtractor` stub)
-7. **generate-tests** (agentic/tester) — adversarial test generation from signatures + type definitions
-8. **write-tests** (deterministic) — strip markdown fences, derive test path (src/ → tests/), write test files, check for information leaks
+6. **extract-signatures** (deterministic) — extract function signatures + referenced type definitions (TS via compiler, other languages via LLM fallback)
+7. **generate-tests** (agentic/tester) — adversarial test generation from signatures + type definitions (in project's language)
+8. **write-tests** (deterministic) — strip markdown fences, derive language-specific test path, write test files, check for information leaks
 9. **run-tests** (deterministic) — profile-driven test execution
-10. **generate-diff** (deterministic) — `git diff --stat main`
-11. **approve-pr** (human_gate) — shows diff summary, waits for human approval
+10. **docker-verify** (deterministic) — Docker-isolated adversarial test execution (gracefully degrades without Docker)
+11. **generate-diff** (deterministic) — `git diff --stat main`
+12. **approve-pr** (human_gate) — shows diff summary, waits for human approval
 
 ### CLI commands
 
@@ -341,7 +373,8 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 | `diff` | Compare detected profile vs hardcoded Stage 1 defaults |
 | `eval [agent]` | Run eval sets (planner, coder) |
 | `config show [--sources]` | Show resolved configuration |
-| `init` | Detect project configuration |
+| `init [--mode=...] [--persist]` | Detect project configuration, generate .bollard.yml |
+| `promote-test <path>` | Promote adversarial test to project test directory |
 
 All commands output colored, structured progress to stderr. JSON results go to stdout.
 
@@ -363,8 +396,11 @@ All commands output colored, structured progress to stderr. JSON results go to s
 ### Dependencies
 
 - Minimize external dependencies. Runtime deps are:
-  - `@anthropic-ai/sdk` (in @bollard/llm only)
-  - `zod` (for config/input validation in @bollard/cli)
+  - `@anthropic-ai/sdk` (in @bollard/llm)
+  - `openai` (in @bollard/llm)
+  - `@google/generative-ai` (in @bollard/llm)
+  - `@modelcontextprotocol/sdk` (in @bollard/mcp)
+  - `zod` (for config/input validation in @bollard/cli, @bollard/mcp)
   - `yaml` (for .bollard.yml parsing in @bollard/cli)
 - Dev deps: `typescript`, `vitest`, `@biomejs/biome`, `tsx`, `fast-check`
 - If you're about to add a dependency, think twice. Can it be done in 50 lines of TypeScript instead?
@@ -376,7 +412,7 @@ All commands output colored, structured progress to stderr. JSON results go to s
 - Every source file gets a corresponding test file.
 - Tests use Vitest (`describe`, `it`, `expect`).
 - Use the `MockProvider` (from @bollard/llm) for all engine/agent tests. No real LLM calls in unit tests.
-- One live smoke test in `@bollard/llm` that calls Anthropic (gracefully skips if no key or insufficient credits).
+- Live smoke tests in `@bollard/llm` for Anthropic, OpenAI, and Google (gracefully skip if no key).
 - Agent tools are tested against real temp directories (created/cleaned per test).
 - The `@bollard/verify` integration test runs actual typecheck + lint against the bollard repo itself.
 - Test names should describe behavior, not implementation.
@@ -402,7 +438,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - Planner agent (read-only tools, structured JSON plan output)
 - Coder agent (all tools, implements plans)
 - Static verification package (tsc, biome, audit, gitleaks)
-- `implement-feature` blueprint (11-node pipeline with human gates)
+- `implement-feature` blueprint (11-node pipeline with human gates, extended to 12 in Stage 2)
 - CLI commands: `plan`, `verify`, `run implement-feature`, `eval`
 - Human gate handler (interactive stdin approval)
 - Agent eval sets (planner: 4 cases, coder: 2 cases)
@@ -425,28 +461,48 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 ### Stage 2 — Agent Infrastructure (DONE):
 - `edit_file` agent tool for surgical string replacement (prevents whole-file rewrites)
 - Deeper type extraction: `ExtractedTypeDefinition`, `ExtractionResult`, `resolveReferencedTypes`
-- `SignatureExtractor` interface with `TsCompilerExtractor` and `LlmFallbackExtractor` stub
+- `SignatureExtractor` interface with `TsCompilerExtractor` and `LlmFallbackExtractor`
 - `write-tests` node: profile-aware test placement (src/ → tests/), markdown fence stripping
 - Coder max turns increased to 60 (from 40) with turn budget guidance in prompt
 - `skipVerificationAfterTurn` in executor — verification hook skipped above 80% turn budget
 - `buildTesterMessage` includes referenced type definitions alongside signatures
 - `compactOlderTurns` handles `edit_file` payloads
 
+### Stage 2 — Docker Isolation & Multi-Provider (DONE):
+- Docker-isolated verification containers: `Dockerfile.verify`, `Dockerfile.verify-python`, `Dockerfile.verify-go`, `Dockerfile.verify-rust`
+- `compose-generator.ts` generates `compose.verify.yml` from `ToolchainProfile`
+- `docker-verify` blueprint node (position 10) with graceful Docker-unavailable degradation
+- `LlmFallbackExtractor` implemented — LLM-based signature extraction for non-TS languages
+- `getExtractor(lang, provider?, model?)` routes to `TsCompilerExtractor` or `LlmFallbackExtractor`
+- In-language adversarial test generation: conditional `{{#if}}` blocks in `fillPromptTemplate`, tester prompt outputs Python/Go/Rust test templates
+- `deriveAdversarialTestPath` supports Python, Go, Rust naming conventions
+- Adversarial test lifecycle: `TestLifecycle` type, `resolveTestOutputDir`, `writeTestMetadata`, `integrateWithTestRunner`
+- `ToolchainProfile.adversarial.persist` — ephemeral (default) or persistent-native (opt-in)
+- `@bollard/mcp` package — MCP server with 6 tools (verify, plan, implement, eval, config, profile)
+- `OpenAIProvider` — maps `LLMRequest` to OpenAI Chat Completions API with function calling
+- `GoogleProvider` — maps `LLMRequest` to Google Generative AI API with function declarations
+- `LLMClient` resolves `"openai"` and `"google"` providers via env vars
+- `promote-test` CLI command — copy adversarial tests to project test directory
+- `bollard init` generates `.bollard.yml` and `.bollard/mcp.json`
+- Blueprint now has **12 nodes** (added `docker-verify` between `run-tests` and `generate-diff`)
+
 ### DO NOT build yet:
-- MCP server — Stage 2 (Docker isolation half)
-- Docker-isolated verification containers — Stage 2 (Docker isolation half)
-- LLM-based signature extraction for non-TS languages — Stage 2 (Docker isolation half)
-- In-language adversarial test generation — Stage 2 (Docker isolation half)
-- OpenAI/Google LLM providers — Stage 2 (Docker isolation half)
+- Contract-scope adversarial tester (contract-tester.ts, contract extractor) — Stage 3
+- Contract context builder (dependency graph, interface boundaries, error contracts) — Stage 3
+- Weighted concern lenses in tester prompts (security, performance, resilience) — Stage 3
 - Per-language mutation testing (Stryker, mutmut, cargo-mutants, etc.) — Stage 3
 - Semantic review agent — Stage 3
-- Production probes, drift detection, flag manager — Stage 3
-- Git rollback on coder max-turns failure — Stage 3
-- Verification summary batching (single feedback message instead of per-check retries) — Stage 3
-- CI integration, run history, self-improvement — Stage 4
+- Deterministic type extractors for Python/Go/Rust (ast, go doc, cargo doc) — Stage 3
+- Behavioral-scope adversarial tester (behavioral-tester.ts, behavioral extractor) — Stage 4
+- Behavioral context builder (topology, endpoints, config schema, failure modes) — Stage 4
+- Fault injector (Docker-level network delays, connection drops, resource limits) — Stage 4
+- Production probes, drift detection, flag manager — Stage 4
+- Git rollback on coder max-turns failure — Stage 4
+- Verification summary batching (single feedback message instead of per-check retries) — Stage 4
+- CI integration, run history, self-improvement — Stage 5
 
 ### Size (current):
-- Total: ~5200 source, ~3690 test (+~7670 adversarial), ~238 prompt across 7 packages
+- Total: ~5950 source, ~4650 test (+~7670 adversarial), ~201 prompt across 8 packages
 
 ## Design Principles
 
@@ -457,6 +513,13 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 5. **Context is the single source of truth.** `PipelineContext` holds everything for a run. No parallel state tracking.
 6. **The runner doesn't know about agents.** Agent logic lives in `@bollard/agents`. The runner calls callbacks (`AgenticHandler`, `HumanGateHandler`). The CLI wires them together.
 7. **Tools are sandboxed.** All file tools enforce path-traversal checks. `run_command` uses a whitelist. No shell expansion.
+8. **The engine doesn't know about languages.** (from 06-toolchain-profiles) Language-specific logic lives in `ToolchainProfile`. The runner, agents, and blueprints consume the profile.
+9. **Independence requires isolation.** (from 06-toolchain-profiles) Adversarial tests in the same process as the code they test share failure modes. Docker is the isolation boundary.
+10. **Detection is deterministic.** (from 06-toolchain-profiles) No network calls, no LLM calls. File exists → tool detected.
+11. **One agent, one adversarial concern.** (from 07-adversarial-scopes) Each scope gets its own agent. Overloading one prompt with multiple scopes guarantees drift.
+12. **Bollard guarantees coverage, not the developer.** (from 07-adversarial-scopes) Missing test infrastructure → Bollard provides its own.
+13. **Scope is about the defect class, not the technology.** (from 07-adversarial-scopes) "Boundary" ≠ "unit test." "Behavioral" ≠ "e2e test."
+14. **Concerns are lenses, not scopes.** (from 07-adversarial-scopes) Security, performance, resilience don't change what the agent sees — they change what it looks for, with per-scope weights.
 
 ## Git Conventions
 
@@ -469,8 +532,9 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 If you need deeper context, refer to these (they are the source of truth) in the spec/ folder:
 
 - `01-architecture.md` — Full architecture, type definitions, pipeline layers
-- `02-bootstrap.md` — Stage-by-stage bootstrap roadmap (Stages 0 → 1 → 1.5 → 2 → 3 → 4)
-- `03-providers.md` — Cloud provider abstraction (not needed until Stage 3)
+- `02-bootstrap.md` — Historical bootstrap roadmap (Stages 0 → 2). Not a living plan — see 07 for forward roadmap.
+- `03-providers.md` — Cloud provider abstraction (not needed until Stage 4)
 - `04-configuration.md` — Config philosophy, auto-detection, .bollard.yml spec
 - `05-risk-model.md` — Risk scoring dimensions and gating behavior
 - `06-toolchain-profiles.md` — Language-agnostic verification: three-layer model, toolchain detection, Docker isolation, adversarial test lifecycle
+- `07-adversarial-scopes.md` — **Multi-scope adversarial verification: boundary/contract/behavioral scopes × correctness/security/performance/resilience concerns. Forward roadmap (Stages 3 → 4 → 5). Source of truth for adversarial testing design.**

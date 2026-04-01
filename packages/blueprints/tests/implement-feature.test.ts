@@ -4,8 +4,8 @@ import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
 describe("createImplementFeatureBlueprint", () => {
   const bp = createImplementFeatureBlueprint("/tmp/test")
 
-  it("has 11 nodes in the correct order", () => {
-    expect(bp.nodes).toHaveLength(11)
+  it("has 12 nodes in the correct order", () => {
+    expect(bp.nodes).toHaveLength(12)
     const ids = bp.nodes.map((n) => n.id)
     expect(ids).toEqual([
       "create-branch",
@@ -17,6 +17,7 @@ describe("createImplementFeatureBlueprint", () => {
       "generate-tests",
       "write-tests",
       "run-tests",
+      "docker-verify",
       "generate-diff",
       "approve-pr",
     ])
@@ -34,6 +35,7 @@ describe("createImplementFeatureBlueprint", () => {
       { id: "generate-tests", type: "agentic" },
       { id: "write-tests", type: "deterministic" },
       { id: "run-tests", type: "deterministic" },
+      { id: "docker-verify", type: "deterministic" },
       { id: "generate-diff", type: "deterministic" },
       { id: "approve-pr", type: "human_gate" },
     ])
@@ -100,5 +102,17 @@ describe("createImplementFeatureBlueprint", () => {
     const agenticNodes = bp.nodes.filter((n) => n.type === "agentic")
     expect(agenticNodes).toHaveLength(3)
     expect(agenticNodes.map((n) => n.agent)).toEqual(["planner", "coder", "tester"])
+  })
+
+  it("docker-verify is at position 10 (after run-tests)", () => {
+    const idx = bp.nodes.findIndex((n) => n.id === "docker-verify")
+    expect(idx).toBe(9)
+    expect(bp.nodes[idx - 1]?.id).toBe("run-tests")
+    expect(bp.nodes[idx + 1]?.id).toBe("generate-diff")
+  })
+
+  it("docker-verify has an execute function", () => {
+    const node = bp.nodes.find((n) => n.id === "docker-verify")
+    expect(typeof node?.execute).toBe("function")
   })
 })

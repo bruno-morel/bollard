@@ -11,6 +11,7 @@
     "@bollard/detect": "workspace:*",
     "@bollard/engine": "workspace:*",
     "@bollard/agents": "workspace:*",
+    "@bollard/llm": "workspace:*",
     "@bollard/verify": "workspace:*"
   }
 }

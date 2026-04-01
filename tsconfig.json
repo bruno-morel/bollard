@@ -30,6 +30,7 @@
     { "path": "packages/agents" },
     { "path": "packages/verify" },
     { "path": "packages/blueprints" },
-    { "path": "packages/detect" }
+    { "path": "packages/detect" },
+    { "path": "packages/mcp" }
   ]
 }

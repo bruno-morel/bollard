@@ -13,9 +13,13 @@ services:
       - verify_modules:/app/packages/verify/node_modules
       - blueprints_modules:/app/packages/blueprints/node_modules
       - detect_modules:/app/packages/detect/node_modules
+      - mcp_modules:/app/packages/mcp/node_modules
+      - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /app
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - BOLLARD_AUTO_APPROVE=${BOLLARD_AUTO_APPROVE:-}
       - NODE_OPTIONS=--disable-warning=DEP0040
     entrypoint: ["pnpm"]
@@ -29,3 +33,4 @@ volumes:
   verify_modules:
   blueprints_modules:
   detect_modules:
+  mcp_modules:

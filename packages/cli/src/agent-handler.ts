@@ -244,19 +244,36 @@ function buildTesterMessage(ctx: PipelineContext): string {
     }
   }
 
+  const lang = ctx.toolchainProfile?.language ?? "typescript"
+  const langLabel =
+    lang === "typescript"
+      ? "TypeScript"
+      : lang === "python"
+        ? "Python"
+        : lang === "go"
+          ? "Go"
+          : lang === "rust"
+            ? "Rust"
+            : lang
+
   sections.push(
     "# Instructions",
-    "Write a complete test file. Output ONLY the TypeScript test code, no explanations.",
+    `Write a complete test file in ${langLabel}. Output ONLY the ${langLabel} test code, no explanations.`,
   )
 
   return sections.join("\n")
+}
+
+export interface AgenticHandlerResult {
+  handler: (node: BlueprintNode, ctx: PipelineContext) => Promise<NodeResult>
+  llmConfig: { provider: import("@bollard/llm/src/types.js").LLMProvider; model: string }
 }
 
 export async function createAgenticHandler(
   config: BollardConfig,
   workDir: string,
   profile?: ToolchainProfile,
-): Promise<(node: BlueprintNode, ctx: PipelineContext) => Promise<NodeResult>> {
+): Promise<AgenticHandlerResult> {
   const llmClient = new LLMClient(config)
   const agents = {
     planner: await createPlannerAgent(profile),
@@ -264,7 +281,9 @@ export async function createAgenticHandler(
     tester: await createTesterAgent(profile),
   }
 
-  return async (node: BlueprintNode, ctx: PipelineContext): Promise<NodeResult> => {
+  const extractionLlm = llmClient.forAgent("tester")
+
+  const handler = async (node: BlueprintNode, ctx: PipelineContext): Promise<NodeResult> => {
     const agentRole = node.agent ?? "default"
     const agent = agents[agentRole as keyof typeof agents]
 
@@ -347,4 +366,6 @@ export async function createAgenticHandler(
       duration_ms: Date.now() - startMs,
     }
   }
+
+  return { handler, llmConfig: extractionLlm }
 }

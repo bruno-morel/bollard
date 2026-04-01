@@ -31,13 +31,15 @@ This layer is language-coupled by definition, but that's fine — it's the proje
 
 > "Does this code do what it *should*, including things the developer didn't think about?"
 
-A separate agent, with different information than the coder, generates tests. These tests run in **Bollard's own container** — different runtime, different dependencies, different failure modes. This is where true independence lives.
+Separate agents, with different information than the coder, generate tests across three **adversarial scopes** — boundary (function edge cases), contract (cross-module assumptions), and behavioral (system-wide failure modes). Each scope probes four **cross-cutting concerns** (correctness, security, performance, resilience) with weights tuned to the scope's relevance. See [07-adversarial-scopes.md](07-adversarial-scopes.md) for the full scope × concern matrix, agent definitions, and lifecycle.
 
-Two sub-modes:
+Each scope can run in one of two integration modes:
 
-**2a. Black-box (default).** The adversarial agent tests the project through its public interfaces: HTTP endpoints, CLI commands, library bindings, message queues. Tests are written in Bollard's native TypeScript (using fast-check for property-based testing, standard HTTP/CLI clients for integration). The project runs in its own container; the tests run in Bollard's container. They share only a network and a mounted volume.
+**Integrated.** Adversarial tests are written for the project's own test framework and run alongside the developer's tests. This is the default for boundary and contract scopes when the project has a capable test framework.
 
-**2b. In-language (opt-in).** For projects where black-box testing is insufficient (pure libraries with no network surface, complex internal state machines), the adversarial agent writes tests *in the project's language* — but in an isolated container with only the project's source and minimal dependencies. No access to the project's existing test infrastructure, fixtures, mocks, or helpers. The agent writes from scratch, using only the public API surface.
+**Independent.** Tests run in Bollard-controlled containers, separate from the project's test infrastructure. This is the default for behavioral scope (which requires Docker-level fault injection) and the fallback for any scope when the project has no test framework.
+
+The key guarantee: **Bollard runs all enabled scopes regardless of the project's test infrastructure.** A project with zero tests still gets boundary + contract + behavioral adversarial verification — all running in Bollard's own containers.
 
 ### Layer 3: Mutation Testing (Meta-Verification)
 
@@ -263,11 +265,9 @@ interface ToolchainProfile {
   allowedCommands: string[]                 // e.g., ["python", "pip", "pytest", "mypy", "ruff", "git"]
 
   // Adversarial test configuration (Layer 2)
-  adversarial: {
-    mode: "blackbox" | "in-language" | "both"
-    // For in-language mode: what image has the language runtime
-    runtimeImage?: string                   // e.g., "python:3.12-slim"
-  }
+  // Per-scope configuration — see 07-adversarial-scopes.md for the full model.
+  // Each scope has its own integration mode, lifecycle, and concern weights.
+  adversarial: AdversarialConfig            // see 07-adversarial-scopes.md Section 9
 }
 
 interface VerificationCommand {
@@ -601,7 +601,7 @@ None of these require editing `.bollard.yml` unless auto-detection gets somethin
 
 ## 13. Generated Test Location and Lifecycle
 
-Bollard produces tests at multiple layers. Each has a different lifecycle, a different home, and a different relationship to the project's own test infrastructure.
+Bollard produces tests at multiple layers and scopes. Each has a different lifecycle, a different home, and a different relationship to the project's own test infrastructure. With the multi-scope adversarial model (see [07-adversarial-scopes.md](07-adversarial-scopes.md)), test artifacts are organized by scope (boundary, contract, behavioral), each with its own integration mode and lifecycle (ephemeral, persistent, or promoted).
 
 ### Layer 1: Project Tests — Not Bollard's Business
 

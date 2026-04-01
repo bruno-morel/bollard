@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
+import type { LLMProvider } from "@bollard/llm/src/types.js"
 import ts from "typescript"
 
 export interface ExtractedSignature {
@@ -252,18 +253,162 @@ export class TsCompilerExtractor implements SignatureExtractor {
   }
 }
 
-export class LlmFallbackExtractor implements SignatureExtractor {
-  // TODO: Stage 2 -- implement LLM-based signature extraction
-  async extract(_files: string[], _profile?: ToolchainProfile): Promise<ExtractionResult> {
-    return { signatures: [], types: [] }
+const LLM_EXTRACTION_PROMPT = `You extract public API signatures from source code. You receive source files and output ONLY a JSON object with the extracted signatures.
+
+For each file, extract:
+1. All exported function/method signatures (replace bodies with "{ ... }" or "...")
+2. All exported type definitions (interfaces, types, enums, constants with type annotations)
+3. Import statements
+
+Output format (strict JSON, no markdown fences):
+{
+  "signatures": [
+    {
+      "filePath": "path/to/file",
+      "signatures": "function signatures here, newline separated",
+      "types": "type definitions here, newline separated",
+      "imports": "import statements here, newline separated"
+    }
+  ],
+  "types": [
+    {
+      "name": "TypeName",
+      "kind": "interface",
+      "definition": "full type definition",
+      "filePath": "path/to/file"
+    }
+  ]
+}`
+
+interface LlmExtractionResponse {
+  signatures?: Array<{
+    filePath?: string
+    signatures?: string
+    types?: string
+    imports?: string
+  }>
+  types?: Array<{
+    name?: string
+    kind?: string
+    definition?: string
+    filePath?: string
+  }>
+}
+
+function parseLlmResponse(text: string): LlmExtractionResponse | null {
+  try {
+    return JSON.parse(text) as LlmExtractionResponse
+  } catch {
+    const fenced = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/)
+    if (fenced?.[1]) {
+      try {
+        return JSON.parse(fenced[1]) as LlmExtractionResponse
+      } catch {
+        return null
+      }
+    }
+    return null
   }
 }
 
-export function getExtractor(lang: LanguageId): SignatureExtractor {
+const VALID_KINDS = new Set(["interface", "type", "enum", "const"])
+
+export class LlmFallbackExtractor implements SignatureExtractor {
+  constructor(
+    private readonly provider: LLMProvider,
+    private readonly model: string,
+  ) {}
+
+  async extract(files: string[], _profile?: ToolchainProfile): Promise<ExtractionResult> {
+    if (files.length === 0) {
+      return { signatures: [], types: [] }
+    }
+
+    const fileContents: string[] = []
+    for (const fp of files) {
+      try {
+        const content = await readFile(fp, "utf-8")
+        fileContents.push(`### ${fp}\n\`\`\`\n${content}\n\`\`\``)
+      } catch {
+        // File might not exist — skip
+      }
+    }
+
+    if (fileContents.length === 0) {
+      return { signatures: [], types: [] }
+    }
+
+    try {
+      const response = await this.provider.chat({
+        system: LLM_EXTRACTION_PROMPT,
+        messages: [
+          {
+            role: "user",
+            content: `Extract signatures from these files:\n\n${fileContents.join("\n\n")}`,
+          },
+        ],
+        maxTokens: 4096,
+        temperature: 0,
+        model: this.model,
+      })
+
+      const text = response.content
+        .filter((b) => b.type === "text")
+        .map((b) => b.text ?? "")
+        .join("")
+
+      const parsed = parseLlmResponse(text)
+      if (!parsed) {
+        return { signatures: [], types: [] }
+      }
+
+      const signatures: ExtractedSignature[] = (parsed.signatures ?? [])
+        .filter((s) => s.filePath)
+        .map((s) => ({
+          filePath: s.filePath ?? "",
+          signatures: s.signatures ?? "",
+          types: s.types ?? "",
+          imports: s.imports ?? "",
+        }))
+
+      const types: ExtractedTypeDefinition[] = (parsed.types ?? [])
+        .filter((t) => t.name && t.kind && VALID_KINDS.has(t.kind))
+        .map((t) => ({
+          name: t.name ?? "",
+          kind: t.kind as ExtractedTypeDefinition["kind"],
+          definition: t.definition ?? "",
+          filePath: t.filePath ?? "",
+        }))
+
+      return { signatures, types }
+    } catch {
+      return { signatures: [], types: [] }
+    }
+  }
+}
+
+const NOOP_PROVIDER: LLMProvider = {
+  name: "noop",
+  chat: async () => ({
+    content: [],
+    stopReason: "end_turn",
+    usage: { inputTokens: 0, outputTokens: 0 },
+    costUsd: 0,
+  }),
+}
+
+export function getExtractor(
+  lang: LanguageId,
+  provider?: LLMProvider,
+  model?: string,
+): SignatureExtractor {
   if (lang === "typescript") {
     return new TsCompilerExtractor()
   }
-  return new LlmFallbackExtractor()
+  if (provider && model) {
+    return new LlmFallbackExtractor(provider, model)
+  }
+  return new LlmFallbackExtractor(NOOP_PROVIDER, "noop")
 }
 
 // ---- Leak detection support ----

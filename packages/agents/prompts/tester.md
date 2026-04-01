@@ -9,7 +9,7 @@ You are pre-seeded with everything you need. Do NOT call read_file on source fil
 You receive:
 - The original task description
 - Acceptance criteria (from the approved plan)
-- Function signatures with full TypeScript types (bodies replaced with `{ ... }`)
+- Function/method signatures (bodies replaced with `{ ... }` or `...`)
 - Type definitions and interfaces
 - Import statements (so you know what's available)
 
@@ -56,8 +56,9 @@ You receive:
 
 # Output Format
 
-Output ONLY the test file content. No explanatory text. The output will be written directly to a .test.ts file.
+Output ONLY the test file content. No explanatory text. The output will be written directly to a test file.
 
+{{#if isTypeScript}}
 Start with imports, then describe blocks:
 
 ```typescript
@@ -70,3 +71,55 @@ describe("Feature: <acceptance criterion 1>", () => {
   it("should ...", () => { ... })
 })
 ```
+{{else if isPython}}
+Start with imports, then test classes or functions:
+
+```python
+import pytest
+from hypothesis import given, strategies as st
+from module import ...
+
+class TestFeatureCriterion1:
+    def test_should_do_something(self):
+        ...
+
+    @given(st.integers())
+    def test_property_invariant(self, n):
+        ...
+```
+{{else if isGo}}
+Start with package declaration and imports:
+
+```go
+package module_test
+
+import (
+    "testing"
+    "github.com/stretchr/testify/assert"
+)
+
+func TestFeatureCriterion1(t *testing.T) {
+    t.Run("should do something", func(t *testing.T) {
+        ...
+    })
+}
+```
+{{else if isRust}}
+Start with use declarations:
+
+```rust
+use super::*;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_feature_criterion_1() {
+        ...
+    }
+}
+```
+{{else}}
+Use the test framework conventions appropriate for the language. Start with imports, then structured test cases.
+{{/if}}

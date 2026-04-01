@@ -14,6 +14,7 @@ COPY packages/agents/package.json packages/agents/package.json
 COPY packages/verify/package.json packages/verify/package.json
 COPY packages/blueprints/package.json packages/blueprints/package.json
 COPY packages/detect/package.json packages/detect/package.json
+COPY packages/mcp/package.json packages/mcp/package.json
 
 RUN pnpm install --frozen-lockfile
 

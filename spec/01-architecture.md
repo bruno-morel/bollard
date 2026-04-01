@@ -104,21 +104,23 @@ The same engine runs all of these. The blueprint defines which artifact types a 
                            │ code changes (no tests yet)
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│         LAYER 2: ADVERSARIAL TEST GENERATION                    │
+│     LAYER 2: MULTI-SCOPE ADVERSARIAL TEST GENERATION            │
 │                                                                 │
-│  A SEPARATE agent receives:                                     │
-│    ✓ The original requirement / acceptance criteria              │
-│    ✓ Function signatures and types (public API surface)         │
-│    ✗ NOT the implementation body                                │
+│  SEPARATE agents (one per scope) receive different context:     │
 │                                                                 │
-│  Produces:                                                      │
-│    · Unit tests derived from the SPEC                           │
-│    · Property-based tests via fast-check (invariants)           │
-│    · Edge case tests (nulls, boundaries, concurrency)           │
-│    · Negative tests (what should NOT happen)                    │
+│  Boundary scope:   signatures + types → edge cases, injection,  │
+│                    complexity, resource leaks                    │
+│  Contract scope:   dep graph + interface contracts → assumption │
+│                    mismatch, privilege escalation, N+1 patterns  │
+│  Behavioral scope: topology + endpoints + config → system       │
+│                    failure modes, auth bypass, latency under load│
 │                                                                 │
-│  If the code agent hallucinated, the test agent won't know      │
-│  to confirm it — it tests against the REQUIREMENT.              │
+│  Each scope probes four concerns (weighted by relevance):       │
+│    correctness, security, performance, resilience               │
+│                                                                 │
+│  None see the implementation body. All test against the SPEC.   │
+│  See 07-adversarial-scopes.md for the full scope × concern      │
+│  matrix, agent definitions, and lifecycle.                      │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ code + independently-written tests
                            ▼
@@ -383,12 +385,16 @@ bollard/
 │   │   ├── src/
 │   │   │   ├── planner.ts         # planning agent
 │   │   │   ├── coder.ts           # code generation agent
-│   │   │   ├── tester.ts          # adversarial test agent
-│   │   │   └── reviewer.ts        # semantic review agent
+│   │   │   ├── boundary-tester.ts # boundary-scope adversarial agent (Stage 2, was tester.ts)
+│   │   │   ├── contract-tester.ts # contract-scope adversarial agent (Stage 3)
+│   │   │   ├── behavioral-tester.ts # behavioral-scope adversarial agent (Stage 4)
+│   │   │   └── reviewer.ts        # semantic review agent (Stage 3)
 │   │   └── prompts/
 │   │       ├── planner.md
 │   │       ├── coder.md
-│   │       ├── tester.md          # the adversarial prompt
+│   │       ├── boundary-tester.md # scope 1: signatures + types + 4 concern lenses
+│   │       ├── contract-tester.md # scope 2: dep graph + contracts + 4 concern lenses
+│   │       ├── behavioral-tester.md # scope 3: topology + endpoints + 4 concern lenses
 │   │       └── reviewer.md
 │   │
 │   ├── verify/                # verification layers (all deterministic)
@@ -427,7 +433,7 @@ bollard/
 │   │       ├── fix-bug.ts
 │   │       └── refactor.ts
 │   │
-│   └── observe/               # production feedback loop (Stage 3)
+│   └── observe/               # production feedback loop (Stage 4)
 │       ├── package.json
 │       └── src/
 │           ├── probe-runner.ts        # execute probes: fetch() + assertions

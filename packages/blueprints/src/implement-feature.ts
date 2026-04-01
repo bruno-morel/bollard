@@ -5,12 +5,11 @@ import { promisify } from "node:util"
 import type { Blueprint, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
+import type { LLMProvider } from "@bollard/llm/src/types.js"
+import { generateVerifyCompose } from "@bollard/verify/src/compose-generator.js"
 import { runTests } from "@bollard/verify/src/dynamic.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
-import {
-  extractPrivateIdentifiers,
-  extractSignaturesFromFiles,
-} from "@bollard/verify/src/type-extractor.js"
+import { extractPrivateIdentifiers, getExtractor } from "@bollard/verify/src/type-extractor.js"
 import { deriveAdversarialTestPath, stripMarkdownFences } from "./write-tests-helpers.js"
 
 const execFileAsync = promisify(execFile)
@@ -44,7 +43,15 @@ function getAffectedSourceFiles(ctx: PipelineContext): string[] {
   return allFiles.filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
 }
 
-export function createImplementFeatureBlueprint(workDir: string): Blueprint {
+export interface BlueprintLlmConfig {
+  provider?: LLMProvider
+  model?: string
+}
+
+export function createImplementFeatureBlueprint(
+  workDir: string,
+  llmConfig?: BlueprintLlmConfig,
+): Blueprint {
   return {
     id: "implement-feature",
     name: "Implement Feature",
@@ -120,10 +127,7 @@ export function createImplementFeatureBlueprint(workDir: string): Blueprint {
         type: "deterministic",
         execute: async (ctx: PipelineContext): Promise<NodeResult> => {
           const profile = ctx.toolchainProfile
-          if (profile && profile.language !== "typescript") {
-            // TODO: Stage 2 -- add signature extraction for non-TS languages
-            return { status: "ok", data: { filesExtracted: 0, signatures: [], types: [] } }
-          }
+          const lang = profile?.language ?? "typescript"
 
           const files = getAffectedSourceFiles(ctx)
           if (files.length === 0) {
@@ -131,7 +135,8 @@ export function createImplementFeatureBlueprint(workDir: string): Blueprint {
           }
 
           const fullPaths = files.map((f) => resolve(workDir, f))
-          const result = await extractSignaturesFromFiles(fullPaths)
+          const extractor = getExtractor(lang, llmConfig?.provider, llmConfig?.model)
+          const result = await extractor.extract(fullPaths, profile)
 
           return {
             status: "ok",
@@ -206,7 +211,7 @@ export function createImplementFeatureBlueprint(workDir: string): Blueprint {
             }
           }
 
-          const testPath = deriveAdversarialTestPath(firstFile)
+          const testPath = deriveAdversarialTestPath(firstFile, ctx.toolchainProfile)
           const cleanOutput = stripMarkdownFences(testerOutput)
           const fullPath = resolve(workDir, testPath)
           await mkdir(dirname(fullPath), { recursive: true })
@@ -236,6 +241,54 @@ export function createImplementFeatureBlueprint(workDir: string): Blueprint {
             }
           }
           return { status: "ok", data: result }
+        },
+      },
+
+      {
+        id: "docker-verify",
+        name: "Docker-Isolated Verification",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const profile = ctx.toolchainProfile
+          if (!profile) {
+            return { status: "ok", data: { skipped: true, reason: "no toolchain profile" } }
+          }
+
+          try {
+            await execFileAsync("docker", ["compose", "version"], { cwd: workDir })
+          } catch {
+            return { status: "ok", data: { skipped: true, reason: "docker not available" } }
+          }
+
+          const compose = generateVerifyCompose({
+            workDir,
+            profile,
+          })
+
+          const composePath = resolve(workDir, ".bollard", "compose.verify.yml")
+          await mkdir(dirname(composePath), { recursive: true })
+          await writeFile(composePath, compose.yaml, "utf-8")
+
+          try {
+            const { stdout } = await execFileAsync(
+              "docker",
+              ["compose", "-f", composePath, "up", "--abort-on-container-exit"],
+              { cwd: workDir, maxBuffer: 4 * 1024 * 1024 },
+            )
+            return {
+              status: "ok",
+              data: { services: compose.services, output: stdout },
+            }
+          } catch (err: unknown) {
+            return {
+              status: "fail",
+              data: { services: compose.services },
+              error: {
+                code: "TEST_FAILED",
+                message: `Docker verification failed: ${err instanceof Error ? err.message : String(err)}`,
+              },
+            }
+          }
         },
       },
 
