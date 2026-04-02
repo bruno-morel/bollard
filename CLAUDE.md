@@ -247,10 +247,18 @@ bollard/
 ## Current Test Stats
 
 - **29 test files, 340 tests passing** (2 skipped for live API tests, 0 failing)
-- **30 adversarial test files** (separate Vitest config: `vitest.adversarial.config.ts`)
+- **30 adversarial test files** (separate Vitest config: `vitest.adversarial.config.ts`; 327 passing, 171 failing — failures are mostly boundary tests against invalid inputs outside type contracts)
 - **Source:** ~5950 LOC across 8 packages
 - **Tests:** ~4650 LOC (+ ~7670 LOC adversarial tests)
 - **Prompts:** ~201 LOC (planner.md + coder.md + tester.md)
+
+## Stage 2 Validation (2026-04-02)
+
+- **Test suite:** 340/340 pass, typecheck clean, lint clean
+- **Milestone (TS):** Pipeline ran nodes 1–5 (create-branch → generate-plan → approve-plan → implement → static-checks). Coder correctly used `edit_file` for existing files. Failed at static-checks (Biome lint formatting) due to `skipVerificationAfterTurn` skipping lint after turn 48/60.
+- **Milestone (Python):** `--work-dir` flag validated. `detectToolchain` correctly identified Python/pytest/ruff. Planner produced Python-specific plan. Coder exhausted 60 turns because `python`/`pytest` are not in `allowedCommands`.
+- **Retro-adversarial:** Tester generated tests for 5 packages ($0.34 total). Information barrier held (no private identifiers leaked). All outputs include property-based tests. Key issue: tester constructs invalid ToolchainProfile stubs (uses wrong field names). See `.bollard/retro-adversarial/SUMMARY.md`.
+- **Bug fixed:** `eval-runner.ts` regex validation — invalid regex in `matches_regex` assertion now returns `passed: false` instead of crashing.
 
 ## Key Types (Source of Truth)
 
@@ -366,10 +374,9 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 | Command | Description |
 |---------|-------------|
 | `run demo --task "..."` | Stage 0 demo blueprint (1 deterministic + 1 agentic node) |
-| `run implement-feature --task "..."` | Full Stage 1 pipeline with human gates |
-| `plan --task "..."` | Standalone planner agent (no implementation) |
-| `verify` | Run static checks against the workspace |
-| `verify [--profile]` | Run static checks (or show detected profile as JSON) |
+| `run implement-feature --task "..." [--work-dir <path>]` | Full Stage 1 pipeline with human gates (optional work dir override) |
+| `plan --task "..." [--work-dir <path>]` | Standalone planner agent (no implementation) |
+| `verify [--profile] [--work-dir <path>]` | Run static checks (or show detected profile as JSON) |
 | `diff` | Compare detected profile vs hardcoded Stage 1 defaults |
 | `eval [agent]` | Run eval sets (planner, coder) |
 | `config show [--sources]` | Show resolved configuration |

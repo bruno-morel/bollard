@@ -122,12 +122,21 @@ function checkAssertion(assertion: EvalAssertion, response: EvalResponse): EvalA
       }
 
     case "matches_regex": {
-      const regex = new RegExp(String(assertion.value))
-      return {
-        assertion,
-        passed: regex.test(text),
-        actual: text.slice(0, 200),
-        message: `Expected response to match regex /${assertion.value}/`,
+      try {
+        const regex = new RegExp(String(assertion.value))
+        return {
+          assertion,
+          passed: regex.test(text),
+          actual: text.slice(0, 200),
+          message: `Expected response to match regex /${assertion.value}/`,
+        }
+      } catch {
+        return {
+          assertion,
+          passed: false,
+          actual: text.slice(0, 200),
+          message: `Invalid regex: ${assertion.value}`,
+        }
       }
     }
 

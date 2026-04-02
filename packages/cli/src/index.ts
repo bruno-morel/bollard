@@ -143,6 +143,11 @@ function getTaskFlag(args: string[]): string | undefined {
   return idx !== -1 ? args[idx + 1] : undefined
 }
 
+function getWorkDirFlag(args: string[]): string | undefined {
+  const idx = args.indexOf("--work-dir")
+  return idx !== -1 ? args[idx + 1] : undefined
+}
+
 function findWorkspaceRoot(start: string): string {
   let dir = resolve(start)
   while (dir !== dirname(dir)) {
@@ -201,10 +206,13 @@ async function runPlanCommand(args: string[]): Promise<void> {
   const llmClient = new LLMClient(config)
   const { provider, model } = llmClient.forAgent("planner")
 
+  const explicitWorkDir = getWorkDirFlag(args)
+  const workDir = explicitWorkDir ? resolve(explicitWorkDir) : findWorkspaceRoot(process.cwd())
+
   log(`${DIM}Model:${RESET} ${model}`)
+  log(`${DIM}Work dir:${RESET} ${workDir}`)
   log(`${DIM}Planning...${RESET}\n`)
 
-  const workDir = findWorkspaceRoot(process.cwd())
   const projectTree = await buildProjectTree(workDir)
   const plannerMessage = projectTree ? `Task: ${task}\n\n${projectTree}` : `Task: ${task}`
   const ctx = createContext(task, "plan-only", config)
@@ -227,7 +235,8 @@ async function runPlanCommand(args: string[]): Promise<void> {
 }
 
 async function runVerifyCommand(args: string[]): Promise<void> {
-  const workDir = findWorkspaceRoot(process.cwd())
+  const explicitWorkDir = getWorkDirFlag(args)
+  const workDir = explicitWorkDir ? resolve(explicitWorkDir) : findWorkspaceRoot(process.cwd())
 
   // Check if --profile flag is present
   if (args.includes("--profile")) {
@@ -344,7 +353,8 @@ async function runRunCommand(args: string[]): Promise<void> {
   }
 
   if (blueprintName === "implement-feature") {
-    const workDir = findWorkspaceRoot(process.cwd())
+    const explicitWorkDir = getWorkDirFlag(args)
+    const workDir = explicitWorkDir ? resolve(explicitWorkDir) : findWorkspaceRoot(process.cwd())
     const { handler, llmConfig } = await createAgenticHandler(config, workDir, profile)
     const blueprint = createImplementFeatureBlueprint(workDir, {
       provider: llmConfig.provider,
@@ -353,6 +363,7 @@ async function runRunCommand(args: string[]): Promise<void> {
 
     header("run implement-feature")
     log(`${DIM}Task:${RESET}      ${task}`)
+    log(`${DIM}Work dir:${RESET}  ${workDir}`)
     log(`${DIM}Blueprint:${RESET} ${blueprint.name} (${blueprint.nodes.length} steps)`)
     log(
       `${DIM}Limits:${RESET}    $${blueprint.maxCostUsd} cost / ${blueprint.maxDurationMinutes}min`,
