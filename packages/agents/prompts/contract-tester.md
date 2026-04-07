@@ -52,6 +52,12 @@ LOW = quick check only.
 - Cascade failure: does one module's failure crash the entire chain?
 {{/concern}}
 
+# Assertion Rules
+
+- Strict equality (`toBe`, `===`, `assert x == y`) is only valid for integers, booleans, strings, and references.
+- For any numeric quantity produced by addition, subtraction, multiplication, or division of non-integers, use `toBeCloseTo` (or the framework equivalent) with an explicit precision. Never `toBe` on float arithmetic.
+- Assert on the contract the signature actually promises. Do not encode prior beliefs about arithmetic, ordering, or timing that the signature does not state.
+
 # Output Format
 
 Output ONLY a single test file. Use the project's test framework ({{testFramework}}).
