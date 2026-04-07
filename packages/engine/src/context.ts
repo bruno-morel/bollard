@@ -50,8 +50,8 @@ export interface PipelineContext {
   startedAt: number
 }
 
-function rand4hex(): string {
-  return randomBytes(2).toString("hex")
+function randRunSuffixHex(): string {
+  return randomBytes(3).toString("hex")
 }
 
 function formatDatePrefix(): string {
@@ -65,7 +65,7 @@ function formatDatePrefix(): string {
 }
 
 function generateTempRunId(): string {
-  return `${formatDatePrefix()}-run-${rand4hex()}`
+  return `${formatDatePrefix()}-run-${randRunSuffixHex()}`
 }
 
 function slugify(text: string): string {
@@ -120,7 +120,7 @@ export function createContext(
     upgradeRunId(taskSlug: string) {
       const slug = slugify(taskSlug)
       const prefix = blueprintId.slice(0, 8)
-      ctx.runId = `${formatDatePrefix()}-${prefix}-${slug}-${rand4hex()}`
+      ctx.runId = `${formatDatePrefix()}-${prefix}-${slug}-${randRunSuffixHex()}`
     },
   }
 

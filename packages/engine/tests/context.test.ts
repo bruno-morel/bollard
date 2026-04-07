@@ -39,7 +39,7 @@ describe("createContext", () => {
 describe("run ID generation", () => {
   it("generates a temp run ID matching the expected pattern", () => {
     const id = _generateTempRunId()
-    expect(id).toMatch(/^\d{8}-\d{4}-run-[0-9a-f]{4}$/)
+    expect(id).toMatch(/^\d{8}-\d{4}-run-[0-9a-f]{6}$/)
   })
 
   it("generates unique IDs on successive calls", () => {
@@ -54,7 +54,7 @@ describe("upgradeRunId", () => {
     const oldId = ctx.runId
     ctx.upgradeRunId("Say hello world")
     expect(ctx.runId).not.toBe(oldId)
-    expect(ctx.runId).toMatch(/^\d{8}-\d{4}-demo-blu-say-hello-world-[0-9a-f]{4}$/)
+    expect(ctx.runId).toMatch(/^\d{8}-\d{4}-demo-blu-say-hello-world-[0-9a-f]{6}$/)
   })
 
   it("slugifies special characters and truncates long slugs", () => {
