@@ -120,6 +120,16 @@ describe("Python detector", () => {
     expect(result?.sourcePatterns).toContain("**/*.py")
   })
 
+  it("all check commands appear in allowedCommands", async () => {
+    const result = await detectPython(PY_PROJECT)
+    expect(result).not.toBeNull()
+    const checks = result?.checks ?? {}
+    const allowed = result?.allowedCommands ?? []
+    for (const check of Object.values(checks)) {
+      expect(allowed).toContain(check.cmd)
+    }
+  })
+
   it("returns null for non-Python projects", async () => {
     expect(await detectPython(TS_PROJECT)).toBeNull()
     expect(await detectPython(JS_PROJECT)).toBeNull()

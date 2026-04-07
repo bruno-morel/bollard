@@ -51,46 +51,64 @@ export async function writeTestMetadata(outputDir: string, metadata: TestMetadat
   await writeFile(metaPath, JSON.stringify(metadata, null, 2), "utf-8")
 }
 
-export async function integrateWithTestRunner(
+export interface IntegrationCheck {
+  alreadyIntegrated: boolean
+  suggestion: string
+}
+
+export async function checkTestRunnerIntegration(
   workDir: string,
   profile: ToolchainProfile,
-): Promise<{ integrated: boolean; method: string }> {
+): Promise<IntegrationCheck> {
   const lang = profile.language
   const testLabel = profile.checks.test?.label?.toLowerCase() ?? ""
 
   if (lang === "go") {
-    return { integrated: false, method: "persistent-isolated fallback" }
+    return { alreadyIntegrated: false, suggestion: "persistent-isolated fallback" }
   }
 
   if (lang === "python" && (testLabel.includes("pytest") || testLabel === "")) {
-    return integrateWithPytest(workDir)
+    return checkPytestIntegration(workDir)
   }
 
   if (
     (lang === "typescript" || lang === "javascript") &&
     (testLabel.includes("vitest") || testLabel.includes("jest"))
   ) {
-    return { integrated: true, method: `include .bollard/tests/**/*.test.* in ${testLabel} config` }
+    return {
+      alreadyIntegrated: false,
+      suggestion: `include .bollard/tests/**/*.test.* in ${testLabel} config`,
+    }
   }
 
   if (lang === "rust") {
-    return { integrated: true, method: "add [[test]] target in Cargo.toml for .bollard/tests/" }
+    return {
+      alreadyIntegrated: false,
+      suggestion: "add [[test]] target in Cargo.toml for .bollard/tests/",
+    }
   }
 
-  return { integrated: false, method: "manual integration required" }
+  return { alreadyIntegrated: false, suggestion: "manual integration required" }
 }
 
-async function integrateWithPytest(
-  workDir: string,
-): Promise<{ integrated: boolean; method: string }> {
+async function checkPytestIntegration(workDir: string): Promise<IntegrationCheck> {
   const pyprojectPath = join(workDir, "pyproject.toml")
   try {
     const content = await readFile(pyprojectPath, "utf-8")
     if (content.includes(".bollard/tests")) {
-      return { integrated: true, method: "pyproject.toml already includes .bollard/tests" }
+      return {
+        alreadyIntegrated: true,
+        suggestion: "pyproject.toml already includes .bollard/tests",
+      }
     }
-    return { integrated: true, method: "add .bollard/tests to testpaths in pyproject.toml" }
+    return {
+      alreadyIntegrated: false,
+      suggestion: "add .bollard/tests to testpaths in pyproject.toml",
+    }
   } catch {
-    return { integrated: true, method: "use --rootdir flag to include .bollard/tests" }
+    return {
+      alreadyIntegrated: false,
+      suggestion: "use --rootdir flag to include .bollard/tests",
+    }
   }
 }

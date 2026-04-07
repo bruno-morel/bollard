@@ -103,6 +103,8 @@ export async function detect(cwd: string): Promise<Partial<ToolchainProfile> | n
   const extraTools: string[] = []
   if (typecheck) extraTools.push(typecheck.cmd)
   if (linter) extraTools.push(linter.cmd)
+  if (test) extraTools.push(test.cmd)
+  extraTools.push("pip-audit")
 
   return {
     language: "python",

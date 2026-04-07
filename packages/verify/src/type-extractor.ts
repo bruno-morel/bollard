@@ -317,6 +317,7 @@ export class LlmFallbackExtractor implements SignatureExtractor {
   constructor(
     private readonly provider: LLMProvider,
     private readonly model: string,
+    private readonly warn?: (msg: string) => void,
   ) {}
 
   async extract(files: string[], _profile?: ToolchainProfile): Promise<ExtractionResult> {
@@ -359,10 +360,12 @@ export class LlmFallbackExtractor implements SignatureExtractor {
 
       const parsed = parseLlmResponse(text)
       if (!parsed) {
+        this.warn?.(`LlmFallbackExtractor: failed to parse LLM response (${text.length} chars)`)
         return { signatures: [], types: [] }
       }
 
-      const signatures: ExtractedSignature[] = (parsed.signatures ?? [])
+      const rawSigs = parsed.signatures ?? []
+      const signatures: ExtractedSignature[] = rawSigs
         .filter((s) => s.filePath)
         .map((s) => ({
           filePath: s.filePath ?? "",
@@ -371,7 +374,13 @@ export class LlmFallbackExtractor implements SignatureExtractor {
           imports: s.imports ?? "",
         }))
 
-      const types: ExtractedTypeDefinition[] = (parsed.types ?? [])
+      const droppedSigs = rawSigs.length - signatures.length
+      if (droppedSigs > 0) {
+        this.warn?.(`LlmFallbackExtractor: dropped ${droppedSigs} signatures with missing filePath`)
+      }
+
+      const rawTypes = parsed.types ?? []
+      const types: ExtractedTypeDefinition[] = rawTypes
         .filter((t) => t.name && t.kind && VALID_KINDS.has(t.kind))
         .map((t) => ({
           name: t.name ?? "",
@@ -380,8 +389,16 @@ export class LlmFallbackExtractor implements SignatureExtractor {
           filePath: t.filePath ?? "",
         }))
 
+      const droppedTypes = rawTypes.length - types.length
+      if (droppedTypes > 0) {
+        this.warn?.(`LlmFallbackExtractor: dropped ${droppedTypes} types with invalid kind`)
+      }
+
       return { signatures, types }
-    } catch {
+    } catch (err) {
+      this.warn?.(
+        `LlmFallbackExtractor: extraction failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
       return { signatures: [], types: [] }
     }
   }
@@ -401,14 +418,15 @@ export function getExtractor(
   lang: LanguageId,
   provider?: LLMProvider,
   model?: string,
+  warn?: (msg: string) => void,
 ): SignatureExtractor {
   if (lang === "typescript") {
     return new TsCompilerExtractor()
   }
   if (provider && model) {
-    return new LlmFallbackExtractor(provider, model)
+    return new LlmFallbackExtractor(provider, model, warn)
   }
-  return new LlmFallbackExtractor(NOOP_PROVIDER, "noop")
+  return new LlmFallbackExtractor(NOOP_PROVIDER, "noop", warn)
 }
 
 // ---- Leak detection support ----

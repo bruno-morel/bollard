@@ -135,7 +135,7 @@ export function createImplementFeatureBlueprint(
           }
 
           const fullPaths = files.map((f) => resolve(workDir, f))
-          const extractor = getExtractor(lang, llmConfig?.provider, llmConfig?.model)
+          const extractor = getExtractor(lang, llmConfig?.provider, llmConfig?.model, ctx.log.warn)
           const result = await extractor.extract(fullPaths, profile)
 
           return {

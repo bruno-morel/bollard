@@ -23,7 +23,7 @@ import {
   resolveLifecycle,
   resolveTestOutputDir,
   writeTestMetadata,
-  integrateWithTestRunner,
+  checkTestRunnerIntegration,
   type TestLifecycle,
   type AdversarialTestSet,
   type TestMetadata
@@ -329,12 +329,12 @@ describe("Feature: Test Lifecycle Management", () => {
     await writeTestMetadata(outputDir, metadata)
   })
 
-  it("should integrate with test runner", async () => {
+  it("should check test runner integration", async () => {
     const profile = { language: "typescript" as const, framework: "vitest" }
-    const result = await integrateWithTestRunner(tempDir, profile)
+    const result = await checkTestRunnerIntegration(tempDir, profile)
     
-    expect(typeof result.integrated).toBe("boolean")
-    expect(typeof result.method).toBe("string")
+    expect(typeof result.alreadyIntegrated).toBe("boolean")
+    expect(typeof result.suggestion).toBe("string")
   })
 })
 

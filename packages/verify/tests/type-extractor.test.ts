@@ -410,4 +410,38 @@ describe("LlmFallbackExtractor", () => {
     expect(result.types).toHaveLength(1)
     expect(result.types[0]?.name).toBe("Good")
   })
+
+  it("calls warn on unparseable LLM response", async () => {
+    const warnings: string[] = []
+    const provider = createMockProvider("not json at all")
+    const extractor = new LlmFallbackExtractor(provider, "test-model", (msg) => warnings.push(msg))
+    await extractor.extract([resolve(PACKAGES_DIR, "engine/src/errors.ts")])
+
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain("failed to parse")
+  })
+
+  it("calls warn when provider throws", async () => {
+    const warnings: string[] = []
+    const provider = createErrorProvider()
+    const extractor = new LlmFallbackExtractor(provider, "test-model", (msg) => warnings.push(msg))
+    await extractor.extract([resolve(PACKAGES_DIR, "engine/src/errors.ts")])
+
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain("extraction failed")
+  })
+
+  it("calls warn when types have invalid kind", async () => {
+    const warnings: string[] = []
+    const json = JSON.stringify({
+      signatures: [],
+      types: [{ name: "Bad", kind: "unknown-kind", definition: "???", filePath: "b.py" }],
+    })
+    const provider = createMockProvider(json)
+    const extractor = new LlmFallbackExtractor(provider, "test-model", (msg) => warnings.push(msg))
+    await extractor.extract([resolve(PACKAGES_DIR, "engine/src/errors.ts")])
+
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain("dropped 1 types")
+  })
 })

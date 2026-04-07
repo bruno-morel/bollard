@@ -6,3 +6,6 @@ dist/
 .pnpm-store/
 .bollard/runs/
 _tmp_*/
+.cursor/
+.vscode/
+.idea/

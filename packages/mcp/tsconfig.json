@@ -2,9 +2,11 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "rootDir": ".",
-    "outDir": "dist"
+    "outDir": "dist",
+    "composite": true
   },
-  "include": ["src", "tests"],
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "tests"],
   "references": [
     { "path": "../engine" },
     { "path": "../llm" },

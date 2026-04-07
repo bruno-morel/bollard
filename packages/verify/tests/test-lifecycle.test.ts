@@ -5,7 +5,7 @@ import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { describe, expect, it } from "vitest"
 import {
   type TestMetadata,
-  integrateWithTestRunner,
+  checkTestRunnerIntegration,
   resolveLifecycle,
   resolveTestOutputDir,
   writeTestMetadata,
@@ -100,22 +100,22 @@ describe("writeTestMetadata", () => {
   })
 })
 
-describe("integrateWithTestRunner", () => {
-  it("returns integrated false for Go", async () => {
+describe("checkTestRunnerIntegration", () => {
+  it("returns not integrated for Go", async () => {
     const profile = makeProfile({ language: "go" })
-    const result = await integrateWithTestRunner("/tmp", profile)
-    expect(result.integrated).toBe(false)
-    expect(result.method).toContain("persistent-isolated fallback")
+    const result = await checkTestRunnerIntegration("/tmp", profile)
+    expect(result.alreadyIntegrated).toBe(false)
+    expect(result.suggestion).toContain("persistent-isolated fallback")
   })
 
-  it("returns integrated true for Rust", async () => {
+  it("returns not integrated for Rust (needs Cargo.toml edit)", async () => {
     const profile = makeProfile({ language: "rust" })
-    const result = await integrateWithTestRunner("/tmp", profile)
-    expect(result.integrated).toBe(true)
-    expect(result.method).toContain("Cargo.toml")
+    const result = await checkTestRunnerIntegration("/tmp", profile)
+    expect(result.alreadyIntegrated).toBe(false)
+    expect(result.suggestion).toContain("Cargo.toml")
   })
 
-  it("returns integrated true for TypeScript with Vitest", async () => {
+  it("returns not integrated for TypeScript with Vitest (needs config edit)", async () => {
     const profile = makeProfile({
       language: "typescript",
       checks: {
@@ -127,12 +127,12 @@ describe("integrateWithTestRunner", () => {
         },
       },
     })
-    const result = await integrateWithTestRunner("/tmp", profile)
-    expect(result.integrated).toBe(true)
-    expect(result.method).toContain("vitest")
+    const result = await checkTestRunnerIntegration("/tmp", profile)
+    expect(result.alreadyIntegrated).toBe(false)
+    expect(result.suggestion).toContain("vitest")
   })
 
-  it("returns integrated true for Python with pytest", async () => {
+  it("returns not integrated for Python with pytest (no pyproject.toml)", async () => {
     const dir = join(tmpdir(), `bollard-pytest-${Date.now()}`)
     await mkdir(dir, { recursive: true })
     const profile = makeProfile({
@@ -141,8 +141,8 @@ describe("integrateWithTestRunner", () => {
         test: { label: "pytest", cmd: "pytest", args: ["-v"], source: "auto-detected" },
       },
     })
-    const result = await integrateWithTestRunner(dir, profile)
-    expect(result.integrated).toBe(true)
+    const result = await checkTestRunnerIntegration(dir, profile)
+    expect(result.alreadyIntegrated).toBe(false)
     await rm(dir, { recursive: true })
   })
 })

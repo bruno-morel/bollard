@@ -440,32 +440,38 @@ async function runPromoteTestCommand(args: string[]): Promise<void> {
   }
 
   const workDir = findWorkspaceRoot(process.cwd())
-  const { copyFile, readFile: rf } = await import("node:fs/promises")
+  const { access, copyFile, mkdir, readFile: rf, writeFile: wf } = await import("node:fs/promises")
   const { basename } = await import("node:path")
 
   header("promote-test")
 
   const fullSource = resolve(workDir, testPath)
-  const fileName = basename(testPath)
-  const testsDir = join(workDir, "tests")
 
   try {
-    await import("node:fs").then((fs) => {
-      if (!fs.existsSync(testsDir)) {
-        fs.mkdirSync(testsDir, { recursive: true })
-      }
-    })
+    await access(fullSource)
   } catch {
-    // tests dir might already exist
+    log(`${RED}✗${RESET} Source file not found: ${testPath}`)
+    process.exit(1)
   }
 
+  const fileName = basename(testPath)
+  const testsDir = join(workDir, "tests")
+  await mkdir(testsDir, { recursive: true })
+
   const destPath = join(testsDir, fileName)
+
+  try {
+    await access(destPath)
+    log(`${YELLOW}!${RESET} File already exists: tests/${fileName} — overwriting`)
+  } catch {
+    // destination doesn't exist — good
+  }
+
   await copyFile(fullSource, destPath)
 
   let content = await rf(destPath, "utf-8")
   content = content.replace(/\/\/\s*@bollard-generated.*\n?/g, "")
   content = content.replace(/#\s*@bollard-generated.*\n?/g, "")
-  const { writeFile: wf } = await import("node:fs/promises")
   await wf(destPath, content, "utf-8")
 
   log(`${GREEN}✓${RESET} Promoted: ${testPath} → tests/${fileName}`)

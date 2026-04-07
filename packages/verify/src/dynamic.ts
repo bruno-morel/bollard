@@ -20,7 +20,10 @@ function stripAnsi(text: string): string {
   return text.replace(ANSI_PATTERN, "")
 }
 
-// TODO: Stage 2 -- add parsers for pytest, go test, cargo test
+// Stage 3: add deterministic parsers for pytest, go test, cargo test output.
+// Currently parseSummary only handles Vitest output format.
+// Non-Vitest test runners still work (profile-driven cmd execution) — only the
+// parsed summary (passed/failed counts) falls back to zero/error detection.
 function parseSummary(
   output: string,
 ): Pick<TestRunResult, "passed" | "failed" | "total" | "failedTests"> {

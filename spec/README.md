@@ -18,14 +18,18 @@ Bollard is **open source** (Apache 2.0), **API-first** (library → CLI + MCP se
 
 ## Design Documents
 
-| # | Document | What It Covers |
-|---|----------|---------------|
-| [01](spec/01-architecture.md) | **Architecture** | Universal artifact pattern, adversarial verification, blueprint engine, CLI + API-first + MCP interface, production feedback loop, resilience model, project structure |
-| [02](spec/02-bootstrap.md) | **Bootstrap Roadmap** | How Bollard builds itself: 5 stages from hand-written kernel to self-hosting, prompt evaluation framework, dependency graph, time estimates |
-| [03](spec/03-providers.md) | **Providers** | Cloud abstraction: the 4-method provider interface, 3 provider implementations (local, GitHub Actions, GCP), network isolation |
-| [04](spec/04-configuration.md) | **Configuration** | Auto-detect everything, derive the rest: provider detection, env vars, convention over configuration, minimal `.bollard.yml` for overrides only |
-| [05](spec/05-risk-model.md) | **Risk Model** | Trust but verify: 5 risk dimensions, risk scoring, graduated gating (auto-merge → notify → approve), escape hatches, meta-verification, notification model |
-| — | [spec/ROADMAP.md](ROADMAP.md) | **Roadmap** | Features deferred from v0.1: SLO tracking, error budgets, progressive rollout, additional cloud providers, full prompt eval framework |
+
+| #                              | Document                 | What It Covers                                                                                                                                                         |
+| ------------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [01](01-architecture.md)       | **Architecture**         | Universal artifact pattern, adversarial verification, blueprint engine, CLI + API-first + MCP interface, production feedback loop, resilience model, project structure |
+| [02](02-bootstrap.md)          | **Bootstrap Roadmap**    | How Bollard builds itself: 5 stages from hand-written kernel to self-hosting, prompt evaluation framework, dependency graph, time estimates                            |
+| [03](03-providers.md)          | **Providers**            | Cloud abstraction: the 4-method provider interface, 3 provider implementations (local, GitHub Actions, GCP), network isolation                                         |
+| [04](04-configuration.md)      | **Configuration**        | Auto-detect everything, derive the rest: provider detection, env vars, convention over configuration, minimal `.bollard.yml` for overrides only                        |
+| [05](05-risk-model.md)         | **Risk Model**           | Trust but verify: 5 risk dimensions, risk scoring, graduated gating (auto-merge → notify → approve), escape hatches, meta-verification, notification model             |
+| [06](06-toolchain-profiles.md) | **Toolchain Profiles**   | Language-agnostic verification: three-layer model, toolchain detection, Docker isolation, adversarial test lifecycle                                                   |
+| [07](07-adversarial-scopes.md) | **Adversarial Scopes**   | Multi-scope adversarial verification: boundary/contract/behavioral scopes, forward roadmap (Stages 3-5)                                                                |
+| —                              | [ROADMAP.md](ROADMAP.md) | **Roadmap**                                                                                                                                                            |
+
 
 ### Reading Order
 
@@ -37,17 +41,19 @@ Bollard is **open source** (Apache 2.0), **API-first** (library → CLI + MCP se
 
 ## Key Architectural Decisions
 
-| Decision | Choice | Rationale | ADR |
-|----------|--------|-----------|-----|
-| Universal artifact pattern | Every artifact (code, tests, docs, IaC) goes through: produce → adversarial verify → mechanical proof → drift detection | Same failure modes, same solution | 001 |
-| API-first, CLI + MCP | Engine is a library; CLI and MCP server are equal clients | Use Bollard from terminal, Claude Code, Cursor, or any MCP client — same capabilities | — |
-| pnpm over Turborepo | pnpm workspaces, no build orchestration service | Minimal dependencies, no external infrastructure | 002 |
-| Risk-based gating | Graduated autonomy based on blast radius, reversibility, security, cost, novelty | Scales beyond binary human gates; humans focus where it matters | 003 |
-| All artifacts are equal | Docs, IaC, schemas verified through the same pattern as code | Prevents silent drift in any artifact type | 004 |
-| Cloud-agnostic providers | 4-method interface, 3 providers (local, GitHub Actions, GCP), more via ROADMAP | Run anywhere Docker runs; no vendor lock-in | — |
-| Blueprint engine (~500 LOC) | Custom TypeScript, not LangChain/CrewAI | Full control, no framework lock-in, minimal dependencies | — |
-| Production Feedback Loop | Canary rollout by risk tier → probe → fix forward + drift detection → system converges | Defense in depth: pipeline verifies against spec, canary verifies against reality | — |
-| Open source (Apache 2.0) | Permissive license with patent grant | Encourages adoption without scaring enterprise; standard for developer tools | — |
+
+| Decision                    | Choice                                                                                                                  | Rationale                                                                             | ADR |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --- |
+| Universal artifact pattern  | Every artifact (code, tests, docs, IaC) goes through: produce → adversarial verify → mechanical proof → drift detection | Same failure modes, same solution                                                     | 001 |
+| API-first, CLI + MCP        | Engine is a library; CLI and MCP server are equal clients                                                               | Use Bollard from terminal, Claude Code, Cursor, or any MCP client — same capabilities | —   |
+| pnpm over Turborepo         | pnpm workspaces, no build orchestration service                                                                         | Minimal dependencies, no external infrastructure                                      | 002 |
+| Risk-based gating           | Graduated autonomy based on blast radius, reversibility, security, cost, novelty                                        | Scales beyond binary human gates; humans focus where it matters                       | 003 |
+| All artifacts are equal     | Docs, IaC, schemas verified through the same pattern as code                                                            | Prevents silent drift in any artifact type                                            | 004 |
+| Cloud-agnostic providers    | 4-method interface, 3 providers (local, GitHub Actions, GCP), more via ROADMAP                                          | Run anywhere Docker runs; no vendor lock-in                                           | —   |
+| Blueprint engine (~500 LOC) | Custom TypeScript, not LangChain/CrewAI                                                                                 | Full control, no framework lock-in, minimal dependencies                              | —   |
+| Production Feedback Loop    | Canary rollout by risk tier → probe → fix forward + drift detection → system converges                                  | Defense in depth: pipeline verifies against spec, canary verifies against reality     | —   |
+| Open source (Apache 2.0)    | Permissive license with patent grant                                                                                    | Encourages adoption without scaring enterprise; standard for developer tools          | —   |
+
 
 ---
 
@@ -74,10 +80,17 @@ Bollard is **open source** (Apache 2.0), **API-first** (library → CLI + MCP se
 
 ---
 
+## Archive
+
+Historical prompts used to drive Cursor during each build stage are in `archive/`.
+These document how each stage was built but are not current guidance.
+
+---
+
 ## Status
 
-**Phase:** Design complete (v0.1 — March 2026)
-**Next:** Stage 0 implementation (the kernel: engine types, runner, LLM client, CLI skeleton, MCP server scaffold)
+**Phase:** Stage 2 complete (April 2026) — adversarial verification infrastructure.
+**Next:** Stage 3 — contract-scope adversarial testing, mutation testing, semantic review.
 
 ---
 

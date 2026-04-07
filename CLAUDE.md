@@ -37,7 +37,7 @@ docker compose run --rm dev --filter @bollard/cli run start -- eval planner
 - Only boundary-scope adversarial testing exists — contract and behavioral scopes are Stage 3 and Stage 4 respectively.
 - Cross-cutting concerns (security, performance, resilience) are not yet in the boundary tester prompt — currently correctness only. Stage 3 adds weighted concern lenses to all scope agents.
 - Per-language mutation testing not yet implemented — Stage 3.
-- Test output parsing is Vitest-specific (`parseSummary`) — future work will add parsers for pytest, go test, cargo test.
+- Test output parsing is Vitest-specific (`parseSummary`) — non-Vitest runners work via profile-driven execution but parsed summary falls back to zero/error detection. Stage 3 adds deterministic parsers for pytest, go test, cargo test.
 - Deterministic type extractors for Python/Go/Rust not yet implemented — `LlmFallbackExtractor` covers these via LLM.
 - No contract extractor (dependency graph, interface boundaries) — Stage 3.
 - No behavioral extractor (topology, endpoints, failure modes) — Stage 4.
@@ -207,7 +207,7 @@ bollard/
 │   │   │   ├── dynamic.ts        # runTests(workDir, testFiles?, profile?) — profile-driven test execution
 │   │   │   ├── type-extractor.ts # SignatureExtractor, TsCompilerExtractor, LlmFallbackExtractor
 │   │   │   ├── compose-generator.ts  # generateVerifyCompose — dynamic compose.verify.yml from ToolchainProfile
-│   │   │   └── test-lifecycle.ts # resolveTestOutputDir, writeTestMetadata, integrateWithTestRunner
+│   │   │   └── test-lifecycle.ts # resolveTestOutputDir, writeTestMetadata, checkTestRunnerIntegration
 │   │   └── tests/
 │   │       ├── static.test.ts    # 4 tests — structure + live integration
 │   │       ├── dynamic.test.ts   # 2 tests — integration test
@@ -246,19 +246,20 @@ bollard/
 
 ## Current Test Stats
 
-- **29 test files, 340 tests passing** (2 skipped for live API tests, 0 failing)
+- **29 test files, 344 tests passing** (2 skipped for live API tests, 0 failing)
 - **30 adversarial test files** (separate Vitest config: `vitest.adversarial.config.ts`; 327 passing, 171 failing — failures are mostly boundary tests against invalid inputs outside type contracts)
-- **Source:** ~5950 LOC across 8 packages
-- **Tests:** ~4650 LOC (+ ~7670 LOC adversarial tests)
-- **Prompts:** ~201 LOC (planner.md + coder.md + tester.md)
+- **Source:** ~6510 LOC across 8 packages
+- **Tests:** ~4580 LOC (+ ~7670 LOC adversarial tests)
+- **Prompts:** ~291 LOC (planner.md + coder.md + tester.md)
 
 ## Stage 2 Validation (2026-04-02)
 
-- **Test suite:** 340/340 pass, typecheck clean, lint clean
+- **Test suite:** 344/344 pass, typecheck clean, lint clean
 - **Milestone (TS):** Pipeline ran nodes 1–5 (create-branch → generate-plan → approve-plan → implement → static-checks). Coder correctly used `edit_file` for existing files. Failed at static-checks (Biome lint formatting) due to `skipVerificationAfterTurn` skipping lint after turn 48/60.
-- **Milestone (Python):** `--work-dir` flag validated. `detectToolchain` correctly identified Python/pytest/ruff. Planner produced Python-specific plan. Coder exhausted 60 turns because `python`/`pytest` are not in `allowedCommands`.
+- **Milestone (Python):** `--work-dir` flag validated. `detectToolchain` correctly identified Python/pytest/ruff. Planner produced Python-specific plan. Coder exhausted 60 turns because `python`/`pytest` were not in `allowedCommands` — **fixed in post-validation cleanup** (test.cmd and pip-audit now whitelisted).
 - **Retro-adversarial:** Tester generated tests for 5 packages ($0.34 total). Information barrier held (no private identifiers leaked). All outputs include property-based tests. Key issue: tester constructs invalid ToolchainProfile stubs (uses wrong field names). See `.bollard/retro-adversarial/SUMMARY.md`.
 - **Bug fixed:** `eval-runner.ts` regex validation — invalid regex in `matches_regex` assertion now returns `passed: false` instead of crashing.
+- **Post-validation cleanup (2026-04-02):** Fixed Python `allowedCommands` gap, added `LlmFallbackExtractor` warn logging, renamed `integrateWithTestRunner` → `checkTestRunnerIntegration` with corrected return semantics, hardened `promote-test` CLI command, aligned MCP `tsconfig.json`, archived 12 historical spec prompts.
 
 ## Key Types (Source of Truth)
 
@@ -483,7 +484,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - `getExtractor(lang, provider?, model?)` routes to `TsCompilerExtractor` or `LlmFallbackExtractor`
 - In-language adversarial test generation: conditional `{{#if}}` blocks in `fillPromptTemplate`, tester prompt outputs Python/Go/Rust test templates
 - `deriveAdversarialTestPath` supports Python, Go, Rust naming conventions
-- Adversarial test lifecycle: `TestLifecycle` type, `resolveTestOutputDir`, `writeTestMetadata`, `integrateWithTestRunner`
+- Adversarial test lifecycle: `TestLifecycle` type, `resolveTestOutputDir`, `writeTestMetadata`, `checkTestRunnerIntegration`
 - `ToolchainProfile.adversarial.persist` — ephemeral (default) or persistent-native (opt-in)
 - `@bollard/mcp` package — MCP server with 6 tools (verify, plan, implement, eval, config, profile)
 - `OpenAIProvider` — maps `LLMRequest` to OpenAI Chat Completions API with function calling
@@ -545,3 +546,4 @@ If you need deeper context, refer to these (they are the source of truth) in the
 - `05-risk-model.md` — Risk scoring dimensions and gating behavior
 - `06-toolchain-profiles.md` — Language-agnostic verification: three-layer model, toolchain detection, Docker isolation, adversarial test lifecycle
 - `07-adversarial-scopes.md` — **Multi-scope adversarial verification: boundary/contract/behavioral scopes × correctness/security/performance/resilience concerns. Forward roadmap (Stages 3 → 4 → 5). Source of truth for adversarial testing design.**
+- `archive/` — Historical prompts used to drive Cursor during each build stage. Not current guidance.
