@@ -39,4 +39,10 @@ export class CostTracker {
   remaining(): number {
     return Math.max(0, this._limit - this._total)
   }
+
+  reset(): number {
+    const previousTotal = this._total
+    this._total = 0
+    return previousTotal
+  }
 }

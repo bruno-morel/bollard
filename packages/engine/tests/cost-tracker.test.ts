@@ -136,6 +136,116 @@ describe("CostTracker", () => {
     expect(tracker.total()).toBe(5)
   })
 
+  describe("reset()", () => {
+    it("returns previous total and zeros the accumulated cost", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(3.5)
+      tracker.add(1.5)
+
+      const previousTotal = tracker.reset()
+
+      expect(previousTotal).toBe(5)
+      expect(tracker.total()).toBe(0)
+    })
+
+    it("returns 0 when resetting unused tracker", () => {
+      const tracker = new CostTracker(10)
+
+      const previousTotal = tracker.reset()
+
+      expect(previousTotal).toBe(0)
+      expect(tracker.total()).toBe(0)
+    })
+
+    it("restores remaining budget to original limit", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(7)
+      expect(tracker.remaining()).toBe(3)
+
+      tracker.reset()
+
+      expect(tracker.remaining()).toBe(10)
+    })
+
+    it("clears exceeded state after reset", () => {
+      const tracker = new CostTracker(5)
+      tracker.add(8)
+      expect(tracker.exceeded()).toBe(true)
+
+      tracker.reset()
+
+      expect(tracker.exceeded()).toBe(false)
+    })
+
+    it("handles zero limit correctly after reset", () => {
+      const tracker = new CostTracker(0)
+      tracker.add(1)
+      expect(tracker.exceeded()).toBe(true)
+
+      const previousTotal = tracker.reset()
+
+      expect(previousTotal).toBe(1)
+      expect(tracker.total()).toBe(0)
+      expect(tracker.remaining()).toBe(0)
+      expect(tracker.exceeded()).toBe(false)
+    })
+
+    it("can be called multiple times safely", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+
+      const firstReset = tracker.reset()
+      const secondReset = tracker.reset()
+      const thirdReset = tracker.reset()
+
+      expect(firstReset).toBe(5)
+      expect(secondReset).toBe(0)
+      expect(thirdReset).toBe(0)
+      expect(tracker.total()).toBe(0)
+    })
+
+    it("works correctly after adding costs post-reset", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(3)
+      tracker.reset()
+
+      tracker.add(2)
+      tracker.add(1)
+
+      expect(tracker.total()).toBe(3)
+      expect(tracker.remaining()).toBe(7)
+      expect(tracker.exceeded()).toBe(false)
+
+      const secondReset = tracker.reset()
+      expect(secondReset).toBe(3)
+    })
+
+    it("preserves limit when resetting exceeded tracker", () => {
+      const tracker = new CostTracker(2)
+      tracker.add(5)
+      expect(tracker.exceeded()).toBe(true)
+      expect(tracker.remaining()).toBe(0)
+
+      const previousTotal = tracker.reset()
+
+      expect(previousTotal).toBe(5)
+      expect(tracker.total()).toBe(0)
+      expect(tracker.remaining()).toBe(2)
+      expect(tracker.exceeded()).toBe(false)
+    })
+
+    it("handles fractional costs correctly", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(1.25)
+      tracker.add(2.75)
+
+      const previousTotal = tracker.reset()
+
+      expect(previousTotal).toBe(4)
+      expect(tracker.total()).toBe(0)
+    })
+  })
+
   describe("property-based", () => {
     it("total equals sum of all added costs", () => {
       fc.assert(
