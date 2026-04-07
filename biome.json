@@ -30,7 +30,7 @@
   },
   "overrides": [
     {
-      "include": ["vitest.config.ts", "vitest.adversarial.config.ts"],
+      "include": ["vitest.config.ts", "vitest.adversarial.config.ts", "vitest.contract.config.ts"],
       "linter": {
         "rules": {
           "style": {

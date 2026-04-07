@@ -45,6 +45,11 @@ function parseSummary(
   return { passed: 0, failed: failedNames.length || 0, total: 0, failedTests: failedNames }
 }
 
+function pathsTouchBollardGeneratedTests(testFiles: string[] | undefined): boolean {
+  if (!testFiles || testFiles.length === 0) return false
+  return testFiles.some((f) => f.replace(/\\/g, "/").includes(".bollard/"))
+}
+
 export async function runTests(
   workDir: string,
   testFiles?: string[],
@@ -53,7 +58,10 @@ export async function runTests(
   let cmd: string
   let args: string[]
 
-  if (profile?.checks.test) {
+  if (pathsTouchBollardGeneratedTests(testFiles)) {
+    cmd = "pnpm"
+    args = ["exec", "vitest", "run", "-c", "vitest.contract.config.ts", ...(testFiles ?? [])]
+  } else if (profile?.checks.test) {
     cmd = profile.checks.test.cmd
     args = [...profile.checks.test.args]
     if (testFiles && testFiles.length > 0) {
