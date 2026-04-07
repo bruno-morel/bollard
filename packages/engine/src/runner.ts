@@ -1,3 +1,4 @@
+import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { Blueprint, BlueprintNode, NodeResult } from "./blueprint.js"
 import type { BollardConfig, PipelineContext } from "./context.js"
 import { createContext } from "./context.js"
@@ -98,8 +99,12 @@ export async function runBlueprint(
   agenticHandler?: AgenticHandler,
   humanGateHandler?: HumanGateHandler,
   onProgress?: ProgressCallback,
+  toolchainProfile?: ToolchainProfile,
 ): Promise<RunResult> {
   const ctx = createContext(task, blueprint.id, config)
+  if (toolchainProfile !== undefined) {
+    ctx.toolchainProfile = toolchainProfile
+  }
   let status: RunResult["status"] = "success"
   let error: RunResult["error"] | undefined
 

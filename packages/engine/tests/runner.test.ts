@@ -1,3 +1,5 @@
+import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
+import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { Blueprint, BlueprintNode, NodeResult } from "../src/blueprint.js"
 import type { BollardConfig } from "../src/context.js"
@@ -347,5 +349,32 @@ describe("deterministic nodes consume zero tokens", () => {
 
     expect(result.status).toBe("success")
     expect(result.totalCostUsd).toBe(0)
+  })
+
+  it("threads toolchainProfile onto PipelineContext when passed to runBlueprint", async () => {
+    let seen: ToolchainProfile | undefined
+    const profile: ToolchainProfile = {
+      language: "typescript",
+      packageManager: "pnpm",
+      checks: {},
+      sourcePatterns: ["**/*.ts"],
+      testPatterns: ["**/*.test.ts"],
+      ignorePatterns: [],
+      allowedCommands: ["pnpm"],
+      adversarial: defaultAdversarialConfig({ language: "typescript" }),
+    }
+    const bp = makeBlueprint([
+      {
+        id: "probe",
+        name: "probe",
+        type: "deterministic",
+        execute: async (ctx) => {
+          seen = ctx.toolchainProfile
+          return { status: "ok" }
+        },
+      },
+    ])
+    await runBlueprint(bp, "task", TEST_CONFIG, undefined, undefined, undefined, profile)
+    expect(seen).toBe(profile)
   })
 })

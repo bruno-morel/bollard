@@ -426,6 +426,7 @@ async function runRunCommand(args: string[]): Promise<void> {
       handler,
       humanGateHandler,
       cliProgress,
+      profile,
     )
     printRunSummary(result)
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
