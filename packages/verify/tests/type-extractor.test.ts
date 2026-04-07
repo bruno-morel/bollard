@@ -1,6 +1,10 @@
-import { readFile } from "node:fs/promises"
-import { dirname, resolve } from "node:path"
+import { spawnSync } from "node:child_process"
+import { mkdtemp, readFile, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
+import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import type { LLMProvider, LLMResponse } from "@bollard/llm/src/types.js"
 import { describe, expect, it } from "vitest"
@@ -42,6 +46,15 @@ function createErrorProvider(): LLMProvider {
 
 const THIS_DIR = dirname(fileURLToPath(import.meta.url))
 const PACKAGES_DIR = resolve(THIS_DIR, "../..")
+
+function hasExecutable(cmd: string, args: string[]): boolean {
+  const r = spawnSync(cmd, args, { stdio: "ignore" })
+  return r.status === 0
+}
+
+const GO_ON_PATH = hasExecutable("go", ["version"])
+const RUSTC_ON_PATH = hasExecutable("rustc", ["--version"])
+const PYTHON3_ON_PATH = hasExecutable("python3", ["--version"])
 
 async function readSource(pkgPath: string): Promise<string> {
   return readFile(resolve(PACKAGES_DIR, pkgPath), "utf-8")
@@ -337,6 +350,52 @@ describe("SignatureExtractor implementations", () => {
     const provider = createMockProvider("{}")
     expect(getExtractor("unknown", provider, "m")).toBeInstanceOf(LlmFallbackExtractor)
   })
+})
+
+describe("deterministic extractor integration (toolchain-gated)", () => {
+  const goProfile: ToolchainProfile = {
+    language: "go",
+    packageManager: "go",
+    checks: {},
+    sourcePatterns: [],
+    testPatterns: [],
+    ignorePatterns: [],
+    allowedCommands: ["go"],
+    adversarial: defaultAdversarialConfig({ language: "go" }),
+  }
+
+  it.skipIf(!GO_ON_PATH)(
+    "GoAstExtractor runs go doc when go is on PATH (TODO(stage-3b): dev image has no go)",
+    async () => {
+      const goRoot = resolve(PACKAGES_DIR, "detect/tests/fixtures/go-project")
+      const extractor = new GoAstExtractor()
+      const result = await extractor.extract([join(goRoot, "main_test.go")], goProfile, goRoot)
+      expect(result.signatures.length).toBeGreaterThan(0)
+    },
+  )
+
+  it.skipIf(!RUSTC_ON_PATH)(
+    "RustExtractor scans pub items when rustc is on PATH (TODO(stage-3b): dev image has no rust)",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "bollard-rust-extract-"))
+      const fp = join(dir, "lib.rs")
+      await writeFile(fp, "pub fn hello_rust_extractor() {}\n", "utf-8")
+      const extractor = new RustExtractor()
+      const result = await extractor.extract([fp], undefined, dir)
+      expect(result.signatures.length).toBe(1)
+      expect(result.signatures[0]?.signatures).toContain("hello_rust_extractor")
+    },
+  )
+
+  it.skipIf(!PYTHON3_ON_PATH)(
+    "PythonAstExtractor runs helper script when python3 is on PATH",
+    async () => {
+      const pyRoot = resolve(PACKAGES_DIR, "detect/tests/fixtures/py-project")
+      const extractor = new PythonAstExtractor()
+      const result = await extractor.extract([join(pyRoot, "conftest.py")], undefined, pyRoot)
+      expect(result.signatures.length).toBeGreaterThan(0)
+    },
+  )
 })
 
 describe("LlmFallbackExtractor", () => {
