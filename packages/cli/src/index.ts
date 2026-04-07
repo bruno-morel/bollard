@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs"
+import { readFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { createImplementFeatureBlueprint } from "@bollard/blueprints/src/implement-feature.js"
 import type { Blueprint, BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
@@ -10,6 +11,7 @@ import { LLMClient } from "@bollard/llm/src/client.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
 import { buildProjectTree, createAgenticHandler } from "./agent-handler.js"
 import { resolveConfig } from "./config.js"
+import { collectAffectedPathsFromPlan } from "./contract-plan.js"
 import { diffToolchainProfile } from "./diff.js"
 import { humanGateHandler } from "./human-gate.js"
 
@@ -148,6 +150,12 @@ function getWorkDirFlag(args: string[]): string | undefined {
   return idx !== -1 ? args[idx + 1] : undefined
 }
 
+/** Monorepo root for config detection when running via `pnpm --filter` (cwd may be a package dir). */
+function resolveWorkspaceDirFromArgs(args: string[]): string {
+  const explicit = getWorkDirFlag(args)
+  return explicit ? resolve(explicit) : findWorkspaceRoot(process.cwd())
+}
+
 function findWorkspaceRoot(start: string): string {
   let dir = resolve(start)
   while (dir !== dirname(dir)) {
@@ -197,7 +205,8 @@ async function runPlanCommand(args: string[]): Promise<void> {
   log(`${DIM}Agent:${RESET} planner (read-only tools)`)
   log("")
 
-  const { config, profile } = await resolveConfig()
+  const workDir = resolveWorkspaceDirFromArgs(args)
+  const { config, profile } = await resolveConfig(undefined, workDir)
   const { executeAgent } = await import("@bollard/agents/src/executor.js")
   const { createPlannerAgent } = await import("@bollard/agents/src/planner.js")
   const { createContext } = await import("@bollard/engine/src/context.js")
@@ -205,9 +214,6 @@ async function runPlanCommand(args: string[]): Promise<void> {
   const planner = await createPlannerAgent(profile)
   const llmClient = new LLMClient(config)
   const { provider, model } = llmClient.forAgent("planner")
-
-  const explicitWorkDir = getWorkDirFlag(args)
-  const workDir = explicitWorkDir ? resolve(explicitWorkDir) : findWorkspaceRoot(process.cwd())
 
   log(`${DIM}Model:${RESET} ${model}`)
   log(`${DIM}Work dir:${RESET} ${workDir}`)
@@ -234,9 +240,37 @@ async function runPlanCommand(args: string[]): Promise<void> {
   log("")
 }
 
+async function runContractCommand(args: string[]): Promise<void> {
+  const workDir = resolveWorkspaceDirFromArgs(args)
+
+  header("contract")
+  log(`${DIM}Work dir:${RESET} ${workDir}`)
+
+  const planIdx = args.indexOf("--plan")
+  let plan: unknown
+  if (planIdx !== -1) {
+    const planPath = args[planIdx + 1]
+    if (!planPath) {
+      log("Usage: bollard contract [--work-dir <path>] [--plan <file.json>]")
+      process.exit(1)
+    }
+    const text = await readFile(resolve(planPath), "utf-8")
+    plan = JSON.parse(text) as unknown
+  }
+
+  const { profile } = await resolveConfig(undefined, workDir)
+  const affected = collectAffectedPathsFromPlan(plan)
+  const { buildContractContext } = await import("@bollard/verify/src/contract-extractor.js")
+  const contract = await buildContractContext(affected, profile, workDir, (m) =>
+    log(`${DIM}${m}${RESET}`),
+  )
+
+  process.stdout.write(`${JSON.stringify(contract, null, 2)}\n`)
+  log("")
+}
+
 async function runVerifyCommand(args: string[]): Promise<void> {
-  const explicitWorkDir = getWorkDirFlag(args)
-  const workDir = explicitWorkDir ? resolve(explicitWorkDir) : findWorkspaceRoot(process.cwd())
+  const workDir = resolveWorkspaceDirFromArgs(args)
 
   // Check if --profile flag is present
   if (args.includes("--profile")) {
@@ -272,8 +306,8 @@ async function runVerifyCommand(args: string[]): Promise<void> {
   process.exit(allPassed ? 0 : 1)
 }
 
-async function runDiffCommand(): Promise<void> {
-  const workDir = findWorkspaceRoot(process.cwd())
+async function runDiffCommand(args: string[]): Promise<void> {
+  const workDir = resolveWorkspaceDirFromArgs(args)
 
   header("diff")
   log(`${DIM}Comparing detected profile against hardcoded Stage 1 defaults...${RESET}\n`)
@@ -323,6 +357,16 @@ async function runDiffCommand(): Promise<void> {
     }
   }
 
+  const advKeys = Object.keys(diff.adversarial)
+  if (advKeys.length > 0) {
+    log(`\n${BOLD}Adversarial (vs defaults):${RESET}`)
+    log(`  ${DIM}${JSON.stringify(diff.adversarial, null, 2).split("\n").join("\n  ")}${RESET}`)
+  } else {
+    log(
+      `\n${BOLD}Adversarial:${RESET} ${DIM}matches default matrix for ${profile.language}${RESET}`,
+    )
+  }
+
   log(`\n${BOLD}Summary:${RESET}`)
   log(
     `${diff.summary.unchanged} unchanged, ${diff.summary.differ} differ, ${diff.summary.new} new, ${diff.summary.removed} removed`,
@@ -339,7 +383,8 @@ async function runRunCommand(args: string[]): Promise<void> {
     process.exit(1)
   }
 
-  const { config, profile } = await resolveConfig()
+  const configCwd = resolveWorkspaceDirFromArgs(args)
+  const { config, profile } = await resolveConfig(undefined, configCwd)
 
   if (blueprintName === "demo") {
     header("run demo")
@@ -353,8 +398,7 @@ async function runRunCommand(args: string[]): Promise<void> {
   }
 
   if (blueprintName === "implement-feature") {
-    const explicitWorkDir = getWorkDirFlag(args)
-    const workDir = explicitWorkDir ? resolve(explicitWorkDir) : findWorkspaceRoot(process.cwd())
+    const workDir = configCwd
     const { handler, llmConfig } = await createAgenticHandler(config, workDir, profile)
     const blueprint = createImplementFeatureBlueprint(workDir, {
       provider: llmConfig.provider,
@@ -496,13 +540,19 @@ async function main(): Promise<void> {
     return
   }
 
+  if (command === "contract") {
+    await runContractCommand(rest)
+    return
+  }
+
   if (command === "diff") {
-    await runDiffCommand()
+    await runDiffCommand(rest)
     return
   }
 
   if (command === "config" && rest[0] === "show") {
-    const { config, profile, sources } = await resolveConfig()
+    const configCwd = resolveWorkspaceDirFromArgs(rest)
+    const { config, profile, sources } = await resolveConfig(undefined, configCwd)
     const showSources = rest.includes("--sources")
     const output = showSources ? { config, profile, sources } : config
     process.stdout.write(`${JSON.stringify(output, null, 2)}\n`)
@@ -563,12 +613,27 @@ async function main(): Promise<void> {
         : "blackbox"
 
     const adversarialPersist = rest.includes("--persist")
+    const boundaryLifecycle = adversarialPersist ? "persistent" : "ephemeral"
 
-    log("Adversarial test configuration:")
-    log(`  ${BOLD}Mode:${RESET}      ${adversarialMode}`)
-    log(
-      `  ${BOLD}Lifecycle:${RESET} ${adversarialPersist ? "persistent (tests committed)" : "ephemeral (default)"}`,
-    )
+    const formatScope = (name: "boundary" | "contract" | "behavioral") => {
+      const s = profile.adversarial[name]
+      const concernStr = Object.entries(s.concerns)
+        .filter(([, w]) => w !== "off")
+        .map(([k, w]) => `${k}=${w}`)
+        .join(", ")
+      log(`  ${BOLD}${name}:${RESET}`)
+      log(`    enabled:      ${s.enabled}`)
+      log(`    integration:  ${s.integration}`)
+      log(`    lifecycle:    ${s.lifecycle}`)
+      log(`    frameworkOK:  ${String(s.frameworkCapable ?? false)}`)
+      if (name === "boundary" && s.mode !== undefined) log(`    mode:         ${s.mode}`)
+      log(`    concerns:     ${concernStr || "(all off)"}`)
+    }
+
+    log("Adversarial scopes (see examples/bollard.yml for full YAML options):")
+    formatScope("boundary")
+    formatScope("contract")
+    formatScope("behavioral")
     log("")
 
     const mcpManifest = {
@@ -591,11 +656,16 @@ async function main(): Promise<void> {
 
     const bollardYml = [
       "# Bollard configuration",
-      "# Generated by bollard init",
+      "# Generated by bollard init — see examples/bollard.yml for all adversarial options",
       "",
       "adversarial:",
-      `  mode: ${adversarialMode}`,
-      `  persist: ${adversarialPersist}`,
+      "  boundary:",
+      `    mode: ${adversarialMode}`,
+      `    lifecycle: ${boundaryLifecycle}`,
+      "  contract:",
+      "    enabled: true",
+      "  behavioral:",
+      "    enabled: false",
       "",
     ].join("\n")
 
@@ -620,6 +690,9 @@ async function main(): Promise<void> {
   log(`  ${BOLD}run${RESET} <blueprint> --task <task>   Run a blueprint`)
   log(`  ${BOLD}plan${RESET} --task <task>              Generate a plan without implementing`)
   log(`  ${BOLD}verify${RESET} [--profile]              Run static checks (or show profile)`)
+  log(
+    `  ${BOLD}contract${RESET} [--plan <file>]         Print ContractContext JSON (optional planner plan)`,
+  )
   log(`  ${BOLD}diff${RESET}                            Compare profile vs hardcoded defaults`)
   log(`  ${BOLD}eval${RESET} [agent]                    Run agent eval sets`)
   log(`  ${BOLD}config show${RESET} [--sources]         Show resolved configuration`)
