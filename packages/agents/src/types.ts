@@ -61,5 +61,6 @@ export interface AgentResult {
 export interface ExecutorOptions {
   postCompletionHook?: (text: string) => Promise<string | null>
   maxVerificationRetries?: number
-  skipVerificationAfterTurn?: number
+  /** When set, skip post-completion verification once `turns` reaches this value (0-based turn counter inside the executor). */
+  deferPostCompletionVerifyFromTurn?: number
 }

@@ -374,7 +374,7 @@ export async function createAgenticHandler(
       executorOptions = {
         postCompletionHook: createVerificationHook(workDir, profile),
         maxVerificationRetries: 3,
-        skipVerificationAfterTurn: Math.floor(agents.coder.maxTurns * 0.8),
+        deferPostCompletionVerifyFromTurn: Math.floor(agents.coder.maxTurns * 0.8),
       }
     }
 

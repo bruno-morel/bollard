@@ -1,10 +1,106 @@
 import type { Dirent } from "node:fs"
-import { readFile, readdir } from "node:fs/promises"
-import { extname, join, relative, resolve } from "node:path"
+import { readFile, readdir, stat } from "node:fs/promises"
+import { dirname, join, relative, resolve } from "node:path"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
 import ts from "typescript"
 import type { ExtractedSignature } from "./type-extractor.js"
 import { TsCompilerExtractor } from "./type-extractor.js"
+
+async function resolveSpecifierToFile(
+  fromFile: string,
+  specifier: string,
+): Promise<string | undefined> {
+  const raw = resolve(dirname(fromFile), specifier)
+  const candidates: string[] = [raw]
+  if (/\.(js|mjs|cjs)$/i.test(raw)) {
+    const base = raw.replace(/\.(js|mjs|cjs)$/i, "")
+    candidates.push(`${base}.ts`, `${base}.tsx`, `${base}.d.ts`)
+  } else if (!/\.(ts|tsx)$/i.test(raw)) {
+    candidates.push(`${raw}.ts`, `${raw}.tsx`)
+  }
+  for (const p of candidates) {
+    try {
+      if ((await stat(p)).isFile()) return resolve(p)
+    } catch {
+      /* try next */
+    }
+  }
+  return undefined
+}
+
+function resolvePackageDotExport(pkgRoot: string, exportsField: unknown): string | undefined {
+  if (exportsField === undefined || exportsField === null) return undefined
+  if (typeof exportsField === "string") {
+    return resolve(pkgRoot, exportsField)
+  }
+  if (typeof exportsField !== "object") return undefined
+  const root = (exportsField as Record<string, unknown>)["."]
+  if (typeof root === "string") return resolve(pkgRoot, root)
+  if (root && typeof root === "object") {
+    const o = root as Record<string, string>
+    const rel = o["types"] ?? o["import"] ?? o["default"]
+    if (typeof rel === "string") return resolve(pkgRoot, rel)
+  }
+  return undefined
+}
+
+/** TS source files reachable from package.json `exports["."]` via static `export … from` (Stage 3a contract surface). */
+async function collectPublicExportClosure(entryAbs: string): Promise<Set<string>> {
+  const normalizedEntry = resolve(entryAbs)
+  const seen = new Set<string>()
+  const queue: string[] = [normalizedEntry]
+
+  while (queue.length > 0) {
+    const f = queue.pop()
+    if (!f || seen.has(f)) continue
+    let text: string
+    try {
+      text = await readFile(f, "utf-8")
+    } catch {
+      continue
+    }
+    seen.add(f)
+    const sf = ts.createSourceFile(f, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+    for (const stmt of sf.statements) {
+      if (
+        !ts.isExportDeclaration(stmt) ||
+        !stmt.moduleSpecifier ||
+        !ts.isStringLiteral(stmt.moduleSpecifier)
+      )
+        continue
+      const next = await resolveSpecifierToFile(f, stmt.moduleSpecifier.text)
+      if (next && !seen.has(next)) queue.push(next)
+    }
+  }
+  return seen
+}
+
+async function publicSurfaceFilesForPackage(pkgRoot: string): Promise<Set<string> | undefined> {
+  let pkgJson: { exports?: unknown }
+  try {
+    pkgJson = JSON.parse(await readFile(join(pkgRoot, "package.json"), "utf-8")) as {
+      exports?: unknown
+    }
+  } catch {
+    return undefined
+  }
+  const entry = resolvePackageDotExport(pkgRoot, pkgJson.exports)
+  if (!entry) return undefined
+  try {
+    if (!(await stat(entry)).isFile()) return undefined
+  } catch {
+    return undefined
+  }
+  return collectPublicExportClosure(entry)
+}
+
+function filterByPublicSurface<T extends { filePath: string }>(
+  items: T[],
+  surface: Set<string> | undefined,
+): T[] {
+  if (!surface) return items
+  return items.filter((x) => surface.has(resolve(x.filePath)))
+}
 
 export interface ModuleNode {
   id: string
@@ -187,13 +283,16 @@ export async function buildContractContext(
   for (const [id, root] of idToRoot) {
     const files = await listPackageSourceFiles(root)
     if (files.length === 0) continue
+    const surface = await publicSurfaceFilesForPackage(root)
     const merged = await extractor.extract(files, profile, workDir)
-    const errorTypes = merged.types.filter((t) => t.name.endsWith("Error")).map((t) => t.name)
+    const signatures = filterByPublicSurface(merged.signatures, surface)
+    const types = filterByPublicSurface(merged.types, surface)
+    const errorTypes = types.filter((t) => t.name.endsWith("Error")).map((t) => t.name)
     modules.push({
       id,
       language: "typescript",
       rootPath: resolve(root),
-      publicExports: merged.signatures,
+      publicExports: signatures,
       errorTypes,
     })
   }

@@ -174,7 +174,7 @@ describe("Feature: Agent execution with LLM integration", () => {
   it("should execute agent with options", async () => {
     const options: ExecutorOptions = {
       maxVerificationRetries: 2,
-      skipVerificationAfterTurn: 5
+      deferPostCompletionVerifyFromTurn: 5
     }
 
     const result = await executeAgent(
@@ -407,7 +407,7 @@ describe("Boundary cases: Edge values and limits", () => {
     }
     expect(options.postCompletionHook).toBeUndefined()
     expect(options.maxVerificationRetries).toBeUndefined()
-    expect(options.skipVerificationAfterTurn).toBeUndefined()
+    expect(options.deferPostCompletionVerifyFromTurn).toBeUndefined()
   })
 })
 ```

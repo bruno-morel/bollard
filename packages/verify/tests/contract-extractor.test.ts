@@ -62,4 +62,13 @@ describe("buildContractContext", () => {
     expect(blob).not.toContain("_total")
     expect(blob).not.toContain("_limit")
   })
+
+  it("does not leak internal implementation identifiers into serialized contract context", async () => {
+    const ctx = await buildContractContext([], tsProfile, REPO_ROOT)
+    const blob = JSON.stringify(ctx)
+    expect(blob).not.toContain("compactOlderTurns")
+    expect(blob).not.toContain("skipVerificationAfterTurn")
+    expect(blob).not.toContain("processConcernBlocks")
+    expect(blob).not.toContain("extractClassSignature")
+  })
 })

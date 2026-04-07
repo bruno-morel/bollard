@@ -1,3 +1,4 @@
 runs/
 smoke.log
 compose.verify.yml
+validation-fake-plan.json

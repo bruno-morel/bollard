@@ -160,8 +160,8 @@ export async function executeAgent(
         .join("")
 
       const pastTurnBudget =
-        options?.skipVerificationAfterTurn !== undefined &&
-        turns >= options.skipVerificationAfterTurn
+        options?.deferPostCompletionVerifyFromTurn !== undefined &&
+        turns >= options.deferPostCompletionVerifyFromTurn
 
       if (
         options?.postCompletionHook &&
