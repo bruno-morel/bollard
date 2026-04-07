@@ -6,12 +6,14 @@
 
 Bollard is an **artifact integrity framework** for AI-assisted software development. It ensures every artifact (code, tests, docs, infra) is produced, adversarially verified, and mechanically proven sound before shipping. The core innovation: separate the producer from the verifier, then prove the verification itself is meaningful (via mutation testing).
 
-Bollard has completed **Stage 2** (adversarial verification infrastructure) and **Stage 3a** (contract-scope adversarial testing — first slice of Stage 3). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, boundary tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 (first half) fixed critical agent infrastructure issues: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. Stage 2 (second half) added Docker-isolated verification containers, LLM fallback signature extraction for edge languages, in-language adversarial test generation, adversarial test lifecycle (ephemeral + persistent-native), MCP server (`@bollard/mcp`), and OpenAI + Google LLM providers. **Stage 3a** adds per-scope `AdversarialConfig` with concern weights, `boundary-tester` + `contract-tester` agents, deterministic extractors for Python/Go/Rust, TypeScript contract graph (`buildContractContext`), four contract blueprint nodes, and `bollard contract` / MCP `bollard_contract`.
+Bollard has completed **Stage 2** (adversarial verification infrastructure) and **Stage 3a** (contract-scope adversarial testing — first slice of Stage 3, **validated YELLOW on 2026-04-07** — see [spec/stage3a-validation-results.md](../spec/stage3a-validation-results.md) and the "Stage 3a Validation" section below). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, boundary tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 (first half) fixed critical agent infrastructure issues: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. Stage 2 (second half) added Docker-isolated verification containers, LLM fallback signature extraction for edge languages, in-language adversarial test generation, adversarial test lifecycle (ephemeral + persistent-native), MCP server (`@bollard/mcp`), and OpenAI + Google LLM providers. **Stage 3a** adds per-scope `AdversarialConfig` with concern weights, `boundary-tester` + `contract-tester` agents, deterministic extractors for Python/Go/Rust, TypeScript contract graph (`buildContractContext`), four contract blueprint nodes, and `bollard contract` / MCP `bollard_contract`.
 
-The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md)):
-- **Stage 3 (remaining):** Mutation testing + semantic review; contract graph beyond TypeScript
-- **Stage 4:** Behavioral-scope adversarial testing + production feedback loop
-- **Stage 5:** Self-hosting + self-improvement
+The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md) and the [Stage 3a → 3b follow-ups](#stage-3a--stage-3b-follow-ups) section below):
+- **Stage 3a follow-ups (blockers before calling 3a GREEN):** one full 16-node `implement-feature` self-test after `f14bd66`; Go/Rust toolchains in dev image; contract-tester prompt tuning.
+- **Stage 3b:** Contract graph beyond TypeScript (Python / Go / Rust workspaces); deeper extractor accuracy.
+- **Stage 3c:** Per-language mutation testing (Stryker / mutmut / cargo-mutants); semantic review agent; streaming LLM responses (deferred from 3a progress UX).
+- **Stage 4:** Behavioral-scope adversarial testing + production feedback loop.
+- **Stage 5:** Self-hosting + self-improvement.
 
 Stage 2's single adversarial tester (now called the **boundary-scope** tester) is the first of three adversarial scopes. Each scope has its own agent, context, and execution mode, probing four cross-cutting concerns (correctness, security, performance, resilience) with per-scope weights.
 
@@ -44,8 +46,12 @@ docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan 
 - Unknown languages still need an LLM provider for signature extraction (`getExtractor` throws `PROVIDER_NOT_FOUND` without one).
 - No behavioral extractor (topology, endpoints, failure modes) — Stage 4.
 - No rollback on coder max-turns failure — partially-written files remain on disk.
-- No semantic review agent — Stage 3.
+- No semantic review agent — Stage 3c.
 - No production feedback loop (probes, drift detection) — Stage 4.
+- **Stage 3a YELLOW:** one full `implement-feature` re-run after `f14bd66` is still pending before 3a can be called GREEN. The `vitest.contract.config.ts` code path is covered by an integration test, but not by a live LLM-generated contract test inside a real pipeline run.
+- **Dev image Go/Rust gap:** `packages/verify/tests/type-extractor.test.ts` has two `it.skipIf(go/rustc absent)` integration tests marked `TODO(stage-3b)`. The deterministic extractors exist, but CI can't exercise them until the dev image grows a Go + Rust toolchain (or we add a `Dockerfile.dev-full` variant).
+- **`runBlueprint` signature:** takes an optional trailing `toolchainProfile` — omitting it silently disables contract nodes. Any new entry point that constructs a blueprint run must thread the profile through (see CLI `implement-feature` for the pattern).
+- **Vitest discovery of `.bollard/`:** `runTests` branches on paths containing `.bollard/` and uses `vitest.contract.config.ts`. Any new "write test to `.bollard/` then run it" flow must go through `runTests(profile, testFiles)` rather than invoking `pnpm run test` directly.
 
 ## Tech Stack (Non-Negotiable)
 
@@ -262,7 +268,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** ~8 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`
-- **Latest count (authoritative):** `402` passed, `2` skipped — includes executor progress telemetry tests and CLI `AgentSpinner` tests.
+- **Latest count (authoritative, 2026-04-07):** `406` passed, `4` skipped (410 total). Skips: 2 LLM live smoke tests (no key) + 2 toolchain-gated extractor integration tests (`go` / `rustc` absent from dev image — TODO(stage-3b)).
 
 ### Stage 3a follow-ups (agent UX)
 
@@ -282,11 +288,61 @@ docker compose run --rm dev --filter @bollard/cli run start -- contract
 ## Stage 2 Validation (2026-04-02)
 
 - **Test suite:** 344/344 pass, typecheck clean, lint clean
-- **Milestone (TS):** Pipeline ran nodes 1–5 (create-branch → generate-plan → approve-plan → implement → static-checks). Coder correctly used `edit_file` for existing files. Failed at static-checks (Biome lint formatting) due to `skipVerificationAfterTurn` skipping lint after turn 48/60.
+- **Milestone (TS):** Pipeline ran nodes 1–5 (create-branch → generate-plan → approve-plan → implement → static-checks). Coder correctly used `edit_file` for existing files. Failed at static-checks (Biome lint formatting) due to `deferPostCompletionVerifyFromTurn` (née `skipVerificationAfterTurn`) skipping lint after turn 48/60.
 - **Milestone (Python):** `--work-dir` flag validated. `detectToolchain` correctly identified Python/pytest/ruff. Planner produced Python-specific plan. Coder exhausted 60 turns because `python`/`pytest` were not in `allowedCommands` — **fixed in post-validation cleanup** (test.cmd and pip-audit now whitelisted).
 - **Retro-adversarial:** Tester generated tests for 5 packages ($0.34 total). Information barrier held (no private identifiers leaked). All outputs include property-based tests. Key issue: tester constructs invalid ToolchainProfile stubs (uses wrong field names). See `.bollard/retro-adversarial/SUMMARY.md`.
 - **Bug fixed:** `eval-runner.ts` regex validation — invalid regex in `matches_regex` assertion now returns `passed: false` instead of crashing.
 - **Post-validation cleanup (2026-04-02):** Fixed Python `allowedCommands` gap, added `LlmFallbackExtractor` warn logging, renamed `integrateWithTestRunner` → `checkTestRunnerIntegration` with corrected return semantics, hardened `promote-test` CLI command, aligned MCP `tsconfig.json`, archived 12 historical spec prompts.
+
+## Stage 3a Validation (2026-04-07) — Status **YELLOW**
+
+Full per-check results: [`spec/stage3a-validation-results.md`](../spec/stage3a-validation-results.md).
+
+- **Test suite:** 406 passed / 4 skipped; typecheck + lint clean.
+- **Information barrier fix:** `buildContractContext` now limits `publicExports` / reachable types to files in the `package.json` `exports["."]` re-export closure — private engine internals (`compactOlderTurns`, `deferPostCompletionVerifyFromTurn`, etc.) no longer leak into the contract-tester prompt. Regression test added.
+- **Executor rename:** `ExecutorOptions.skipVerificationAfterTurn` → `deferPostCompletionVerifyFromTurn` (more accurately describes the deferral semantics — the post-completion verification hook is deferred above the 80% turn budget, not permanently skipped).
+- **`pnpm.overrides` for `vite >= 7.3.2`:** Clears the high-severity GHSA surfaced by `pnpm audit --audit-level=high` — unblocks the `static-checks` node in `implement-feature`.
+- **`runBlueprint` takes `toolchainProfile`:** New optional positional; `runBlueprint(blueprint, task, config, agenticHandler?, humanGateHandler?, onProgress?, toolchainProfile?)` sets `ctx.toolchainProfile` from the passed profile. The CLI `implement-feature` command now threads the `resolveConfig` profile through — **previously contract nodes silently skipped** because the context field was unset.
+- **Vitest contract config for `.bollard/` paths:** Vitest's default `include` ignores `.bollard/**`, so `runTests` now uses `vitest.contract.config.ts` (workspace `@bollard/*` aliases + `.bollard/**` include) whenever the requested test file paths touch `.bollard/`. Integration test in `packages/verify/tests/dynamic.test.ts`.
+- **Toolchain-gated extractor tests:** `packages/verify/tests/type-extractor.test.ts` now has `it.skipIf` integration tests for Python / Go / Rust with explicit `TODO(stage-3b)` titles when the toolchain is absent from the dev image.
+- **`.bollard/validation-fake-plan.json` gitignored:** Local convenience for `bollard contract --plan <file>` checks.
+
+### Stage 3a commits on `main`
+
+| Commit | Summary |
+|--------|---------|
+| `ff0fa7c` | Contract context limited to entry-export closure; `deferPostCompletionVerifyFromTurn` rename; information-barrier regression test; ignore `validation-fake-plan.json` |
+| `614dc33` | `pnpm.overrides` for `vite >= 7.3.2` — clears audit blocker in `static-checks` |
+| `b81a4b7` | Thread `ToolchainProfile` into `runBlueprint` / `PipelineContext`; CLI wires `resolveConfig` profile into `implement-feature` |
+| `13cfc1e` | Toolchain-gated Go/Rust/Python extractor integration tests |
+| `f14bd66` | `vitest.contract.config.ts` + `runTests` branch for `.bollard/` paths; dynamic integration test; Biome override |
+
+### YELLOW, not GREEN — why
+
+A full 16-node `implement-feature` LLM self-test was **not re-run** after `f14bd66`. The three earlier attempts during validation hit distinct blockers that were each fixed, but no single run exercised the end-to-end pipeline with **all** Stage 3a fixes in place. The remaining risk is **LLM-generated contract test quality** (an earlier generated file had incorrect `CostTracker` expectations — that's a prompt-quality issue, not infrastructure). Infrastructure for discovering and resolving workspace imports is covered by the dynamic integration test.
+
+To flip YELLOW → GREEN:
+
+```bash
+docker compose run --rm -e BOLLARD_AUTO_APPROVE=1 dev sh -c \
+  'pnpm --filter @bollard/cli run start -- run implement-feature --task "…" --work-dir /app'
+```
+
+**Gotcha:** `docker compose run --filter …` is parsed by Compose v2 as a Compose flag — you must wrap pnpm's `--filter` in `sh -c '…'`.
+
+### Stage 3a → Stage 3b follow-ups
+
+Tracked here so they land in the next stage prompt without hunting through the validation results file:
+
+1. **Full `implement-feature` re-run after `f14bd66`** — to flip Stage 3a YELLOW → GREEN. One task, cheap (earlier success was ~$0.37 / ~100s), high signal.
+2. **Go / Rust in the dev image** — so the two `it.skipIf` extractor tests become unconditional. Likely a second dev Dockerfile stage or a dedicated `Dockerfile.dev-full`.
+3. **Contract-tester prompt tuning** — generated contract tests still sometimes make incorrect assertions about internal API shapes (e.g. `CostTracker`). The information barrier fix limited the *input* surface; the *prompt* may now need to teach the agent to prefer behavioral assertions over identity assertions when given only a type signature.
+4. **Per-language mutation testing** — still Stage 3 remainder (Stryker / mutmut / cargo-mutants). Unblocked now that extractors are deterministic.
+5. **Semantic review agent** — still Stage 3 remainder.
+6. **Contract graph beyond TypeScript** — Python / Go / Rust workspace edge extraction (Stage 3b).
+7. **Streaming LLM responses** — deferred to Stage 3c per `spec/stage3a-progress-ux-prompt.md` §1 Option B; Option A (spinner + telemetry) already shipped.
+8. **Verification summary batching** — a single consolidated feedback message at turn budget exhaustion instead of per-check retries (Stage 4 candidate; related to the `deferPostCompletionVerifyFromTurn` tradeoff).
+9. **Git rollback on coder max-turns failure** — partially-written files remain on disk today.
 
 ## Key Types (Source of Truth)
 
@@ -322,7 +378,9 @@ docker compose run --rm dev --filter @bollard/cli run start -- contract
 
 ### Runner (packages/engine/src/runner.ts)
 
-`runBlueprint(blueprint, task, config, agenticHandler?, humanGateHandler?, onProgress?) → Promise<RunResult>`
+`runBlueprint(blueprint, task, config, agenticHandler?, humanGateHandler?, onProgress?, toolchainProfile?) → Promise<RunResult>`
+
+- The optional trailing `toolchainProfile` was added in Stage 3a validation. When provided, the runner sets `ctx.toolchainProfile` on the created `PipelineContext`. The CLI `implement-feature` command threads the profile from `resolveConfig` — without it, contract nodes silently skip with `contract scope disabled`.
 
 - `AgenticHandler = (node, ctx) => Promise<NodeResult>` — called for agentic nodes. The CLI wraps multi-turn agent execution behind this callback.
 - `HumanGateHandler = (node, ctx) => Promise<NodeResult>` — called for human_gate nodes. The CLI implements interactive stdin approval.
@@ -505,7 +563,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - `SignatureExtractor` interface with `TsCompilerExtractor` and `LlmFallbackExtractor`
 - `write-tests` node: profile-aware test placement (src/ → tests/), markdown fence stripping
 - Coder max turns increased to 60 (from 40) with turn budget guidance in prompt
-- `skipVerificationAfterTurn` in executor — verification hook skipped above 80% turn budget
+- `deferPostCompletionVerifyFromTurn` in executor (renamed in Stage 3a validation from `skipVerificationAfterTurn`) — post-completion verification hook deferred above 80% turn budget
 - `buildTesterMessage` includes referenced type definitions alongside signatures
 - `compactOlderTurns` handles `edit_file` payloads
 
@@ -532,6 +590,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - `boundary-tester` + `{{#concern}}` templating; `contract-tester` + `buildContractContext` (TypeScript monorepo)
 - CLI `contract`, MCP `bollard_contract`, `examples/bollard.yml`
 - Dev image includes `python3` for the Python extractor script
+- **Stage 3a validation fixes (2026-04-07):** contract context re-export closure (information barrier), `deferPostCompletionVerifyFromTurn` rename, `pnpm.overrides` for `vite >= 7.3.2`, `runBlueprint(..., toolchainProfile?)`, `vitest.contract.config.ts` for `.bollard/` paths, toolchain-gated extractor tests. Status: **YELLOW** pending one full `implement-feature` re-run.
 
 ### DO NOT build yet:
 - **Streaming LLM responses (Stage 3c / 4 follow-up)** — `LLMProvider.chat_stream`, incremental delta events from `executeAgent`, CLI rendering of model output as it arrives (Option B in `spec/stage3a-progress-ux-prompt.md` §1). Deferred because it requires provider-specific streaming implementations (Anthropic, OpenAI, Google) and partial-response error handling; Option A (spinner + turn/tool telemetry without streaming) covers basic “feels alive” UX.

@@ -89,8 +89,15 @@ These document how each stage was built but are not current guidance.
 
 ## Status
 
-**Phase:** Stage 2 complete (April 2026) — adversarial verification infrastructure.
-**Next:** Stage 3 — contract-scope adversarial testing, mutation testing, semantic review.
+**Phase:** Stage 3a validated **YELLOW** (2026-04-07) — contract-scope adversarial testing shipped on top of Stage 2's adversarial verification infrastructure. Full per-check results in [stage3a-validation-results.md](stage3a-validation-results.md).
+
+**Pending to flip YELLOW → GREEN:** one full 16-node `implement-feature` self-test after commit `f14bd66` (Vitest contract-config fix). Earlier validation attempts each surfaced a distinct blocker that was fixed in its own commit, but no single run has exercised the end-to-end pipeline with all Stage 3a fixes in place.
+
+**Next:**
+- **Stage 3b:** contract graph beyond TypeScript (Python / Go / Rust workspaces); Go + Rust toolchains in the dev image so the two skipped extractor integration tests go unconditional; contract-tester prompt tuning.
+- **Stage 3c:** per-language mutation testing (Stryker / mutmut / cargo-mutants); semantic review agent; streaming LLM responses.
+- **Stage 4:** behavioral-scope adversarial testing + production feedback loop.
+- **Stage 5:** self-hosting + self-improvement.
 
 ---
 

@@ -89,6 +89,50 @@ Verbose sample (targeted file):
 - **Full implement-feature re-run** after Vitest contract fix not executed in this pass (cost).
 - Vitest / Vite may log deprecation noise (`esbuild` option) — cosmetic.
 
-## Stage 3a status
+## Check 5 — `implement-feature` self-test (re-run, 2026-04-07)
 
-**YELLOW** — All automated checks and unit/integration tests pass; information barrier and audit blockers fixed; `ToolchainProfile` and contract test **execution path** fixed. A **fresh** full `implement-feature` self-test after `f14bd66` is recommended to confirm `run-contract-tests` green with a real LLM-generated file.
+**Pass on plumbing, fail on assertion quality.** First full 16-node
+self-test after `f14bd66`.
+
+- Task: `CostTracker.reset()` (chosen to force a real contract-graph edge)
+- Branch: `bollard/20260407-2300-run-9096`
+- Runtime: 129.7s · cost $0.54
+- Nodes 1–12: OK. Coder used `edit_file` on existing files, finished in
+  15 turns, all unit + boundary tests green.
+- Node 13 (`run-contract-tests`): **FAIL** — 5/6 generated contract tests
+  passed; the sixth asserted `expect(0.1 + 0.2).toBe(0.3)`. See
+  `.bollard/retro-adversarial/contract-tester-float-precision-repro.md`.
+- Nodes 14–16 (docker-verify, generate-diff, approve-pr): not reached.
+
+**What this confirms:** the post-`f14bd66` fixes (profile threading,
+contract vitest config, contract node wiring) are structurally correct.
+`buildContractContext` found the new exported symbol, the contract-tester
+was invoked, wrote its output through the lifecycle, and the contract
+vitest config picked it up under `pnpm run test`. Every plumbing concern
+that was outstanding is now validated.
+
+**What it does not confirm:** contract-tester assertion quality. The
+failure is the same class of issue flagged in the pre-run YELLOW notes —
+the agent generates plausible-looking tests that encode incorrect
+assumptions about the contract. This run produced a concrete, minimal
+repro for that class.
+
+**Disposition:** Implementation merged (`CostTracker.reset()` + 9 unit
+tests + 5 passing contract tests). Failing contract test removed.
+
+## Stage 3a status (updated 2026-04-07)
+
+**YELLOW — unchanged.** Pipeline end-to-end plumbing is now validated
+against a real LLM-generated contract test file, closing the "not re-run
+after `f14bd66`" gap. The remaining YELLOW item is narrower and now has
+a concrete repro:
+
+- Contract-tester assertion quality — see the float-precision repro
+  under `.bollard/retro-adversarial/`. Next prompt revision should be
+  evaluated by re-running the same task and checking the generated file
+  contains no strict-equality assertions against float arithmetic.
+
+GREEN criteria: re-run the `CostTracker.reset()` task (or an equivalent
+minimal contract-touching task) and have node 13 pass on its first
+attempt with contract tests that the reviewer would accept as correct
+contract statements, not just correct code.

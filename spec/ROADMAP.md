@@ -2,11 +2,31 @@
 
 Features deferred from v0.1 spec to keep scope tight. These are all good ideas — they just don't belong in the first build.
 
-**Stage 3a (contract adversarial scope)** — Contract graph extraction (TypeScript monorepo), `contract-tester` agent, blueprint nodes, and `bollard contract` / MCP `bollard_contract` are implemented in the main tree; see `spec/07-adversarial-scopes.md` implementation status.
+**Stage 3a (contract adversarial scope)** — Contract graph extraction (TypeScript monorepo), `contract-tester` agent, blueprint nodes, and `bollard contract` / MCP `bollard_contract` are implemented in the main tree. Validated **YELLOW** on 2026-04-07 — see [stage3a-validation-results.md](./stage3a-validation-results.md) and `spec/07-adversarial-scopes.md` implementation status.
+
+## Stage 3a — flip YELLOW → GREEN
+
+One-off remaining work before Stage 3a can be called done:
+
+- **Full 16-node `implement-feature` re-run** after commit `f14bd66` (`vitest.contract.config.ts` + `runTests` branch for `.bollard/` paths). Cheap (~$0.37, ~100s based on earlier runs), high signal. Run with `BOLLARD_AUTO_APPROVE=1` and the `sh -c` workaround for pnpm's `--filter` inside `docker compose run`.
+- Watch specifically for **LLM-generated contract test quality** on `run-contract-tests`. An earlier generated file had incorrect `CostTracker` expectations; the information-barrier fix limited the *input* surface, but the *prompt* may still need tuning — see Stage 3b.
+
+## Stage 3b — multi-language contract graph + dev ergonomics
+
+Contract-scope coverage beyond TypeScript monorepos, plus the infrastructure debts surfaced during Stage 3a validation:
+
+- **Contract graph for Python / Go / Rust workspaces** — `buildContractContext` currently returns an empty graph with a warning for non-TS repos. Needs language-specific module/import edge extractors plus a common `ContractContext` shape.
+- **Go + Rust in the dev image** — `packages/verify/tests/type-extractor.test.ts` has two `it.skipIf` integration tests marked `TODO(stage-3b)` because `go` and `rustc` are not on the dev image PATH. Likely a `Dockerfile.dev-full` variant, or a split multi-stage image, so CI can exercise the extractors unconditionally.
+- **Contract-tester prompt tuning** — teach the agent to prefer behavioral assertions over identity assertions when given only a type signature + entry-export closure. Cross-reference: the `CostTracker` false expectation from Stage 3a validation.
+- **Deterministic test output parsers** for pytest, `go test`, and `cargo test` — Vitest is the only parser today; others fall back to zero/error detection via profile-driven execution.
 
 ## Stage 3c follow-ups
 
-- **Streaming LLM responses** — `LLMProvider.chat_stream`, partial/streaming tool-call assembly, and CLI rendering of tokens as they arrive. Design notes and rationale for deferring vs. spinner-based progress: [stage3a-progress-ux-prompt.md](./stage3a-progress-ux-prompt.md) (§1 Option B, §6).
+- **Per-language mutation testing** — Stryker (JS/TS), mutmut (Python), cargo-mutants (Rust), go-mutesting (Go). Unblocked now that extractors are deterministic. Mutation testing against both Layer 1 (project tests) and Layer 2 (adversarial tests) is the Stage 3c exit criterion.
+- **Semantic review agent** — separate agent that sees diff + plan (but not implementation internals) and flags misalignments. Information barrier enforced by prompt construction + postcondition scan, same pattern as contract-tester.
+- **Streaming LLM responses** — `LLMProvider.chat_stream`, partial/streaming tool-call assembly, and CLI rendering of tokens as they arrive. Design notes and rationale for deferring vs. spinner-based progress: [stage3a-progress-ux-prompt.md](./stage3a-progress-ux-prompt.md) (§1 Option B, §6). Option A (spinner + turn/tool telemetry) already shipped in Stage 3a.
+- **Verification summary batching** — replace per-check retry loops with a single consolidated feedback message when the turn budget is close to exhaustion. Related to the `deferPostCompletionVerifyFromTurn` tradeoff that caused Stage 2 validation's TS static-check failure.
+- **Git rollback on coder max-turns failure** — partially-written files remain on disk today. Needs a worktree/branch strategy that can be reset atomically when the coder agent exhausts its turn budget.
 
 ---
 
