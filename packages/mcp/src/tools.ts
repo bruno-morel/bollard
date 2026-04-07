@@ -83,8 +83,26 @@ async function handleConfig(input: Record<string, unknown>, _workDir: string): P
 async function handleProfile(input: Record<string, unknown>, workDir: string): Promise<unknown> {
   const parsed = profileInputSchema.parse(input)
   const dir = parsed.workDir ?? workDir
-  const { detectToolchain } = await import("@bollard/detect/src/detect.js")
-  return detectToolchain(dir)
+  const { resolveConfig } = await import("@bollard/cli/src/config.js")
+  const { profile } = await resolveConfig(undefined, dir)
+  return profile
+}
+
+const contractInputSchema = z.object({
+  workDir: z.string().optional(),
+  plan: z.string().optional(),
+})
+
+async function handleContract(input: Record<string, unknown>, workDir: string): Promise<unknown> {
+  const parsed = contractInputSchema.parse(input)
+  const dir = parsed.workDir ?? workDir
+  const plan = parsed.plan?.trim() ? (JSON.parse(parsed.plan) as unknown) : undefined
+  const { resolveConfig } = await import("@bollard/cli/src/config.js")
+  const { collectAffectedPathsFromPlan } = await import("@bollard/cli/src/contract-plan.js")
+  const { buildContractContext } = await import("@bollard/verify/src/contract-extractor.js")
+  const { profile } = await resolveConfig(undefined, dir)
+  const affected = collectAffectedPathsFromPlan(plan)
+  return buildContractContext(affected, profile, dir)
 }
 
 function zodToJsonSchema(schema: z.ZodObject<z.ZodRawShape>): Record<string, unknown> {
@@ -152,8 +170,14 @@ export const tools: McpToolDefinition[] = [
   },
   {
     name: "bollard_profile",
-    description: "Detect and show the toolchain profile for the workspace",
+    description: "Resolve toolchain profile for the workspace (detection + .bollard.yml)",
     inputSchema: zodToJsonSchema(profileInputSchema),
     handler: handleProfile,
+  },
+  {
+    name: "bollard_contract",
+    description: "Build contract-scope context (module graph + edges) as JSON",
+    inputSchema: zodToJsonSchema(contractInputSchema),
+    handler: handleContract,
   },
 ]

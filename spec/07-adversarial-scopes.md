@@ -895,4 +895,12 @@ Adversarial verification plan:
 
 ---
 
+## Implementation status (Stage 3a)
+
+**Landed in codebase:** per-scope `AdversarialConfig` with concern weights; root + legacy `.bollard.yml` adversarial merge; `boundary-tester` agent (renamed from tester) with `{{#concern}}` templating; deterministic `SignatureExtractor` routing for TypeScript, Python, Go, and Rust; TypeScript contract graph (`buildContractContext`) plus `contract-tester` agent; `implement-feature` blueprint nodes `extract-contracts`, `generate-contract-tests`, `write-contract-tests`, `run-contract-tests`; CLI `bollard contract` and MCP `bollard_contract`; contract test output paths via `resolveContractTestOutputRel` (persistent vs ephemeral).
+
+**Not in Stage 3a:** behavioral scope, mutation testing, semantic review, multi-language contract graphs beyond TypeScript, `promote-test` for contract outputs.
+
+---
+
 *Bollard: three scopes (boundary, contract, behavioral) × four concerns (correctness, security, performance, resilience). Twelve adversarial lenses, three agents, one guarantee — adversarial verification at every scale, for every class of defect, regardless of what the developer's own test infrastructure provides.*

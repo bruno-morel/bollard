@@ -61,32 +61,34 @@ describe("Feature: loadEvalCases filters by exact agent name match", () => {
     const plannerCases = loadEvalCases("planner")
     const coderCases = loadEvalCases("coder")
     const testerCases = loadEvalCases("tester")
-    
+    const contractCases = loadEvalCases("contract-tester")
+
     expect(plannerCases.length).toBeLessThan(allCases.length)
     expect(coderCases.length).toBeLessThan(allCases.length)
     expect(testerCases.length).toBeLessThan(allCases.length)
+    expect(contractCases.length).toBeLessThan(allCases.length)
   })
 
   it("should return different cases for different agents", () => {
     const plannerCases = loadEvalCases("planner")
     const coderCases = loadEvalCases("coder")
-    const testerCases = loadEvalCases("tester")
-    
+    const contractCases = loadEvalCases("contract-tester")
+
     expect(plannerCases).not.toEqual(coderCases)
-    expect(coderCases).not.toEqual(testerCases)
-    expect(testerCases).not.toEqual(plannerCases)
+    expect(coderCases).not.toEqual(contractCases)
+    expect(contractCases).not.toEqual(plannerCases)
   })
 })
 
 describe("Feature: availableAgents returns known agent list", () => {
-  it("should return exactly planner, coder, tester", () => {
+  it("should return planner, coder, boundary-tester, contract-tester, tester (sorted)", () => {
     const agents = availableAgents()
-    expect(agents).toEqual(["planner", "coder", "tester"])
+    expect(agents).toEqual(["boundary-tester", "coder", "contract-tester", "planner", "tester"])
   })
 
-  it("should return array with length 3", () => {
+  it("should return array with length 5", () => {
     const agents = availableAgents()
-    expect(agents).toHaveLength(3)
+    expect(agents).toHaveLength(5)
   })
 
   it("should return consistent results across calls", () => {
@@ -107,7 +109,7 @@ describe("Property-based tests: loadEvalCases with arbitrary strings", () => {
         
         // Should return all cases unless exact match with known agent
         const allCases = loadEvalCases()
-        if (!["planner", "coder", "tester"].includes(filter)) {
+        if (!["planner", "coder", "tester", "boundary-tester", "contract-tester"].includes(filter)) {
           expect(cases.length).toBe(allCases.length)
         }
       }

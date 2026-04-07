@@ -26,7 +26,7 @@ describe("Cross-language profile completeness", () => {
     expect(p.testPatterns.length).toBeGreaterThan(0)
     expect(p.ignorePatterns.length).toBeGreaterThan(0)
     expect(p.allowedCommands.length).toBeGreaterThan(0)
-    expect(p.adversarial.mode).toBe("blackbox")
+    expect(p.adversarial.boundary.mode).toBe("in-language")
   })
 
   it("Python profile has typecheck + lint + test", async () => {

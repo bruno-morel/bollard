@@ -1,9 +1,13 @@
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { tools } from "../src/tools.js"
 
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
+
 describe("MCP tool definitions", () => {
-  it("registers exactly 6 tools", () => {
-    expect(tools).toHaveLength(6)
+  it("registers exactly 7 tools", () => {
+    expect(tools).toHaveLength(7)
   })
 
   it("all tools have name, description, inputSchema, and handler", () => {
@@ -51,6 +55,12 @@ describe("MCP tool definitions", () => {
     expect(tool?.description).toContain("profile")
   })
 
+  it("includes bollard_contract tool", () => {
+    const tool = tools.find((t) => t.name === "bollard_contract")
+    expect(tool).toBeDefined()
+    expect(tool?.description).toContain("contract")
+  })
+
   it("bollard_plan requires task parameter", () => {
     const tool = tools.find((t) => t.name === "bollard_plan")
     const schema = tool?.inputSchema as { required?: string[] }
@@ -63,10 +73,26 @@ describe("MCP tool definitions", () => {
     expect(schema.required).toContain("task")
   })
 
-  it("bollard_profile handler detects toolchain", async () => {
+  it("bollard_profile handler returns resolved profile", async () => {
     const tool = tools.find((t) => t.name === "bollard_profile")
-    const result = (await tool?.handler({}, "/app")) as { language: string }
+    const result = (await tool?.handler({}, REPO_ROOT)) as {
+      language: string
+      adversarial: unknown
+    }
     expect(result.language).toBe("typescript")
+    expect(result.adversarial).toBeDefined()
+  })
+
+  it("bollard_contract handler returns contract context shape", async () => {
+    const tool = tools.find((t) => t.name === "bollard_contract")
+    const result = (await tool?.handler({}, REPO_ROOT)) as {
+      modules: unknown[]
+      edges: unknown[]
+      affectedEdges: unknown[]
+    }
+    expect(Array.isArray(result.modules)).toBe(true)
+    expect(Array.isArray(result.edges)).toBe(true)
+    expect(Array.isArray(result.affectedEdges)).toBe(true)
   })
 
   it("bollard_plan handler returns status", async () => {

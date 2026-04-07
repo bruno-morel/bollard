@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
+import { BollardError } from "@bollard/engine/src/errors.js"
 import type { LLMProvider } from "@bollard/llm/src/types.js"
 import ts from "typescript"
+import { GoAstExtractor } from "./extractors/go.js"
+import { PythonAstExtractor } from "./extractors/python.js"
+import { RustExtractor } from "./extractors/rust.js"
 
 export interface ExtractedSignature {
   filePath: string
@@ -23,7 +27,7 @@ export interface ExtractionResult {
 }
 
 export interface SignatureExtractor {
-  extract(files: string[], profile?: ToolchainProfile): Promise<ExtractionResult>
+  extract(files: string[], profile?: ToolchainProfile, workDir?: string): Promise<ExtractionResult>
 }
 
 function getNodeModifiers(node: ts.Node): readonly ts.Modifier[] | undefined {
@@ -248,7 +252,11 @@ export async function extractSignaturesFromFiles(filePaths: string[]): Promise<E
 }
 
 export class TsCompilerExtractor implements SignatureExtractor {
-  async extract(files: string[]): Promise<ExtractionResult> {
+  async extract(
+    files: string[],
+    _profile?: ToolchainProfile,
+    _workDir?: string,
+  ): Promise<ExtractionResult> {
     return extractSignaturesFromFiles(files)
   }
 }
@@ -320,7 +328,11 @@ export class LlmFallbackExtractor implements SignatureExtractor {
     private readonly warn?: (msg: string) => void,
   ) {}
 
-  async extract(files: string[], _profile?: ToolchainProfile): Promise<ExtractionResult> {
+  async extract(
+    files: string[],
+    _profile?: ToolchainProfile,
+    _workDir?: string,
+  ): Promise<ExtractionResult> {
     if (files.length === 0) {
       return { signatures: [], types: [] }
     }
@@ -404,29 +416,30 @@ export class LlmFallbackExtractor implements SignatureExtractor {
   }
 }
 
-const NOOP_PROVIDER: LLMProvider = {
-  name: "noop",
-  chat: async () => ({
-    content: [],
-    stopReason: "end_turn",
-    usage: { inputTokens: 0, outputTokens: 0 },
-    costUsd: 0,
-  }),
-}
-
 export function getExtractor(
   lang: LanguageId,
   provider?: LLMProvider,
   model?: string,
   warn?: (msg: string) => void,
 ): SignatureExtractor {
-  if (lang === "typescript") {
-    return new TsCompilerExtractor()
+  switch (lang) {
+    case "typescript":
+      return new TsCompilerExtractor()
+    case "python":
+      return new PythonAstExtractor(warn)
+    case "go":
+      return new GoAstExtractor(warn)
+    case "rust":
+      return new RustExtractor(warn)
+    default:
+      if (!provider || !model) {
+        throw new BollardError({
+          code: "PROVIDER_NOT_FOUND",
+          message: `No deterministic extractor for ${lang} and no LLM provider supplied`,
+        })
+      }
+      return new LlmFallbackExtractor(provider, model, warn)
   }
-  if (provider && model) {
-    return new LlmFallbackExtractor(provider, model, warn)
-  }
-  return new LlmFallbackExtractor(NOOP_PROVIDER, "noop", warn)
 }
 
 // ---- Leak detection support ----

@@ -131,4 +131,76 @@ describe("resolveConfig", () => {
     expect(profile.allowedCommands).toContain("make")
     expect(profile.allowedCommands).toContain("docker")
   })
+
+  it("merges root adversarial: scope concern overrides global (spec §4)", async () => {
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}")
+    const yaml = [
+      "adversarial:",
+      "  concerns:",
+      "    security: off",
+      "  boundary:",
+      "    concerns:",
+      "      security: high",
+    ].join("\n")
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    const { profile } = await resolveConfig(undefined, tempDir)
+
+    expect(profile.adversarial.boundary.concerns.security).toBe("high")
+    expect(profile.adversarial.contract.concerns.security).toBe("off")
+  })
+
+  it("behavioral.enabled stays false by default after YAML merge", async () => {
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}")
+    writeFileSync(join(tempDir, ".bollard.yml"), "adversarial:\n  boundary:\n    mode: blackbox\n")
+
+    const { profile } = await resolveConfig(undefined, tempDir)
+
+    expect(profile.adversarial.behavioral.enabled).toBe(false)
+  })
+
+  it("rejects invalid adversarial concern weight with CONCERN_CONFIG_INVALID", async () => {
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}")
+    writeFileSync(
+      join(tempDir, ".bollard.yml"),
+      ["adversarial:", "  concerns:", "    security: ultra-high"].join("\n"),
+    )
+
+    try {
+      await resolveConfig(undefined, tempDir)
+      expect.fail("expected throw")
+    } catch (err) {
+      expect(BollardError.hasCode(err, "CONCERN_CONFIG_INVALID")).toBe(true)
+    }
+  })
+
+  it("legacy toolchain.adversarial applies when root adversarial absent", async () => {
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}")
+    const yaml = ["toolchain:", "  adversarial:", "    mode: blackbox", "    persist: true"].join(
+      "\n",
+    )
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    const { profile } = await resolveConfig(undefined, tempDir)
+
+    expect(profile.adversarial.boundary.mode).toBe("blackbox")
+    expect(profile.adversarial.boundary.lifecycle).toBe("persistent")
+  })
+
+  it("skips legacy toolchain.adversarial when root adversarial present", async () => {
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}")
+    const yaml = [
+      "adversarial:",
+      "  boundary:",
+      "    mode: in-language",
+      "toolchain:",
+      "  adversarial:",
+      "    mode: blackbox",
+    ].join("\n")
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    const { profile } = await resolveConfig(undefined, tempDir)
+
+    expect(profile.adversarial.boundary.mode).toBe("in-language")
+  })
 })

@@ -1,3 +1,4 @@
+import { withBoundaryOverrides } from "@bollard/detect/src/concerns.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { describe, expect, it } from "vitest"
 import { generateVerifyCompose } from "../src/compose-generator.js"
@@ -19,7 +20,7 @@ const TS_PROFILE: ToolchainProfile = {
   testPatterns: ["**/*.test.ts"],
   ignorePatterns: ["node_modules"],
   allowedCommands: ["pnpm"],
-  adversarial: { mode: "both" },
+  adversarial: withBoundaryOverrides("typescript", { mode: "both" }),
 }
 
 const PY_PROFILE: ToolchainProfile = {
@@ -39,7 +40,7 @@ const PY_PROFILE: ToolchainProfile = {
   testPatterns: ["**/test_*.py"],
   ignorePatterns: ["__pycache__"],
   allowedCommands: ["python", "poetry"],
-  adversarial: { mode: "both" },
+  adversarial: withBoundaryOverrides("python", { mode: "both" }),
 }
 
 describe("generateVerifyCompose", () => {
@@ -72,7 +73,7 @@ describe("generateVerifyCompose", () => {
   it("omits verify-native when adversarial mode is blackbox", () => {
     const blackboxProfile: ToolchainProfile = {
       ...TS_PROFILE,
-      adversarial: { mode: "blackbox" },
+      adversarial: withBoundaryOverrides("typescript", { mode: "blackbox" }),
     }
     const result = generateVerifyCompose({
       workDir: "/tmp/project",
@@ -85,7 +86,7 @@ describe("generateVerifyCompose", () => {
   it("includes verify-native when mode is in-language", () => {
     const inLangProfile: ToolchainProfile = {
       ...TS_PROFILE,
-      adversarial: { mode: "in-language" },
+      adversarial: withBoundaryOverrides("typescript", { mode: "in-language" }),
     }
     const result = generateVerifyCompose({
       workDir: "/tmp/project",
@@ -106,7 +107,10 @@ describe("generateVerifyCompose", () => {
   it("uses custom runtimeImage from profile", () => {
     const customProfile: ToolchainProfile = {
       ...PY_PROFILE,
-      adversarial: { mode: "both", runtimeImage: "python:3.11-bookworm" },
+      adversarial: withBoundaryOverrides("python", {
+        mode: "both",
+        runtimeImage: "python:3.11-bookworm",
+      }),
     }
     const result = generateVerifyCompose({
       workDir: "/tmp/project",

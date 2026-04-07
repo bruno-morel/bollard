@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
+import { _slugify } from "@bollard/engine/src/context.js"
 
 export type TestLifecycle = "ephemeral" | "persistent-native" | "persistent-isolated"
 
@@ -27,7 +28,7 @@ export interface TestMetadata {
 }
 
 export function resolveLifecycle(profile?: ToolchainProfile): TestLifecycle {
-  if (profile?.adversarial.persist) {
+  if (profile?.adversarial.boundary.lifecycle === "persistent") {
     return "persistent-native"
   }
   return "ephemeral"
@@ -44,6 +45,21 @@ export function resolveTestOutputDir(
     return join(workDir, ".bollard", "tests", featureSlug)
   }
   return join(workDir, ".bollard", "runs", runId, `adversarial-${mode}`)
+}
+
+/** Relative path (from workDir) for a generated contract-scope adversarial test file. */
+export function resolveContractTestOutputRel(params: {
+  runId: string
+  task: string
+  derivedRelativePath: string
+  lifecycle: "ephemeral" | "persistent"
+}): string {
+  const slug = _slugify(params.task)
+  const fileName = basename(params.derivedRelativePath)
+  if (params.lifecycle === "persistent") {
+    return join(".bollard", "tests", "contract", slug, fileName)
+  }
+  return join(".bollard", "runs", params.runId, "adversarial", "contract", fileName)
 }
 
 export async function writeTestMetadata(outputDir: string, metadata: TestMetadata): Promise<void> {

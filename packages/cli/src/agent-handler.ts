@@ -2,19 +2,22 @@ import { execFile } from "node:child_process"
 import { readFile, readdir } from "node:fs/promises"
 import { resolve } from "node:path"
 import { promisify } from "node:util"
+import { createBoundaryTesterAgent } from "@bollard/agents/src/boundary-tester.js"
 import { createCoderAgent } from "@bollard/agents/src/coder.js"
+import { createContractTesterAgent } from "@bollard/agents/src/contract-tester.js"
 import { executeAgent } from "@bollard/agents/src/executor.js"
 import { createPlannerAgent } from "@bollard/agents/src/planner.js"
-import { createTesterAgent } from "@bollard/agents/src/tester.js"
-import type { AgentContext, ExecutorOptions } from "@bollard/agents/src/types.js"
+import type { AgentContext, AgentResult, ExecutorOptions } from "@bollard/agents/src/types.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
+import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
 import type {
   ExtractedSignature,
   ExtractedTypeDefinition,
 } from "@bollard/verify/src/type-extractor.js"
+import { createAgentSpinner } from "./spinner.js"
 
 const execFileAsync = promisify(execFile)
 const MAX_PRELOAD_CHARS_PER_FILE = 10_000
@@ -264,6 +267,32 @@ function buildTesterMessage(ctx: PipelineContext): string {
   return sections.join("\n")
 }
 
+function buildContractTesterMessage(ctx: PipelineContext): string {
+  const raw = ctx.results["extract-contracts"]?.data as { contract?: ContractContext } | undefined
+  const contract = raw?.contract
+  const plan = ctx.plan as Record<string, unknown> | undefined
+  const lines: string[] = [
+    "# Task",
+    ctx.task,
+    "",
+    "# ContractContext",
+    JSON.stringify(contract ?? { modules: [], edges: [], affectedEdges: [] }, null, 2),
+  ]
+  if (typeof plan?.["summary"] === "string") {
+    lines.push("", "# Plan summary", plan["summary"])
+  }
+  const ac = plan?.["acceptance_criteria"]
+  if (Array.isArray(ac)) {
+    lines.push("", "# Acceptance criteria", ...ac.map((c, i) => `${i + 1}. ${String(c)}`))
+  }
+  lines.push(
+    "",
+    "# Instructions",
+    "Write one test file probing cross-module contracts. Focus on affectedEdges. Output ONLY the test code.",
+  )
+  return lines.join("\n")
+}
+
 export interface AgenticHandlerResult {
   handler: (node: BlueprintNode, ctx: PipelineContext) => Promise<NodeResult>
   llmConfig: { provider: import("@bollard/llm/src/types.js").LLMProvider; model: string }
@@ -278,13 +307,19 @@ export async function createAgenticHandler(
   const agents = {
     planner: await createPlannerAgent(profile),
     coder: await createCoderAgent(profile),
-    tester: await createTesterAgent(profile),
+    "boundary-tester": await createBoundaryTesterAgent(profile),
+    "contract-tester": await createContractTesterAgent(profile),
   }
 
-  const extractionLlm = llmClient.forAgent("tester")
+  const extractionLlm = llmClient.forAgent("boundary-tester")
 
   const handler = async (node: BlueprintNode, ctx: PipelineContext): Promise<NodeResult> => {
     const agentRole = node.agent ?? "default"
+
+    if (agentRole === "contract-tester" && !profile?.adversarial.contract.enabled) {
+      return { status: "ok", data: "", cost_usd: 0, duration_ms: 0 }
+    }
+
     const agent = agents[agentRole as keyof typeof agents]
 
     if (!agent) {
@@ -315,10 +350,12 @@ export async function createAgenticHandler(
     }
 
     const { provider, model } = llmClient.forAgent(agentRole)
+    const spinner = createAgentSpinner()
     const agentCtx: AgentContext = {
       pipelineCtx: ctx,
       workDir,
       ...(profile?.allowedCommands ? { allowedCommands: profile.allowedCommands } : {}),
+      progress: (ev) => spinner.handleEvent(ev),
     }
 
     let userMessage = `Task: ${ctx.task}`
@@ -341,19 +378,21 @@ export async function createAgenticHandler(
       }
     }
 
-    if (agentRole === "tester") {
+    if (agentRole === "boundary-tester") {
       userMessage = buildTesterMessage(ctx)
     }
 
+    if (agentRole === "contract-tester") {
+      userMessage = buildContractTesterMessage(ctx)
+    }
+
     const startMs = Date.now()
-    const result = await executeAgent(
-      agent,
-      userMessage,
-      provider,
-      model,
-      agentCtx,
-      executorOptions,
-    )
+    let result: AgentResult
+    try {
+      result = await executeAgent(agent, userMessage, provider, model, agentCtx, executorOptions)
+    } finally {
+      spinner.finalize()
+    }
 
     if (agentRole === "planner") {
       ctx.plan = parsePlanResponse(result.response)

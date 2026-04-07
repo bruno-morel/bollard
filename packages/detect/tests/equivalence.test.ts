@@ -82,8 +82,8 @@ describe("Behavioral equivalence: detected profile vs hardcoded defaults", () =>
     expect(profile.ignorePatterns).toContain("dist")
   })
 
-  it("adversarial mode defaults to blackbox", async () => {
+  it("adversarial boundary mode defaults to in-language", async () => {
     const profile = await detectToolchain(WORKSPACE_ROOT)
-    expect(profile.adversarial.mode).toBe("blackbox")
+    expect(profile.adversarial.boundary.mode).toBe("in-language")
   })
 })

@@ -7,7 +7,13 @@ import type {
   LLMResponse,
   LLMTool,
 } from "@bollard/llm/src/types.js"
-import type { AgentContext, AgentDefinition, AgentResult, ExecutorOptions } from "./types.js"
+import type {
+  AgentContext,
+  AgentDefinition,
+  AgentProgressEvent,
+  AgentResult,
+  ExecutorOptions,
+} from "./types.js"
 
 const MAX_RETRIES = 3
 const BASE_DELAY_MS = 15_000
@@ -15,6 +21,14 @@ const BASE_DELAY_MS = 15_000
 const MAX_TOOL_RESULT_CHARS = 8_000
 const COMPACT_KEEP_RECENT = 6
 const COMPACTED_MAX_CHARS = 500
+
+function emitProgress(ctx: AgentContext, ev: AgentProgressEvent): void {
+  try {
+    ctx.progress?.(ev)
+  } catch {
+    // Progress listeners must never break the executor
+  }
+}
 
 async function chatWithRetry(
   provider: LLMProvider,
@@ -99,6 +113,15 @@ export async function executeAgent(
   const resolvedMaxTokens = agent.maxTokens ?? 4096
 
   while (turns < agent.maxTurns) {
+    const displayTurn = turns + 1
+    const turnStartedAt = Date.now()
+    emitProgress(ctx, {
+      type: "turn_start",
+      turn: displayTurn,
+      maxTurns: agent.maxTurns,
+      role: agent.role,
+    })
+
     const response = await chatWithRetry(
       provider,
       {
@@ -113,6 +136,20 @@ export async function executeAgent(
     )
 
     totalCostUsd += response.costUsd
+    const toolCallsThisTurn = response.content.filter((b) => b.type === "tool_use").length
+
+    emitProgress(ctx, {
+      type: "turn_end",
+      turn: displayTurn,
+      maxTurns: agent.maxTurns,
+      role: agent.role,
+      durationMs: Date.now() - turnStartedAt,
+      costUsd: response.costUsd,
+      inputTokens: response.usage.inputTokens,
+      outputTokens: response.usage.outputTokens,
+      toolCallsThisTurn,
+      stopReason: response.stopReason,
+    })
 
     const hasToolUseBlocks = response.content.some((b) => b.type === "tool_use")
 
@@ -160,6 +197,7 @@ export async function executeAgent(
       }
     }
 
+    const toolTurn = displayTurn
     turns++
     const assistantBlocks = response.content
     const toolResults: LLMContentBlock[] = []
@@ -171,8 +209,23 @@ export async function executeAgent(
           `\x1b[2m  [${agent.role}] turn ${turns}: ${block.toolName}(${inputSummary})\x1b[0m\n`,
         )
 
+        emitProgress(ctx, {
+          type: "tool_call_start",
+          turn: toolTurn,
+          tool: block.toolName,
+          input: block.toolInput ?? {},
+        })
+
         const tool = agent.tools.find((t) => t.name === block.toolName)
         if (!tool) {
+          emitProgress(ctx, {
+            type: "tool_call_end",
+            turn: toolTurn,
+            tool: block.toolName,
+            durationMs: 0,
+            ok: false,
+            error: `unknown tool "${block.toolName}"`,
+          })
           toolResults.push({
             type: "tool_result",
             toolUseId: block.toolUseId,
@@ -181,8 +234,17 @@ export async function executeAgent(
           continue
         }
 
+        const toolStartedAt = Date.now()
         try {
           const output = await tool.execute(block.toolInput ?? {}, ctx)
+          const durationMs = Date.now() - toolStartedAt
+          emitProgress(ctx, {
+            type: "tool_call_end",
+            turn: toolTurn,
+            tool: block.toolName,
+            durationMs,
+            ok: true,
+          })
           const cappedOutput =
             output.length > MAX_TOOL_RESULT_CHARS
               ? `${output.slice(0, MAX_TOOL_RESULT_CHARS)}\n[...output truncated at 8000 chars]`
@@ -198,7 +260,16 @@ export async function executeAgent(
             text: cappedOutput,
           })
         } catch (err: unknown) {
+          const durationMs = Date.now() - toolStartedAt
           const msg = err instanceof Error ? err.message : String(err)
+          emitProgress(ctx, {
+            type: "tool_call_end",
+            turn: toolTurn,
+            tool: block.toolName,
+            durationMs,
+            ok: false,
+            error: msg,
+          })
           process.stderr.write(`\x1b[31m  [${agent.role}] tool error: ${msg}\x1b[0m\n`)
           toolResults.push({
             type: "tool_result",

@@ -6,10 +6,10 @@
 
 Bollard is an **artifact integrity framework** for AI-assisted software development. It ensures every artifact (code, tests, docs, infra) is produced, adversarially verified, and mechanically proven sound before shipping. The core innovation: separate the producer from the verifier, then prove the verification itself is meaningful (via mutation testing).
 
-Bollard has completed **Stage 2** (adversarial verification infrastructure). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 (first half) fixed critical agent infrastructure issues: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. Stage 2 (second half) added Docker-isolated verification containers, LLM fallback signature extraction for non-TS languages, in-language adversarial test generation, adversarial test lifecycle (ephemeral + persistent-native), MCP server (`@bollard/mcp`), and OpenAI + Google LLM providers.
+Bollard has completed **Stage 2** (adversarial verification infrastructure) and **Stage 3a** (contract-scope adversarial testing — first slice of Stage 3). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, boundary tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 (first half) fixed critical agent infrastructure issues: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. Stage 2 (second half) added Docker-isolated verification containers, LLM fallback signature extraction for edge languages, in-language adversarial test generation, adversarial test lifecycle (ephemeral + persistent-native), MCP server (`@bollard/mcp`), and OpenAI + Google LLM providers. **Stage 3a** adds per-scope `AdversarialConfig` with concern weights, `boundary-tester` + `contract-tester` agents, deterministic extractors for Python/Go/Rust, TypeScript contract graph (`buildContractContext`), four contract blueprint nodes, and `bollard contract` / MCP `bollard_contract`.
 
 The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md)):
-- **Stage 3:** Contract-scope adversarial testing + mutation testing + semantic review
+- **Stage 3 (remaining):** Mutation testing + semantic review; contract graph beyond TypeScript
 - **Stage 4:** Behavioral-scope adversarial testing + production feedback loop
 - **Stage 5:** Self-hosting + self-improvement
 
@@ -29,17 +29,19 @@ docker compose run --rm dev --filter @bollard/cli run start -- run implement-fea
 
 # Run agent eval sets
 docker compose run --rm dev --filter @bollard/cli run start -- eval planner
+
+# Print contract graph JSON (optional planner JSON for affected file paths)
+docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan plan.json]
 ```
 
-### Known limitations (post Stage 2)
+### Known limitations (post Stage 3a)
 
 - Docker-isolated verification requires Docker-in-Docker (`docker.sock` mount) — degrades gracefully when unavailable.
-- Only boundary-scope adversarial testing exists — contract and behavioral scopes are Stage 3 and Stage 4 respectively.
-- Cross-cutting concerns (security, performance, resilience) are not yet in the boundary tester prompt — currently correctness only. Stage 3 adds weighted concern lenses to all scope agents.
-- Per-language mutation testing not yet implemented — Stage 3.
+- Behavioral-scope adversarial testing and extractor — Stage 4.
+- Contract graph (`buildContractContext`) is **TypeScript / pnpm-workspace monorepos** in Stage 3a; other languages return an empty graph with a warning.
+- Per-language mutation testing not yet implemented — Stage 3 remainder.
 - Test output parsing is Vitest-specific (`parseSummary`) — non-Vitest runners work via profile-driven execution but parsed summary falls back to zero/error detection. Stage 3 adds deterministic parsers for pytest, go test, cargo test.
-- Deterministic type extractors for Python/Go/Rust not yet implemented — `LlmFallbackExtractor` covers these via LLM.
-- No contract extractor (dependency graph, interface boundaries) — Stage 3.
+- Unknown languages still need an LLM provider for signature extraction (`getExtractor` throws `PROVIDER_NOT_FOUND` without one).
 - No behavioral extractor (topology, endpoints, failure modes) — Stage 4.
 - No rollback on coder max-turns failure — partially-written files remain on disk.
 - No semantic review agent — Stage 3.
@@ -105,7 +107,7 @@ The `compose.yaml` mounts the workspace as a volume so edits are reflected immed
 
 Pass `ANTHROPIC_API_KEY` via a `.env` file at the project root.
 
-## Project Structure (Stage 2)
+## Project Structure (Stage 3a)
 
 ```
 bollard/
@@ -125,7 +127,8 @@ bollard/
 ├── packages/
 │   ├── detect/                   ← TOOLCHAIN DETECTION (Stage 1.5)
 │   │   ├── src/
-│   │   │   ├── types.ts          # ToolchainProfile, VerificationCommand, LanguageId, etc.
+│   │   │   ├── types.ts          # ToolchainProfile, AdversarialConfig, VerificationCommand, LanguageId, etc.
+│   │   │   ├── concerns.ts       # defaultAdversarialConfig, resolveScopeConcerns, …
 │   │   │   ├── detect.ts         # detectToolchain — main orchestrator
 │   │   │   ├── derive.ts         # deriveSourcePatterns, deriveTestPatterns, etc.
 │   │   │   └── languages/
@@ -176,7 +179,8 @@ bollard/
 │   │   │   ├── prompt-template.ts # fillPromptTemplate — {{variable}} replacement from ToolchainProfile
 │   │   │   ├── planner.ts        # createPlannerAgent(profile?) — read-only tools, structured JSON output
 │   │   │   ├── coder.ts          # createCoderAgent(profile?) — all tools, implements plans
-│   │   │   ├── tester.ts         # createTesterAgent(profile?) — adversarial test generation
+│   │   │   ├── boundary-tester.ts # createBoundaryTesterAgent(profile?) — boundary-scope adversarial tests
+│   │   │   ├── contract-tester.ts # createContractTesterAgent(profile?) — contract-scope adversarial tests
 │   │   │   ├── eval-loader.ts    # loadEvalCases, availableAgents
 │   │   │   ├── tools/
 │   │   │   │   ├── index.ts      # ALL_TOOLS, READ_ONLY_TOOLS
@@ -188,45 +192,54 @@ bollard/
 │   │   │   │   └── run-command.ts # Execute whitelisted commands with timeout
 │   │   │   └── evals/
 │   │   │       ├── planner/cases.ts  # 4 eval cases for planner output quality
-│   │   │       └── coder/cases.ts    # 2 eval cases for coder output quality
+│   │   │       ├── coder/cases.ts    # 2 eval cases for coder output quality
+│   │   │       ├── boundary-tester/cases.ts
+│   │   │       └── contract-tester/cases.ts
 │   │   ├── prompts/
 │   │   │   ├── planner.md        # System prompt with {{language}}, {{packageManager}}, etc. placeholders
 │   │   │   ├── coder.md          # System prompt with {{testFramework}}, {{typecheck}}, {{linter}} placeholders
-│   │   │   └── tester.md         # System prompt with {{testFramework}}, {{#if}} language conditionals
+│   │   │   ├── boundary-tester.md # Boundary scope + {{#concern}} concern lenses
+│   │   │   └── contract-tester.md
 │   │   └── tests/
 │   │       ├── executor.test.ts  # 19 tests — multi-turn, max turns, errors, cost, verification
 │   │       ├── tools.test.ts     # 17 tests — all 6 tools + path traversal guards
 │   │       ├── prompt-template.test.ts  # 9 tests — placeholder replacement, TS/Python profiles
 │   │       ├── planner.test.ts   # 5 tests — prompt loading, read-only tools, JSON schema
 │   │       ├── coder.test.ts     # 5 tests — prompt loading, full toolset, turns, maxTurns
-│   │       └── tester.test.ts    # 5 tests — prompt loading, test generation
+│   │       ├── boundary-tester.test.ts
+│   │       └── contract-tester.test.ts
 │   │
 │   ├── verify/                   ← VERIFICATION (Stage 1 + 1.5 + Stage 2)
 │   │   ├── src/
 │   │   │   ├── static.ts         # runStaticChecks(workDir, profile?) — profile-driven or hardcoded fallback
 │   │   │   ├── dynamic.ts        # runTests(workDir, testFiles?, profile?) — profile-driven test execution
-│   │   │   ├── type-extractor.ts # SignatureExtractor, TsCompilerExtractor, LlmFallbackExtractor
+│   │   │   ├── type-extractor.ts # SignatureExtractor, TsCompilerExtractor, LlmFallbackExtractor, getExtractor
+│   │   │   ├── contract-extractor.ts # buildContractContext (TS workspace graph)
+│   │   │   ├── extractors/       # python.ts, go.ts, rust.ts — deterministic SignatureExtractor
 │   │   │   ├── compose-generator.ts  # generateVerifyCompose — dynamic compose.verify.yml from ToolchainProfile
-│   │   │   └── test-lifecycle.ts # resolveTestOutputDir, writeTestMetadata, checkTestRunnerIntegration
+│   │   │   └── test-lifecycle.ts # resolveTestOutputDir, resolveContractTestOutputRel, writeTestMetadata, …
 │   │   └── tests/
 │   │       ├── static.test.ts    # 4 tests — structure + live integration
 │   │       ├── dynamic.test.ts   # 2 tests — integration test
-│   │       ├── type-extractor.test.ts  # 30 tests — signatures, types, LLM fallback, extractors
+│   │       ├── type-extractor.test.ts  # signatures, types, extractors
+│   │       ├── contract-extractor.test.ts
 │   │       ├── compose-generator.test.ts  # 6 tests — YAML generation per language/mode
-│   │       └── test-lifecycle.test.ts  # 7 tests — lifecycle resolution, output dirs, metadata
+│   │       └── test-lifecycle.test.ts  # lifecycle resolution, output dirs, metadata
 │   │
 │   ├── blueprints/               ← BLUEPRINT DEFINITIONS (Stage 1 + 1.5 + 2)
 │   │   ├── src/
-│   │   │   ├── implement-feature.ts  # 12-node pipeline with profile-driven checks + docker-verify
-│   │   │   └── write-tests-helpers.ts  # deriveAdversarialTestPath (all languages), stripMarkdownFences
+│   │   │   ├── implement-feature.ts  # 16-node pipeline: boundary + contract + docker-verify
+│   │   │   └── write-tests-helpers.ts  # deriveAdversarialTestPath (scope: boundary | contract), stripMarkdownFences
 │   │   └── tests/
-│   │       ├── implement-feature.test.ts  # 12 tests — node order, types, structure
-│   │       └── write-tests-helpers.test.ts  # 11 tests — test path derivation, fence stripping
+│   │       ├── implement-feature.test.ts  # node order, types, structure
+│   │       └── write-tests-helpers.test.ts  # test path derivation, fence stripping
 │   │
 │   ├── cli/                      ← CLI (Stage 0 + Stage 1 + Stage 1.5 + Stage 2)
 │   │   ├── src/
 │   │   │   ├── index.ts          # Entry: parse args, route commands, progress output
 │   │   │   ├── config.ts         # detectToolchain + .bollard.yml overrides + ToolchainProfile
+│   │   │   ├── adversarial-yaml.ts
+│   │   │   ├── contract-plan.ts # collectAffectedPathsFromPlan
 │   │   │   ├── agent-handler.ts  # Multi-turn agentic handler (threads profile to agents)
 │   │   │   ├── diff.ts           # diffToolchainProfile — compare profile vs Stage 1 defaults
 │   │   │   └── human-gate.ts     # Interactive human approval via stdin
@@ -239,18 +252,32 @@ bollard/
 │   └── mcp/                      ← MCP SERVER (Stage 2)
 │       ├── src/
 │       │   ├── server.ts         # MCP server entry point (stdio transport)
-│       │   └── tools.ts          # 6 MCP tools: verify, plan, implement, eval, config, profile
+│       │   └── tools.ts          # 7 MCP tools: verify, plan, implement, eval, config, profile, contract
 │       └── tests/
-│           └── tools.test.ts     # 13 tests — tool definitions, schemas, handlers
+│           └── tools.test.ts     # tool definitions, schemas, handlers
 ```
 
 ## Current Test Stats
 
-- **29 test files, 344 tests passing** (2 skipped for live API tests, 0 failing)
-- **30 adversarial test files** (separate Vitest config: `vitest.adversarial.config.ts`; 327 passing, 171 failing — failures are mostly boundary tests against invalid inputs outside type contracts)
-- **Source:** ~6510 LOC across 8 packages
-- **Tests:** ~4580 LOC (+ ~7670 LOC adversarial tests)
-- **Prompts:** ~291 LOC (planner.md + coder.md + tester.md)
+- **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
+- **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
+- **Source:** ~8 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`
+- **Latest count (authoritative):** `402` passed, `2` skipped — includes executor progress telemetry tests and CLI `AgentSpinner` tests.
+
+### Stage 3a follow-ups (agent UX)
+
+Long LLM waits no longer look frozen: `executeAgent` emits optional `AgentProgressEvent`s (`turn_start` / `turn_end` / `tool_call_start` / `tool_call_end`) via `AgentContext.progress`. The CLI wires them to `createAgentSpinner()` — TTY sessions get an in-place braille spinner with elapsed time and per-tool hints; non-TTY (CI, pipes) gets one line per milestone with no ANSI escapes. See `packages/cli/src/spinner.ts` and `packages/agents/tests/executor.progress.test.ts`.
+
+### Stage 3a validation (maintainers)
+
+```bash
+docker compose build dev
+docker compose run --rm dev run typecheck
+docker compose run --rm dev run lint
+docker compose run --rm dev run test
+docker compose run --rm dev --filter @bollard/cli run start -- verify --profile
+docker compose run --rm dev --filter @bollard/cli run start -- contract
+```
 
 ## Stage 2 Validation (2026-04-02)
 
@@ -265,7 +292,7 @@ bollard/
 
 ### BollardErrorCode + BollardError (packages/engine/src/errors.ts)
 
-- `BollardErrorCode` is a string union of all error codes (LLM_TIMEOUT, LLM_RATE_LIMIT, LLM_AUTH, LLM_PROVIDER_ERROR, LLM_INVALID_RESPONSE, COST_LIMIT_EXCEEDED, TIME_LIMIT_EXCEEDED, NODE_EXECUTION_FAILED, POSTCONDITION_FAILED, STATIC_CHECK_FAILED, TEST_FAILED, MUTATION_THRESHOLD_NOT_MET, CONTRACT_VIOLATION, HUMAN_REJECTED, RISK_GATE_BLOCKED, CONFIG_INVALID, DETECTION_FAILED, PROFILE_INVALID, PROVIDER_NOT_FOUND, MODEL_NOT_AVAILABLE).
+- `BollardErrorCode` is a string union of all error codes (LLM_TIMEOUT, LLM_RATE_LIMIT, LLM_AUTH, LLM_PROVIDER_ERROR, LLM_INVALID_RESPONSE, COST_LIMIT_EXCEEDED, TIME_LIMIT_EXCEEDED, NODE_EXECUTION_FAILED, POSTCONDITION_FAILED, STATIC_CHECK_FAILED, TEST_FAILED, MUTATION_THRESHOLD_NOT_MET, CONTRACT_VIOLATION, HUMAN_REJECTED, RISK_GATE_BLOCKED, CONFIG_INVALID, DETECTION_FAILED, PROFILE_INVALID, PROVIDER_NOT_FOUND, MODEL_NOT_AVAILABLE, CONCERN_CONFIG_INVALID).
 - `BollardError extends Error` with `code`, `context`, `retryable` (getter — true for LLM_TIMEOUT, LLM_RATE_LIMIT, LLM_PROVIDER_ERROR).
 - Static methods: `BollardError.is(err)` type guard, `BollardError.hasCode(err, code)`.
 
@@ -274,9 +301,9 @@ bollard/
 - `LanguageId` is a string union: `"typescript" | "javascript" | "python" | "go" | "rust" | "java" | "kotlin" | "ruby" | "csharp" | "elixir" | "unknown"`.
 - `PackageManagerId` is a string union: `"pnpm" | "npm" | "yarn" | "bun" | "poetry" | "pipenv" | "uv" | "pip" | "go" | "cargo" | "bundler" | "gradle" | "maven"`.
 - `VerificationCommand { label: string; cmd: string; args: string[]; source: ConfigSource }` — a single executable check.
-- `ToolchainProfile { language: LanguageId; packageManager?: PackageManagerId; checks: { typecheck?, lint?, test?, audit?, secretScan? }; mutation?; sourcePatterns: string[]; testPatterns: string[]; ignorePatterns: string[]; allowedCommands: string[]; adversarial: { mode, runtimeImage?, persist? } }` — computed on every run from auto-detection + `.bollard.yml` overrides.
+- `ToolchainProfile { …; adversarial: AdversarialConfig }` — per-scope `boundary` / `contract` / `behavioral` with `enabled`, `integration`, `lifecycle`, `concerns`, `frameworkCapable?`, and boundary-only `mode` / `runtimeImage`. Computed from auto-detection + root `adversarial:` YAML + legacy `toolchain.adversarial` (maps to `boundary` when root block absent).
 - `detectToolchain(cwd): Promise<ToolchainProfile>` — orchestrator that runs per-language detectors (TypeScript → Python → Go → Rust → fallback) and returns the first match.
-- `fillPromptTemplate(template, profile): string` — replaces `{{variable}}` placeholders and processes `{{#if isTypeScript}}...{{else if isPython}}...{{/if}}` conditional blocks in agent prompts. Variables: `{{language}}`, `{{packageManager}}`, `{{typecheck}}`, `{{linter}}`, `{{testFramework}}`, `{{auditTool}}`, `{{allowedCommands}}`, `{{sourcePatterns}}`, `{{testPatterns}}`. Booleans: `isTypeScript`, `isPython`, `isGo`, `isRust`.
+- `fillPromptTemplate(template, profile, scopeConcerns?)` — replaces `{{variable}}` placeholders, `{{#if isTypeScript}}…{{/if}}` blocks, `{{concerns.*.weight}}`, and `{{#concern x}}…{{/concern}}` (stripped when weight is `off` or `scopeConcerns` omitted). Variables: `{{language}}`, `{{packageManager}}`, `{{typecheck}}`, `{{linter}}`, `{{testFramework}}`, `{{auditTool}}`, `{{allowedCommands}}`, `{{sourcePatterns}}`, `{{testPatterns}}`. Booleans: `isTypeScript`, `isPython`, `isGo`, `isRust`.
 
 ### Blueprint types (packages/engine/src/blueprint.ts)
 
@@ -337,7 +364,8 @@ All tools enforce path-traversal protection: resolved path must start with `work
 
 - **Planner** (`createPlannerAgent(profile?)`): read-only tools, temperature 0.2, max 25 turns. Produces structured JSON plan with summary, acceptance criteria, affected files, risk assessment, steps.
 - **Coder** (`createCoderAgent(profile?)`): all 6 tools, temperature 0.3, max 60 turns. Implements plans, writes tests. Prefers `edit_file` for existing files, `write_file` for new files. Verification hook skipped after 80% of turns to prevent budget exhaustion.
-- **Tester** (`createTesterAgent(profile?)`): no tools, temperature 0.3, max 5 turns. Generates adversarial tests from type signatures and referenced type definitions. Language-aware: generates tests in the project's own language/framework (TypeScript/vitest, Python/pytest, Go/testing, Rust/cargo test).
+- **Boundary tester** (`createBoundaryTesterAgent(profile?)`): no tools, temperature 0.3, max 5 turns. Generates boundary-scope adversarial tests from type signatures and referenced type definitions; prompt includes four concern lenses when weights are not `off`.
+- **Contract tester** (`createContractTesterAgent(profile?)`): no tools, temperature 0.4, max 10 turns. Generates contract-scope tests from `ContractContext` (module graph + edges); language/framework via profile.
 
 All agent creation functions accept an optional `ToolchainProfile` — when provided, prompt `{{placeholders}}` and `{{#if}}` conditionals are filled with detected language/tool values.
 
@@ -355,20 +383,24 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 
 ### implement-feature blueprint (packages/blueprints/src/implement-feature.ts)
 
-12-node pipeline:
+16-node pipeline:
 
 1. **create-branch** (deterministic) — `git checkout -b bollard/{runId}`
 2. **generate-plan** (agentic/planner) — planner agent explores codebase, produces JSON plan
 3. **approve-plan** (human_gate) — shows plan, waits for human approval
 4. **implement** (agentic/coder) — coder agent implements plan with full toolset
 5. **static-checks** (deterministic) — profile-driven typecheck + lint + audit + secretScan
-6. **extract-signatures** (deterministic) — extract function signatures + referenced type definitions (TS via compiler, other languages via LLM fallback)
-7. **generate-tests** (agentic/tester) — adversarial test generation from signatures + type definitions (in project's language)
-8. **write-tests** (deterministic) — strip markdown fences, derive language-specific test path, write test files, check for information leaks
+6. **extract-signatures** (deterministic) — extract signatures + types (TS + deterministic Python/Go/Rust extractors; LLM fallback only for unknown languages when a provider is configured)
+7. **generate-tests** (agentic/boundary-tester) — boundary-scope adversarial tests
+8. **write-tests** (deterministic) — strip fences, `deriveAdversarialTestPath(..., "boundary")`, leak scan
 9. **run-tests** (deterministic) — profile-driven test execution
-10. **docker-verify** (deterministic) — Docker-isolated adversarial test execution (gracefully degrades without Docker)
-11. **generate-diff** (deterministic) — `git diff --stat main`
-12. **approve-pr** (human_gate) — shows diff summary, waits for human approval
+10. **extract-contracts** (deterministic) — `buildContractContext` (skipped when `!profile.adversarial.contract.enabled`)
+11. **generate-contract-tests** (agentic/contract-tester) — skipped in agent-handler when contract disabled
+12. **write-contract-tests** (deterministic) — fences, `resolveContractTestOutputRel` + contract path basename, TS leak scan
+13. **run-contract-tests** (deterministic) — `runTests` with only the new contract test file path
+14. **docker-verify** (deterministic) — Docker-isolated adversarial test execution (gracefully degrades without Docker)
+15. **generate-diff** (deterministic) — `git diff --stat main`
+16. **approve-pr** (human_gate) — shows diff summary, waits for human approval
 
 ### CLI commands
 
@@ -378,8 +410,9 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 | `run implement-feature --task "..." [--work-dir <path>]` | Full Stage 1 pipeline with human gates (optional work dir override) |
 | `plan --task "..." [--work-dir <path>]` | Standalone planner agent (no implementation) |
 | `verify [--profile] [--work-dir <path>]` | Run static checks (or show detected profile as JSON) |
+| `contract [--plan <file>] [--work-dir <path>]` | Print `ContractContext` JSON (optional planner JSON for affected paths) |
 | `diff` | Compare detected profile vs hardcoded Stage 1 defaults |
-| `eval [agent]` | Run eval sets (planner, coder) |
+| `eval [agent]` | Run eval sets (planner, coder, boundary-tester, contract-tester; `tester` aliases boundary) |
 | `config show [--sources]` | Show resolved configuration |
 | `init [--mode=...] [--persist]` | Detect project configuration, generate .bollard.yml |
 | `promote-test <path>` | Promote adversarial test to project test directory |
@@ -479,28 +512,32 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 ### Stage 2 — Docker Isolation & Multi-Provider (DONE):
 - Docker-isolated verification containers: `Dockerfile.verify`, `Dockerfile.verify-python`, `Dockerfile.verify-go`, `Dockerfile.verify-rust`
 - `compose-generator.ts` generates `compose.verify.yml` from `ToolchainProfile`
-- `docker-verify` blueprint node (position 10) with graceful Docker-unavailable degradation
-- `LlmFallbackExtractor` implemented — LLM-based signature extraction for non-TS languages
-- `getExtractor(lang, provider?, model?)` routes to `TsCompilerExtractor` or `LlmFallbackExtractor`
-- In-language adversarial test generation: conditional `{{#if}}` blocks in `fillPromptTemplate`, tester prompt outputs Python/Go/Rust test templates
-- `deriveAdversarialTestPath` supports Python, Go, Rust naming conventions
-- Adversarial test lifecycle: `TestLifecycle` type, `resolveTestOutputDir`, `writeTestMetadata`, `checkTestRunnerIntegration`
-- `ToolchainProfile.adversarial.persist` — ephemeral (default) or persistent-native (opt-in)
-- `@bollard/mcp` package — MCP server with 6 tools (verify, plan, implement, eval, config, profile)
+- `docker-verify` blueprint node (after contract nodes) with graceful Docker-unavailable degradation
+- `LlmFallbackExtractor` — LLM-based signature extraction for unknown languages when a provider is supplied
+- `getExtractor(lang, provider?, model?)` routes TS/Python/Go/Rust to deterministic extractors; unknown without provider throws `PROVIDER_NOT_FOUND`
+- In-language adversarial test generation: conditional `{{#if}}` blocks in `fillPromptTemplate`, boundary-tester prompt outputs Python/Go/Rust test templates
+- `deriveAdversarialTestPath` supports Python, Go, Rust naming conventions and `scope: "boundary" | "contract"`
+- Adversarial test lifecycle: `TestLifecycle` type, `resolveTestOutputDir`, `resolveContractTestOutputRel`, `writeTestMetadata`, `checkTestRunnerIntegration`
+- `ToolchainProfile.adversarial.boundary.lifecycle` — maps from legacy `toolchain.adversarial.persist` when root `adversarial:` is absent
+- `@bollard/mcp` package — MCP server with 7 tools (verify, plan, implement, eval, config, profile, contract)
 - `OpenAIProvider` — maps `LLMRequest` to OpenAI Chat Completions API with function calling
 - `GoogleProvider` — maps `LLMRequest` to Google Generative AI API with function declarations
 - `LLMClient` resolves `"openai"` and `"google"` providers via env vars
 - `promote-test` CLI command — copy adversarial tests to project test directory
 - `bollard init` generates `.bollard.yml` and `.bollard/mcp.json`
-- Blueprint now has **12 nodes** (added `docker-verify` between `run-tests` and `generate-diff`)
+- Blueprint now has **16 nodes** (contract nodes between `run-tests` and `docker-verify`)
+
+### Stage 3a (DONE) — Contract scope bundle
+- `AdversarialConfig` per scope + `concerns.ts` defaults and YAML merge (`CONCERN_CONFIG_INVALID` on bad config)
+- `boundary-tester` + `{{#concern}}` templating; `contract-tester` + `buildContractContext` (TypeScript monorepo)
+- CLI `contract`, MCP `bollard_contract`, `examples/bollard.yml`
+- Dev image includes `python3` for the Python extractor script
 
 ### DO NOT build yet:
-- Contract-scope adversarial tester (contract-tester.ts, contract extractor) — Stage 3
-- Contract context builder (dependency graph, interface boundaries, error contracts) — Stage 3
-- Weighted concern lenses in tester prompts (security, performance, resilience) — Stage 3
-- Per-language mutation testing (Stryker, mutmut, cargo-mutants, etc.) — Stage 3
-- Semantic review agent — Stage 3
-- Deterministic type extractors for Python/Go/Rust (ast, go doc, cargo doc) — Stage 3
+- **Streaming LLM responses (Stage 3c / 4 follow-up)** — `LLMProvider.chat_stream`, incremental delta events from `executeAgent`, CLI rendering of model output as it arrives (Option B in `spec/stage3a-progress-ux-prompt.md` §1). Deferred because it requires provider-specific streaming implementations (Anthropic, OpenAI, Google) and partial-response error handling; Option A (spinner + turn/tool telemetry without streaming) covers basic “feels alive” UX.
+- Per-language mutation testing (Stryker, mutmut, cargo-mutants, etc.) — Stage 3 remainder
+- Semantic review agent — Stage 3 remainder
+- Contract graph for Python/Go/Rust workspaces — Stage 3b+
 - Behavioral-scope adversarial tester (behavioral-tester.ts, behavioral extractor) — Stage 4
 - Behavioral context builder (topology, endpoints, config schema, failure modes) — Stage 4
 - Fault injector (Docker-level network delays, connection drops, resource limits) — Stage 4
@@ -510,7 +547,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - CI integration, run history, self-improvement — Stage 5
 
 ### Size (current):
-- Total: ~5950 source, ~4650 test (+~7670 adversarial), ~201 prompt across 8 packages
+- Run `cloc` or similar inside Docker if you need exact LOC; structure is 8 packages as listed above.
 
 ## Design Principles
 

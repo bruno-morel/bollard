@@ -30,6 +30,36 @@ export type MutationToolId = "stryker" | "mutmut" | "go-mutesting" | "cargo-muta
 
 export type ConfigSource = "default" | "auto-detected" | "env" | "file" | "cli"
 
+export type AdversarialScope = "boundary" | "contract" | "behavioral"
+
+export type AdversarialConcern = "correctness" | "security" | "performance" | "resilience"
+
+export type ConcernWeight = "high" | "medium" | "low" | "off"
+
+export interface ConcernConfig {
+  correctness: ConcernWeight
+  security: ConcernWeight
+  performance: ConcernWeight
+  resilience: ConcernWeight
+}
+
+export interface AdversarialScopeConfig {
+  enabled: boolean
+  integration: "integrated" | "independent"
+  lifecycle: "ephemeral" | "persistent"
+  concerns: ConcernConfig
+  frameworkCapable?: boolean
+  runtimeImage?: string
+  /** Boundary scope only — blackbox vs in-language adversarial tests */
+  mode?: "blackbox" | "in-language" | "both"
+}
+
+export interface AdversarialConfig {
+  boundary: AdversarialScopeConfig
+  contract: AdversarialScopeConfig
+  behavioral: AdversarialScopeConfig
+}
+
 export interface VerificationCommand {
   label: string
   cmd: string
@@ -60,9 +90,5 @@ export interface ToolchainProfile {
   ignorePatterns: string[]
   allowedCommands: string[]
 
-  adversarial: {
-    mode: "blackbox" | "in-language" | "both"
-    runtimeImage?: string
-    persist?: boolean
-  }
+  adversarial: AdversarialConfig
 }

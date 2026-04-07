@@ -2,6 +2,12 @@
 
 Features deferred from v0.1 spec to keep scope tight. These are all good ideas — they just don't belong in the first build.
 
+**Stage 3a (contract adversarial scope)** — Contract graph extraction (TypeScript monorepo), `contract-tester` agent, blueprint nodes, and `bollard contract` / MCP `bollard_contract` are implemented in the main tree; see `spec/07-adversarial-scopes.md` implementation status.
+
+## Stage 3c follow-ups
+
+- **Streaming LLM responses** — `LLMProvider.chat_stream`, partial/streaming tool-call assembly, and CLI rendering of tokens as they arrive. Design notes and rationale for deferring vs. spinner-based progress: [stage3a-progress-ux-prompt.md](./stage3a-progress-ux-prompt.md) (§1 Option B, §6).
+
 ---
 
 ## Stage 3+: Production Feedback Loop Enhancements

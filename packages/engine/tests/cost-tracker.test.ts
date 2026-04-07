@@ -1,5 +1,6 @@
 import fc from "fast-check"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+import type { PipelineContext } from "../src/context.js"
 import { CostTracker } from "../src/cost-tracker.js"
 import { BollardError } from "../src/errors.js"
 
@@ -87,6 +88,52 @@ describe("CostTracker", () => {
     const tracker = new CostTracker(10)
     tracker.add(0)
     expect(tracker.total()).toBe(0)
+  })
+
+  it("works without context parameter", () => {
+    const tracker = new CostTracker(10)
+    tracker.add(5)
+    expect(tracker.total()).toBe(5)
+  })
+
+  it("calls debug log when context is provided", () => {
+    const mockDebug = vi.fn()
+    const mockCtx = {
+      log: {
+        debug: mockDebug,
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      },
+    } as Partial<PipelineContext> as PipelineContext
+
+    const tracker = new CostTracker(10)
+    tracker.add(5, mockCtx)
+
+    expect(mockDebug).toHaveBeenCalledWith("cost:add")
+    expect(tracker.total()).toBe(5)
+  })
+
+  it("handles context with undefined log", () => {
+    const mockCtx = {} as Partial<PipelineContext> as PipelineContext
+
+    const tracker = new CostTracker(10)
+    expect(() => tracker.add(5, mockCtx)).not.toThrow()
+    expect(tracker.total()).toBe(5)
+  })
+
+  it("handles context with log but undefined debug", () => {
+    const mockCtx = {
+      log: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      },
+    } as Partial<PipelineContext> as PipelineContext
+
+    const tracker = new CostTracker(10)
+    expect(() => tracker.add(5, mockCtx)).not.toThrow()
+    expect(tracker.total()).toBe(5)
   })
 
   describe("property-based", () => {

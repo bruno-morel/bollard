@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
+import type { AgentResult } from "@bollard/agents/src/types.js"
 import { createImplementFeatureBlueprint } from "@bollard/blueprints/src/implement-feature.js"
 import type { Blueprint, BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
@@ -14,14 +15,8 @@ import { resolveConfig } from "./config.js"
 import { collectAffectedPathsFromPlan } from "./contract-plan.js"
 import { diffToolchainProfile } from "./diff.js"
 import { humanGateHandler } from "./human-gate.js"
-
-const DIM = "\x1b[2m"
-const RESET = "\x1b[0m"
-const BOLD = "\x1b[1m"
-const GREEN = "\x1b[32m"
-const RED = "\x1b[31m"
-const YELLOW = "\x1b[33m"
-const CYAN = "\x1b[36m"
+import { createAgentSpinner } from "./spinner.js"
+import { BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW } from "./terminal-styles.js"
 
 function log(msg: string): void {
   process.stderr.write(`${msg}\n`)
@@ -60,6 +55,9 @@ function cliProgress(event: ProgressEvent): void {
           ? `${YELLOW}gate${RESET}`
           : `${DIM}check${RESET}`
     log(`${prefix} ${typeLabel}  ${event.nodeName}`)
+    if (event.nodeType === "agentic") {
+      log("")
+    }
   }
 
   if (event.type === "node_retry") {
@@ -222,10 +220,17 @@ async function runPlanCommand(args: string[]): Promise<void> {
   const projectTree = await buildProjectTree(workDir)
   const plannerMessage = projectTree ? `Task: ${task}\n\n${projectTree}` : `Task: ${task}`
   const ctx = createContext(task, "plan-only", config)
-  const result = await executeAgent(planner, plannerMessage, provider, model, {
-    pipelineCtx: ctx,
-    workDir,
-  })
+  const spinner = createAgentSpinner()
+  let result: AgentResult
+  try {
+    result = await executeAgent(planner, plannerMessage, provider, model, {
+      pipelineCtx: ctx,
+      workDir,
+      progress: (ev) => spinner.handleEvent(ev),
+    })
+  } finally {
+    spinner.finalize()
+  }
 
   process.stdout.write(`${result.response}\n`)
 

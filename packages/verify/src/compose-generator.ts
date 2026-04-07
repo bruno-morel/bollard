@@ -20,8 +20,8 @@ const DEFAULT_IMAGES: Partial<Record<LanguageId, string>> = {
 }
 
 function resolveRuntimeImage(profile: ToolchainProfile): string {
-  if (profile.adversarial.runtimeImage) {
-    return profile.adversarial.runtimeImage
+  if (profile.adversarial.boundary.runtimeImage) {
+    return profile.adversarial.boundary.runtimeImage
   }
   return DEFAULT_IMAGES[profile.language] ?? "node:22-slim"
 }
@@ -89,7 +89,7 @@ function buildNativeService(runtimeImage: string, profile: ToolchainProfile): st
 export function generateVerifyCompose(config: VerifyComposeConfig): GeneratedCompose {
   const bollardTag = config.bollardImageTag ?? "latest"
   const runtimeImage = resolveRuntimeImage(config.profile)
-  const mode = config.profile.adversarial.mode
+  const mode = config.profile.adversarial.boundary.mode ?? "in-language"
   const services: string[] = ["project-verify", "verify-blackbox"]
 
   const serviceBlocks = [

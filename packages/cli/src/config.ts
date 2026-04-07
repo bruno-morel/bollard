@@ -6,6 +6,7 @@ import type { BollardConfig } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import { parse as parseYaml } from "yaml"
 import { z } from "zod"
+import { type RootAdversarialYaml, applyRootAdversarialYaml } from "./adversarial-yaml.js"
 
 export type ConfigSource = "default" | "auto-detected" | "env" | "file" | "cli"
 
@@ -19,6 +20,38 @@ const verificationCommandSchema = z.object({
   cmd: z.string(),
   args: z.array(z.string()).optional(),
 })
+
+const concernWeightSchema = z.enum(["high", "medium", "low", "off"])
+
+const concernsPartialSchema = z
+  .object({
+    correctness: concernWeightSchema.optional(),
+    security: concernWeightSchema.optional(),
+    performance: concernWeightSchema.optional(),
+    resilience: concernWeightSchema.optional(),
+  })
+  .strict()
+
+const adversarialScopeBlockSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    integration: z.enum(["integrated", "independent"]).optional(),
+    lifecycle: z.enum(["ephemeral", "persistent"]).optional(),
+    mode: z.enum(["blackbox", "in-language", "both"]).optional(),
+    runtime_image: z.string().optional(),
+    framework_capable: z.boolean().optional(),
+    concerns: concernsPartialSchema.optional(),
+  })
+  .strict()
+
+const rootAdversarialYamlSchema = z
+  .object({
+    concerns: concernsPartialSchema.optional(),
+    boundary: adversarialScopeBlockSchema.optional(),
+    contract: adversarialScopeBlockSchema.optional(),
+    behavioral: adversarialScopeBlockSchema.optional(),
+  })
+  .strict()
 
 const toolchainYamlSchema = z
   .object({
@@ -62,6 +95,7 @@ const bollardYamlSchema = z
       .optional(),
     risk: z.record(z.unknown()).optional(),
     toolchain: toolchainYamlSchema.optional(),
+    adversarial: rootAdversarialYamlSchema.optional(),
   })
   .strict()
 
@@ -91,9 +125,14 @@ export async function resolveConfig(
   const profile = await detectToolchain(cwd)
   populateDetectionSources(cwd, profile, sources)
 
-  const yamlOverrides = loadBollardYaml(cwd, config, sources)
-  if (yamlOverrides) {
-    applyToolchainOverrides(profile, yamlOverrides)
+  const yamlResult = loadBollardYaml(cwd, config, sources)
+  if (yamlResult?.adversarial) {
+    applyRootAdversarialYaml(profile, yamlResult.adversarial as RootAdversarialYaml)
+  }
+  if (yamlResult?.toolchain) {
+    applyToolchainOverrides(profile, yamlResult.toolchain, {
+      skipLegacyAdversarial: Boolean(yamlResult.adversarial),
+    })
   }
 
   applyEnvVars(config, sources)
@@ -168,6 +207,7 @@ function populateDetectionSources(
 function applyToolchainOverrides(
   profile: ToolchainProfile,
   overrides: z.infer<typeof toolchainYamlSchema>,
+  opts?: { skipLegacyAdversarial?: boolean },
 ): void {
   if (overrides.checks) {
     const checkEntries = Object.entries(overrides.checks) as [
@@ -199,24 +239,31 @@ function applyToolchainOverrides(
     profile.testPatterns = overrides.test_patterns
   }
 
-  if (overrides.adversarial) {
+  if (!opts?.skipLegacyAdversarial && overrides.adversarial) {
     if (overrides.adversarial.mode) {
-      profile.adversarial.mode = overrides.adversarial.mode
+      profile.adversarial.boundary.mode = overrides.adversarial.mode
     }
     if (overrides.adversarial.runtime_image) {
-      profile.adversarial.runtimeImage = overrides.adversarial.runtime_image
+      profile.adversarial.boundary.runtimeImage = overrides.adversarial.runtime_image
     }
     if (overrides.adversarial.persist !== undefined) {
-      profile.adversarial.persist = overrides.adversarial.persist
+      profile.adversarial.boundary.lifecycle = overrides.adversarial.persist
+        ? "persistent"
+        : "ephemeral"
     }
   }
+}
+
+interface LoadedBollardYaml {
+  toolchain?: z.infer<typeof toolchainYamlSchema>
+  adversarial?: z.infer<typeof rootAdversarialYamlSchema>
 }
 
 function loadBollardYaml(
   cwd: string,
   config: BollardConfig,
   sources: Record<string, AnnotatedValue<unknown>>,
-): z.infer<typeof toolchainYamlSchema> | undefined {
+): LoadedBollardYaml | undefined {
   const yamlPath = join(cwd, ".bollard.yml")
   if (!existsSync(yamlPath)) return undefined
 
@@ -225,9 +272,14 @@ function loadBollardYaml(
   const result = bollardYamlSchema.safeParse(parsed)
 
   if (!result.success) {
+    const msg = result.error.message
+    const hasAdversarialKey =
+      parsed !== null &&
+      typeof parsed === "object" &&
+      "adversarial" in (parsed as Record<string, unknown>)
     throw new BollardError({
-      code: "CONFIG_INVALID",
-      message: `Invalid .bollard.yml: ${result.error.message}`,
+      code: hasAdversarialKey ? "CONCERN_CONFIG_INVALID" : "CONFIG_INVALID",
+      message: `Invalid .bollard.yml: ${msg}`,
       context: { path: yamlPath },
     })
   }
@@ -269,7 +321,10 @@ function loadBollardYaml(
     }
   }
 
-  return data.toolchain
+  return {
+    ...(data.toolchain !== undefined ? { toolchain: data.toolchain } : {}),
+    ...(data.adversarial !== undefined ? { adversarial: data.adversarial } : {}),
+  }
 }
 
 function applyEnvVars(

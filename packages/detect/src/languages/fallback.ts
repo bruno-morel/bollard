@@ -1,3 +1,4 @@
+import { defaultAdversarialConfig } from "../concerns.js"
 import {
   deriveAllowedCommands,
   deriveIgnorePatterns,
@@ -61,6 +62,6 @@ export function buildManualProfile(
     testPatterns: deriveTestPatterns(language),
     ignorePatterns: deriveIgnorePatterns(language),
     allowedCommands: deriveAllowedCommands(language, undefined, extraTools),
-    adversarial: { mode: "blackbox" },
+    adversarial: defaultAdversarialConfig({ language }),
   }
 }

@@ -1,7 +1,7 @@
 import type { EvalCase } from "@bollard/engine/src/eval-runner.js"
 
-const TESTER_SYSTEM =
-  "You are a test engineer. You have NOT seen the implementation. Write a complete Vitest test file based ONLY on the signatures and acceptance criteria provided. Use fast-check for property-based tests. Include negative tests. Output ONLY the TypeScript test code."
+const BOUNDARY_TESTER_SYSTEM =
+  "You are a boundary-scope adversarial tester. You have NOT seen the implementation. Write a complete Vitest test file based ONLY on the signatures and acceptance criteria provided. Use fast-check for property-based tests. Include negative tests. Output ONLY the TypeScript test code."
 
 const COST_TRACKER_SIGNATURES = `
 ## Signatures
@@ -21,11 +21,11 @@ const COST_TRACKER_CRITERIA = [
   "exceeded() returns true only when total surpasses the limit",
 ]
 
-export const testerEvalCases: EvalCase[] = [
+export const boundaryTesterEvalCases: EvalCase[] = [
   {
-    id: "tester-valid-vitest",
+    id: "boundary-tester-valid-vitest",
     description: "Produces a valid Vitest test file with imports and describe blocks",
-    systemPrompt: TESTER_SYSTEM,
+    systemPrompt: BOUNDARY_TESTER_SYSTEM,
     messages: [
       {
         role: "user",
@@ -52,9 +52,9 @@ export const testerEvalCases: EvalCase[] = [
     ],
   },
   {
-    id: "tester-tests-criteria-not-implementation",
+    id: "boundary-tester-tests-criteria-not-implementation",
     description: "Tests reference acceptance criteria, not implementation details",
-    systemPrompt: TESTER_SYSTEM,
+    systemPrompt: BOUNDARY_TESTER_SYSTEM,
     messages: [
       {
         role: "user",
@@ -81,9 +81,9 @@ export const testerEvalCases: EvalCase[] = [
     ],
   },
   {
-    id: "tester-includes-negative-tests",
+    id: "boundary-tester-includes-negative-tests",
     description: "Output includes negative/boundary test cases",
-    systemPrompt: TESTER_SYSTEM,
+    systemPrompt: BOUNDARY_TESTER_SYSTEM,
     messages: [
       {
         role: "user",
@@ -108,9 +108,9 @@ export const testerEvalCases: EvalCase[] = [
     ],
   },
   {
-    id: "tester-includes-property-based",
+    id: "boundary-tester-includes-property-based",
     description: "Output includes property-based tests using fast-check",
-    systemPrompt: TESTER_SYSTEM,
+    systemPrompt: BOUNDARY_TESTER_SYSTEM,
     messages: [
       {
         role: "user",

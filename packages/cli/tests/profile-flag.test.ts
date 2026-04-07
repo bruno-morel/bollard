@@ -39,10 +39,13 @@ describe("--profile flag functionality", () => {
     expect(Array.isArray(profile.ignorePatterns)).toBe(true)
     expect(Array.isArray(profile.allowedCommands)).toBe(true)
 
-    // adversarial config should exist
+    // adversarial config should exist (per-scope)
     expect(profile.adversarial).toBeDefined()
-    expect(typeof profile.adversarial.mode).toBe("string")
-    expect(["blackbox", "in-language", "both"]).toContain(profile.adversarial.mode)
+    expect(profile.adversarial.boundary).toBeDefined()
+    expect(typeof profile.adversarial.boundary.mode).toBe("string")
+    expect(["blackbox", "in-language", "both"]).toContain(profile.adversarial.boundary.mode)
+    expect(profile.adversarial.contract).toBeDefined()
+    expect(profile.adversarial.behavioral).toBeDefined()
 
     // Verify JSON.stringify works (produces valid JSON)
     const jsonString = JSON.stringify(profile, null, 2)
@@ -88,6 +91,6 @@ describe("--profile flag functionality", () => {
     // Verify nested structures
     expect(typeof parsed.checks).toBe("object")
     expect(typeof parsed.adversarial).toBe("object")
-    expect(typeof parsed.adversarial.mode).toBe("string")
+    expect(typeof parsed.adversarial.boundary.mode).toBe("string")
   })
 })

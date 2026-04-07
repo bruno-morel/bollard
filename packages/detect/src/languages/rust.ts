@@ -44,6 +44,5 @@ export async function detect(cwd: string): Promise<Partial<ToolchainProfile> | n
     testPatterns: deriveTestPatterns("rust"),
     ignorePatterns: deriveIgnorePatterns("rust"),
     allowedCommands: deriveAllowedCommands("rust", "cargo"),
-    adversarial: { mode: "blackbox" },
   }
 }

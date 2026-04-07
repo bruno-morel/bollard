@@ -1,11 +1,13 @@
 import { mkdir, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { defaultAdversarialConfig, withBoundaryOverrides } from "@bollard/detect/src/concerns.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { describe, expect, it } from "vitest"
 import {
   type TestMetadata,
   checkTestRunnerIntegration,
+  resolveContractTestOutputRel,
   resolveLifecycle,
   resolveTestOutputDir,
   writeTestMetadata,
@@ -18,7 +20,7 @@ const makeProfile = (overrides: Partial<ToolchainProfile> = {}): ToolchainProfil
   testPatterns: [],
   ignorePatterns: [],
   allowedCommands: [],
-  adversarial: { mode: "blackbox" },
+  adversarial: defaultAdversarialConfig({ language: "typescript" }),
   ...overrides,
 })
 
@@ -27,13 +29,17 @@ describe("resolveLifecycle", () => {
     expect(resolveLifecycle()).toBe("ephemeral")
   })
 
-  it("returns ephemeral when persist is false", () => {
-    const profile = makeProfile({ adversarial: { mode: "blackbox", persist: false } })
+  it("returns ephemeral when boundary lifecycle is ephemeral", () => {
+    const profile = makeProfile({
+      adversarial: withBoundaryOverrides("typescript", { lifecycle: "ephemeral" }),
+    })
     expect(resolveLifecycle(profile)).toBe("ephemeral")
   })
 
-  it("returns persistent-native when persist is true", () => {
-    const profile = makeProfile({ adversarial: { mode: "blackbox", persist: true } })
+  it("returns persistent-native when boundary lifecycle is persistent", () => {
+    const profile = makeProfile({
+      adversarial: withBoundaryOverrides("typescript", { lifecycle: "persistent" }),
+    })
     expect(resolveLifecycle(profile)).toBe("persistent-native")
   })
 
@@ -68,6 +74,30 @@ describe("resolveTestOutputDir", () => {
     const dir1 = resolveTestOutputDir("/w", "run-1", "feat", "persistent-native", "native")
     const dir2 = resolveTestOutputDir("/w", "run-2", "feat", "persistent-native", "native")
     expect(dir1).toBe(dir2)
+  })
+})
+
+describe("resolveContractTestOutputRel", () => {
+  it("uses .bollard/tests/contract/<slug>/ when lifecycle is persistent", () => {
+    const rel = resolveContractTestOutputRel({
+      runId: "run-9",
+      task: "Add auth",
+      derivedRelativePath: "packages/cli/tests/contracts/foo.contract.test.ts",
+      lifecycle: "persistent",
+    })
+    expect(rel).toBe(join(".bollard", "tests", "contract", "add-auth", "foo.contract.test.ts"))
+  })
+
+  it("uses run-scoped adversarial/contract when lifecycle is ephemeral", () => {
+    const rel = resolveContractTestOutputRel({
+      runId: "run-9",
+      task: "Add auth",
+      derivedRelativePath: "packages/cli/tests/contracts/foo.contract.test.ts",
+      lifecycle: "ephemeral",
+    })
+    expect(rel).toBe(
+      join(".bollard", "runs", "run-9", "adversarial", "contract", "foo.contract.test.ts"),
+    )
   })
 })
 

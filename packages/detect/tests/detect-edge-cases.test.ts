@@ -76,7 +76,7 @@ describe("Unknown language fallback", () => {
     expect(profile.testPatterns).toEqual([])
     expect(profile.ignorePatterns).toEqual([])
     expect(profile.allowedCommands).toContain("git")
-    expect(profile.adversarial.mode).toBe("blackbox")
+    expect(profile.adversarial.boundary.mode).toBe("in-language")
   })
 })
 

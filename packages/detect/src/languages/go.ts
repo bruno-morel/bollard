@@ -56,6 +56,5 @@ export async function detect(cwd: string): Promise<Partial<ToolchainProfile> | n
     testPatterns: deriveTestPatterns("go"),
     ignorePatterns: deriveIgnorePatterns("go"),
     allowedCommands: deriveAllowedCommands("go", "go", ["govulncheck", ...extraTools]),
-    adversarial: { mode: "blackbox" },
   }
 }

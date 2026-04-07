@@ -1,3 +1,4 @@
+import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { describe, expect, it } from "vitest"
 import { createStaticCheckNode, runStaticChecks } from "../src/static.js"
@@ -47,7 +48,7 @@ describe("runStaticChecks with empty profile", () => {
       testPatterns: [],
       ignorePatterns: [],
       allowedCommands: ["git"],
-      adversarial: { mode: "blackbox" },
+      adversarial: defaultAdversarialConfig({ language: "typescript" }),
     }
     const result = await runStaticChecks("/tmp", emptyProfile)
     expect(result.results).toEqual([])

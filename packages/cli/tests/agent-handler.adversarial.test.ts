@@ -32,10 +32,10 @@ vi.mock("@bollard/agents/src/coder.js", () => ({
   })
 }))
 
-vi.mock("@bollard/agents/src/tester.js", () => ({
-  createTesterAgent: vi.fn().mockReturnValue({
-    role: "tester",
-    instructions: "Mock tester", 
+vi.mock("@bollard/agents/src/boundary-tester.js", () => ({
+  createBoundaryTesterAgent: vi.fn().mockReturnValue({
+    role: "boundary-tester",
+    instructions: "Mock boundary tester", 
     tools: []
   })
 }))

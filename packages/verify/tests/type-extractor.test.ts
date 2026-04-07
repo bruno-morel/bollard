@@ -1,8 +1,12 @@
 import { readFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { BollardError } from "@bollard/engine/src/errors.js"
 import type { LLMProvider, LLMResponse } from "@bollard/llm/src/types.js"
 import { describe, expect, it } from "vitest"
+import { GoAstExtractor } from "../src/extractors/go.js"
+import { PythonAstExtractor } from "../src/extractors/python.js"
+import { RustExtractor } from "../src/extractors/rust.js"
 import {
   type ExtractionResult,
   LlmFallbackExtractor,
@@ -60,7 +64,7 @@ describe("extractSignatures", () => {
     const source = await readSource("engine/src/cost-tracker.ts")
     const result = extractSignatures("engine/src/cost-tracker.ts", source)
 
-    expect(result.signatures).toContain("add(costUsd: number)")
+    expect(result.signatures).toContain("add(costUsd: number, ctx?: PipelineContext)")
     expect(result.signatures).toContain("total()")
     expect(result.signatures).toContain("exceeded()")
     expect(result.signatures).toContain("remaining()")
@@ -308,21 +312,30 @@ describe("SignatureExtractor implementations", () => {
     expect(extractor).toBeInstanceOf(TsCompilerExtractor)
   })
 
-  it("getExtractor returns LlmFallbackExtractor for non-typescript", () => {
-    expect(getExtractor("python")).toBeInstanceOf(LlmFallbackExtractor)
-    expect(getExtractor("go")).toBeInstanceOf(LlmFallbackExtractor)
-    expect(getExtractor("rust")).toBeInstanceOf(LlmFallbackExtractor)
+  it("getExtractor returns deterministic extractors for python, go, rust", () => {
+    expect(getExtractor("python")).toBeInstanceOf(PythonAstExtractor)
+    expect(getExtractor("go")).toBeInstanceOf(GoAstExtractor)
+    expect(getExtractor("rust")).toBeInstanceOf(RustExtractor)
   })
 
-  it("getExtractor with provider returns LlmFallbackExtractor for python", () => {
+  it("getExtractor with provider still uses PythonAstExtractor for python", () => {
     const provider = createMockProvider("{}")
     const extractor = getExtractor("python", provider, "test-model")
-    expect(extractor).toBeInstanceOf(LlmFallbackExtractor)
+    expect(extractor).toBeInstanceOf(PythonAstExtractor)
   })
 
-  it("getExtractor without provider returns noop LlmFallbackExtractor", () => {
-    const extractor = getExtractor("python")
-    expect(extractor).toBeInstanceOf(LlmFallbackExtractor)
+  it("getExtractor without provider throws for unknown language", () => {
+    expect(() => getExtractor("unknown")).toThrow(BollardError)
+    try {
+      getExtractor("unknown")
+    } catch (e) {
+      expect(BollardError.is(e) && e.code === "PROVIDER_NOT_FOUND").toBe(true)
+    }
+  })
+
+  it("getExtractor with provider returns LlmFallbackExtractor for unknown language", () => {
+    const provider = createMockProvider("{}")
+    expect(getExtractor("unknown", provider, "m")).toBeInstanceOf(LlmFallbackExtractor)
   })
 })
 

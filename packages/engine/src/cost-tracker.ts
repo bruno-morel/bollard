@@ -1,3 +1,4 @@
+import type { PipelineContext } from "./context.js"
 import { BollardError } from "./errors.js"
 
 export class CostTracker {
@@ -15,7 +16,8 @@ export class CostTracker {
     this._limit = limitUsd
   }
 
-  add(costUsd: number): void {
+  add(costUsd: number, ctx?: PipelineContext): void {
+    ctx?.log?.debug?.("cost:add")
     if (!Number.isFinite(costUsd) || costUsd < 0) {
       throw new BollardError({
         code: "CONTRACT_VIOLATION",

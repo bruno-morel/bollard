@@ -1,4 +1,5 @@
 import type { ToolchainProfile, VerificationCommand } from "@bollard/detect/src/types.js"
+import { diffAdversarialVsDefaults } from "./adversarial-yaml.js"
 
 export interface CheckDiff {
   name: string
@@ -17,6 +18,8 @@ export interface PatternDiff {
 export interface DiffResult {
   checks: CheckDiff[]
   patterns: PatternDiff[]
+  /** Adversarial scopes/fields that differ from defaultAdversarialConfig(detected language). */
+  adversarial: Record<string, unknown>
   summary: {
     unchanged: number
     differ: number
@@ -155,6 +158,7 @@ export function diffToolchainProfile(profile: ToolchainProfile): DiffResult {
   return {
     checks,
     patterns,
+    adversarial: diffAdversarialVsDefaults(profile),
     summary: {
       unchanged,
       differ,

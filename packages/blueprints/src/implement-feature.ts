@@ -7,8 +7,10 @@ import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import type { LLMProvider } from "@bollard/llm/src/types.js"
 import { generateVerifyCompose } from "@bollard/verify/src/compose-generator.js"
+import { buildContractContext } from "@bollard/verify/src/contract-extractor.js"
 import { runTests } from "@bollard/verify/src/dynamic.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
+import { resolveContractTestOutputRel } from "@bollard/verify/src/test-lifecycle.js"
 import { extractPrivateIdentifiers, getExtractor } from "@bollard/verify/src/type-extractor.js"
 import { deriveAdversarialTestPath, stripMarkdownFences } from "./write-tests-helpers.js"
 
@@ -136,7 +138,7 @@ export function createImplementFeatureBlueprint(
 
           const fullPaths = files.map((f) => resolve(workDir, f))
           const extractor = getExtractor(lang, llmConfig?.provider, llmConfig?.model, ctx.log.warn)
-          const result = await extractor.extract(fullPaths, profile)
+          const result = await extractor.extract(fullPaths, profile, workDir)
 
           return {
             status: "ok",
@@ -153,7 +155,7 @@ export function createImplementFeatureBlueprint(
         id: "generate-tests",
         name: "Generate Adversarial Tests",
         type: "agentic",
-        agent: "tester",
+        agent: "boundary-tester",
       },
 
       {
@@ -169,7 +171,7 @@ export function createImplementFeatureBlueprint(
               status: "fail",
               error: {
                 code: "NODE_EXECUTION_FAILED",
-                message: "No test output from tester agent",
+                message: "No test output from boundary-tester agent",
               },
             }
           }
@@ -211,7 +213,7 @@ export function createImplementFeatureBlueprint(
             }
           }
 
-          const testPath = deriveAdversarialTestPath(firstFile, ctx.toolchainProfile)
+          const testPath = deriveAdversarialTestPath(firstFile, ctx.toolchainProfile, "boundary")
           const cleanOutput = stripMarkdownFences(testerOutput)
           const fullPath = resolve(workDir, testPath)
           await mkdir(dirname(fullPath), { recursive: true })
@@ -237,6 +239,129 @@ export function createImplementFeatureBlueprint(
               error: {
                 code: "TEST_FAILED",
                 message: `${result.failed}/${result.total} tests failed: ${result.failedTests.join(", ")}`,
+              },
+            }
+          }
+          return { status: "ok", data: result }
+        },
+      },
+
+      {
+        id: "extract-contracts",
+        name: "Extract Contract Graph",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const profile = ctx.toolchainProfile
+          if (!profile?.adversarial.contract.enabled) {
+            return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
+          }
+          const affected = getAffectedSourceFiles(ctx)
+          const contract = await buildContractContext(affected, profile, workDir, ctx.log.warn)
+          return { status: "ok", data: { contract } }
+        },
+      },
+
+      {
+        id: "generate-contract-tests",
+        name: "Generate Contract Tests",
+        type: "agentic",
+        agent: "contract-tester",
+      },
+
+      {
+        id: "write-contract-tests",
+        name: "Write Contract Test Files",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const profile = ctx.toolchainProfile
+          if (!profile?.adversarial.contract.enabled) {
+            return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
+          }
+
+          const gen = ctx.results["generate-contract-tests"]
+          const out = typeof gen?.data === "string" ? gen.data : ""
+          if (!out.trim()) {
+            return { status: "ok", data: { skipped: true, reason: "no contract test output" } }
+          }
+
+          const files = getAffectedSourceFiles(ctx)
+          const leakedTokens: string[] = []
+          for (const filePath of files) {
+            try {
+              const source = await readFile(resolve(workDir, filePath), "utf-8")
+              if (!filePath.endsWith(".ts") && !filePath.endsWith(".tsx")) continue
+              const privateIds = extractPrivateIdentifiers(filePath, source)
+              for (const id of privateIds) {
+                if (out.includes(id)) leakedTokens.push(id)
+              }
+            } catch {
+              /* skip */
+            }
+          }
+          if (leakedTokens.length > 0) {
+            const unique = [...new Set(leakedTokens)]
+            throw new BollardError({
+              code: "POSTCONDITION_FAILED",
+              message: `Information leak in contract tests: [${unique.join(", ")}]`,
+              context: { leakedTokens: unique },
+            })
+          }
+
+          const firstFile = files[0]
+          if (!firstFile) {
+            return {
+              status: "fail",
+              error: {
+                code: "NODE_EXECUTION_FAILED",
+                message: "No affected files for contract tests",
+              },
+            }
+          }
+
+          const derivedRel = deriveAdversarialTestPath(firstFile, profile, "contract")
+          const testPath = resolveContractTestOutputRel({
+            runId: ctx.runId,
+            task: ctx.task,
+            derivedRelativePath: derivedRel,
+            lifecycle: profile.adversarial.contract.lifecycle,
+          })
+          const cleanOutput = stripMarkdownFences(out)
+          const fullPath = resolve(workDir, testPath)
+          await mkdir(dirname(fullPath), { recursive: true })
+          await writeFile(fullPath, cleanOutput, "utf-8")
+
+          return {
+            status: "ok",
+            data: { testFile: testPath, bytesWritten: cleanOutput.length },
+          }
+        },
+      },
+
+      {
+        id: "run-contract-tests",
+        name: "Run Contract Tests",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const profile = ctx.toolchainProfile
+          if (!profile?.adversarial.contract.enabled) {
+            return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
+          }
+
+          const writeRes = ctx.results["write-contract-tests"]?.data as
+            | { skipped?: boolean; testFile?: string }
+            | undefined
+          if (writeRes?.skipped || !writeRes?.testFile) {
+            return { status: "ok", data: { skipped: true, reason: "no contract tests written" } }
+          }
+
+          const result = await runTests(workDir, [writeRes.testFile], profile)
+          if (result.failed > 0) {
+            return {
+              status: "fail",
+              data: result,
+              error: {
+                code: "TEST_FAILED",
+                message: `Contract tests failed: ${result.failedTests.join(", ") || "see output"}`,
               },
             }
           }

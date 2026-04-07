@@ -1,0 +1,33 @@
+# Example Bollard configuration — adversarial scopes (Stage 3a+)
+# Copy sections into your project `.bollard.yml` as needed.
+
+# Root `adversarial` merges with auto-detected toolchain. Legacy
+# `toolchain.adversarial.{mode,runtime_image,persist}` still maps onto
+# `boundary` when this block is absent.
+
+adversarial:
+  # Optional: default concern weights for any scope (scope-specific entries override these)
+  concerns:
+    correctness: high
+    security: medium
+    performance: low
+    resilience: low
+
+  boundary:
+    enabled: true
+    integration: integrated # integrated | independent
+    lifecycle: persistent # ephemeral | persistent — where boundary adversarial tests land
+    mode: in-language # blackbox | in-language | both
+    # runtime_image: custom-verify:latest  # optional Docker image for blackbox isolation
+    # concerns: { correctness: high, security: high, performance: off, resilience: off }
+
+  contract:
+    enabled: true
+    integration: integrated
+    lifecycle: persistent # ephemeral: under .bollard/runs/<runId>/adversarial/contract/
+    # framework_capable is auto-set from language (TS/Python/Go/Rust true in Stage 3a)
+
+  behavioral:
+    enabled: false # Stage 4
+    integration: independent
+    lifecycle: ephemeral

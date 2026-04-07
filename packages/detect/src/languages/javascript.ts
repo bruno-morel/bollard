@@ -128,6 +128,5 @@ export async function detect(cwd: string): Promise<Partial<ToolchainProfile> | n
     testPatterns: deriveTestPatterns("javascript"),
     ignorePatterns: deriveIgnorePatterns("javascript"),
     allowedCommands: deriveAllowedCommands("javascript", pkg, extraTools),
-    adversarial: { mode: "blackbox" },
   }
 }

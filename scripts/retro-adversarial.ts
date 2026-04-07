@@ -11,8 +11,8 @@
 
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import { basename, dirname, relative, resolve } from "node:path"
+import { createBoundaryTesterAgent } from "@bollard/agents/src/boundary-tester.js"
 import { executeAgent } from "@bollard/agents/src/executor.js"
-import { createTesterAgent } from "@bollard/agents/src/tester.js"
 import type { AgentContext } from "@bollard/agents/src/types.js"
 import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context.js"
 import { createContext } from "@bollard/engine/src/context.js"
@@ -148,8 +148,8 @@ function getContextHints(relativePath: string): string[] {
     hints.push(
       "## Runtime constraint: filter edge cases",
       '`loadEvalCases(agentFilter)` returns ALL cases when `agentFilter` is `undefined`, empty string `""`, or any string not matching a registered agent name.',
-      'It only filters when given an exact match: `"planner"`, `"coder"`, or `"tester"`.',
-      '`availableAgents()` returns `["planner", "coder", "tester"]`.',
+      'It only filters when given an exact match: `"planner"`, `"coder"`, `"boundary-tester"`, etc.',
+      "`availableAgents()` includes planner, coder, boundary-tester, contract-tester.",
     )
   }
 
@@ -224,8 +224,8 @@ async function main() {
   }
 
   const llmClient = new LLMClient(config)
-  const { provider, model } = llmClient.forAgent("tester")
-  const tester = await createTesterAgent()
+  const { provider, model } = llmClient.forAgent("boundary-tester")
+  const tester = await createBoundaryTesterAgent()
   const ctx = createContext("Retroactive adversarial testing", "retro-adversarial", config)
 
   const agentCtx: AgentContext = { pipelineCtx: ctx as PipelineContext, workDir: WORK_DIR }

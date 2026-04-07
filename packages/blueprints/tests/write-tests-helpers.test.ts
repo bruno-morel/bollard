@@ -1,3 +1,4 @@
+import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { describe, expect, it } from "vitest"
 import { deriveAdversarialTestPath, stripMarkdownFences } from "../src/write-tests-helpers.js"
@@ -9,7 +10,9 @@ const makeProfile = (language: string): ToolchainProfile => ({
   testPatterns: [],
   ignorePatterns: [],
   allowedCommands: [],
-  adversarial: { mode: "blackbox" },
+  adversarial: defaultAdversarialConfig({
+    language: language as ToolchainProfile["language"],
+  }),
 })
 
 describe("deriveAdversarialTestPath", () => {
@@ -72,6 +75,24 @@ describe("deriveAdversarialTestPath", () => {
   it("Rust profile: lib/parser.rs (no src/) stays in same dir", () => {
     expect(deriveAdversarialTestPath("lib/parser.rs", makeProfile("rust"))).toBe(
       "lib/parser_adversarial_test.rs",
+    )
+  })
+
+  it("contract scope TypeScript: maps src/ to tests/contracts/", () => {
+    expect(
+      deriveAdversarialTestPath("packages/cli/src/index.ts", makeProfile("typescript"), "contract"),
+    ).toBe("packages/cli/tests/contracts/index.contract.test.ts")
+  })
+
+  it("contract scope Python: uses tests/contracts/ and test_*_contract.py", () => {
+    expect(deriveAdversarialTestPath("src/auth.py", makeProfile("python"), "contract")).toBe(
+      "tests/contracts/test_auth_contract.py",
+    )
+  })
+
+  it("contract scope Go: _contract_test.go suffix", () => {
+    expect(deriveAdversarialTestPath("pkg/handler.go", makeProfile("go"), "contract")).toBe(
+      "pkg/handler_contract_test.go",
     )
   })
 })

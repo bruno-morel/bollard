@@ -1,3 +1,4 @@
+import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { describe, expect, it } from "vitest"
 import { fillPromptTemplate } from "../src/prompt-template.js"
@@ -20,7 +21,7 @@ const TS_PROFILE: ToolchainProfile = {
   testPatterns: ["**/*.test.ts", "**/*.spec.ts"],
   ignorePatterns: ["node_modules", "dist"],
   allowedCommands: ["pnpm", "npx", "node", "tsc", "biome", "git"],
-  adversarial: { mode: "blackbox" },
+  adversarial: defaultAdversarialConfig({ language: "typescript" }),
 }
 
 const PY_PROFILE: ToolchainProfile = {
@@ -40,7 +41,7 @@ const PY_PROFILE: ToolchainProfile = {
   testPatterns: ["**/test_*.py"],
   ignorePatterns: ["__pycache__", ".venv"],
   allowedCommands: ["python", "poetry", "pytest", "mypy", "ruff", "git"],
-  adversarial: { mode: "blackbox" },
+  adversarial: defaultAdversarialConfig({ language: "python" }),
 }
 
 describe("fillPromptTemplate", () => {
@@ -77,7 +78,7 @@ describe("fillPromptTemplate", () => {
       testPatterns: [],
       ignorePatterns: [],
       allowedCommands: ["git"],
-      adversarial: { mode: "blackbox" },
+      adversarial: defaultAdversarialConfig({ language: "unknown" }),
     }
     const template = "{{typecheck}}, {{linter}}, {{testFramework}}, {{auditTool}}"
     const result = fillPromptTemplate(template, profile)
@@ -172,5 +173,44 @@ describe("fillPromptTemplate", () => {
     const result = fillPromptTemplate(template, PY_PROFILE)
     expect(result).toContain("import pytest")
     expect(result).toContain("def test_something():")
+  })
+
+  const allHigh: import("@bollard/detect/src/types.js").ConcernConfig = {
+    correctness: "high",
+    security: "high",
+    performance: "high",
+    resilience: "high",
+  }
+
+  it("renders all concern weights HIGH when scopeConcerns all high", () => {
+    const t =
+      "### A [{{concerns.correctness.weight}}]\n{{#concern correctness}}C{{/concern}}\n### B [{{concerns.security.weight}}]"
+    const r = fillPromptTemplate(t, TS_PROFILE, allHigh)
+    expect(r).toContain("[HIGH]")
+    expect(r).toContain("C")
+    expect(r).not.toContain("{{#concern")
+  })
+
+  it("omits concern block when weight off", () => {
+    const concerns: import("@bollard/detect/src/types.js").ConcernConfig = {
+      correctness: "high",
+      security: "off",
+      performance: "medium",
+      resilience: "off",
+    }
+    const t =
+      "### Correctness [{{concerns.correctness.weight}}]\n{{#concern correctness}}X{{/concern}}\n### Security [{{concerns.security.weight}}]\n{{#concern security}}Y{{/concern}}"
+    const r = fillPromptTemplate(t, TS_PROFILE, concerns)
+    expect(r).toContain("### Correctness [HIGH]")
+    expect(r).toContain("X")
+    expect(r).not.toContain("Security")
+    expect(r).not.toContain("Y")
+  })
+
+  it("strips all concern syntax when scopeConcerns omitted", () => {
+    const t = "### C [{{concerns.correctness.weight}}]\n{{#concern correctness}}Z{{/concern}}"
+    const r = fillPromptTemplate(t, TS_PROFILE)
+    expect(r).not.toContain("{{")
+    expect(r).not.toContain("Z")
   })
 })

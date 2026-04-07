@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
+import { defaultAdversarialConfig } from "./concerns.js"
 import { detect as detectFallback } from "./languages/fallback.js"
 import { detect as detectGo } from "./languages/go.js"
 import { detect as detectJavascript } from "./languages/javascript.js"
@@ -35,21 +36,22 @@ const UNKNOWN_PROFILE: ToolchainProfile = {
   testPatterns: [],
   ignorePatterns: [],
   allowedCommands: ["git"],
-  adversarial: { mode: "blackbox" },
+  adversarial: defaultAdversarialConfig({ language: "unknown" }),
 }
 
 export async function detectToolchain(cwd: string): Promise<ToolchainProfile> {
   for (const detector of detectors) {
     const partial = await detector(cwd)
     if (partial) {
+      const lang = partial.language ?? "unknown"
       const profile: ToolchainProfile = {
-        language: partial.language ?? "unknown",
+        language: lang,
         checks: partial.checks ?? {},
         sourcePatterns: partial.sourcePatterns ?? [],
         testPatterns: partial.testPatterns ?? [],
         ignorePatterns: partial.ignorePatterns ?? [],
         allowedCommands: partial.allowedCommands ?? ["git"],
-        adversarial: partial.adversarial ?? { mode: "blackbox" },
+        adversarial: defaultAdversarialConfig({ language: lang }),
         ...(partial.packageManager !== undefined ? { packageManager: partial.packageManager } : {}),
         ...(partial.mutation !== undefined ? { mutation: partial.mutation } : {}),
       }

@@ -4,8 +4,8 @@ import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
 describe("createImplementFeatureBlueprint", () => {
   const bp = createImplementFeatureBlueprint("/tmp/test")
 
-  it("has 12 nodes in the correct order", () => {
-    expect(bp.nodes).toHaveLength(12)
+  it("has 16 nodes in the correct order", () => {
+    expect(bp.nodes).toHaveLength(16)
     const ids = bp.nodes.map((n) => n.id)
     expect(ids).toEqual([
       "create-branch",
@@ -17,6 +17,10 @@ describe("createImplementFeatureBlueprint", () => {
       "generate-tests",
       "write-tests",
       "run-tests",
+      "extract-contracts",
+      "generate-contract-tests",
+      "write-contract-tests",
+      "run-contract-tests",
       "docker-verify",
       "generate-diff",
       "approve-pr",
@@ -35,6 +39,10 @@ describe("createImplementFeatureBlueprint", () => {
       { id: "generate-tests", type: "agentic" },
       { id: "write-tests", type: "deterministic" },
       { id: "run-tests", type: "deterministic" },
+      { id: "extract-contracts", type: "deterministic" },
+      { id: "generate-contract-tests", type: "agentic" },
+      { id: "write-contract-tests", type: "deterministic" },
+      { id: "run-contract-tests", type: "deterministic" },
       { id: "docker-verify", type: "deterministic" },
       { id: "generate-diff", type: "deterministic" },
       { id: "approve-pr", type: "human_gate" },
@@ -59,12 +67,10 @@ describe("createImplementFeatureBlueprint", () => {
   })
 
   it("agentic nodes have agent roles", () => {
-    const planNode = bp.nodes.find((n) => n.id === "generate-plan")
-    const implNode = bp.nodes.find((n) => n.id === "implement")
-    const testNode = bp.nodes.find((n) => n.id === "generate-tests")
-    expect(planNode?.agent).toBe("planner")
-    expect(implNode?.agent).toBe("coder")
-    expect(testNode?.agent).toBe("tester")
+    expect(bp.nodes.find((n) => n.id === "generate-plan")?.agent).toBe("planner")
+    expect(bp.nodes.find((n) => n.id === "implement")?.agent).toBe("coder")
+    expect(bp.nodes.find((n) => n.id === "generate-tests")?.agent).toBe("boundary-tester")
+    expect(bp.nodes.find((n) => n.id === "generate-contract-tests")?.agent).toBe("contract-tester")
   })
 
   it("coder node has retry config", () => {
@@ -98,16 +104,20 @@ describe("createImplementFeatureBlueprint", () => {
     }
   })
 
-  it("has 3 agentic nodes (planner, coder, tester)", () => {
+  it("has 4 agentic nodes including contract-tester", () => {
     const agenticNodes = bp.nodes.filter((n) => n.type === "agentic")
-    expect(agenticNodes).toHaveLength(3)
-    expect(agenticNodes.map((n) => n.agent)).toEqual(["planner", "coder", "tester"])
+    expect(agenticNodes).toHaveLength(4)
+    expect(agenticNodes.map((n) => n.agent)).toEqual([
+      "planner",
+      "coder",
+      "boundary-tester",
+      "contract-tester",
+    ])
   })
 
-  it("docker-verify is at position 10 (after run-tests)", () => {
+  it("docker-verify follows contract test nodes", () => {
     const idx = bp.nodes.findIndex((n) => n.id === "docker-verify")
-    expect(idx).toBe(9)
-    expect(bp.nodes[idx - 1]?.id).toBe("run-tests")
+    expect(bp.nodes[idx - 1]?.id).toBe("run-contract-tests")
     expect(bp.nodes[idx + 1]?.id).toBe("generate-diff")
   })
 

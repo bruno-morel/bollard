@@ -1,3 +1,4 @@
+import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { describe, expect, it } from "vitest"
 import { diffToolchainProfile } from "../src/diff.js"
@@ -46,9 +47,7 @@ describe("diffToolchainProfile", () => {
       testPatterns: ["**/*.test.ts", "**/*.spec.ts"],
       ignorePatterns: ["**/node_modules/**", "**/dist/**"],
       allowedCommands: ["npm", "npx", "node", "tsc", "git", "cat", "head", "tail", "wc", "diff"],
-      adversarial: {
-        mode: "blackbox",
-      },
+      adversarial: defaultAdversarialConfig({ language: "typescript" }),
     }
 
     const diff = diffToolchainProfile(bollardProfile)
@@ -103,9 +102,7 @@ describe("diffToolchainProfile", () => {
       testPatterns: ["**/test_*.py", "**/*_test.py"],
       ignorePatterns: ["**/venv/**", "**/__pycache__/**"],
       allowedCommands: ["python", "pip", "poetry", "git", "cat", "head", "tail", "wc", "diff"],
-      adversarial: {
-        mode: "blackbox",
-      },
+      adversarial: defaultAdversarialConfig({ language: "python" }),
     }
 
     const diff = diffToolchainProfile(pythonProfile)
@@ -143,9 +140,7 @@ describe("diffToolchainProfile", () => {
       testPatterns: [],
       ignorePatterns: [],
       allowedCommands: [],
-      adversarial: {
-        mode: "blackbox",
-      },
+      adversarial: defaultAdversarialConfig({ language: "unknown" }),
     }
 
     const diff = diffToolchainProfile(emptyProfile)
@@ -217,9 +212,7 @@ describe("diffToolchainProfile", () => {
       testPatterns: ["**/*.test.ts", "**/*.spec.ts"],
       ignorePatterns: ["**/node_modules/**", "**/dist/**"],
       allowedCommands: ["npm", "npx", "node", "tsc", "git", "cat", "head", "tail", "wc", "diff"],
-      adversarial: {
-        mode: "blackbox",
-      },
+      adversarial: defaultAdversarialConfig({ language: "typescript" }),
     }
 
     const diff = diffToolchainProfile(profileWithNewChecks)
@@ -269,9 +262,7 @@ describe("diffToolchainProfile", () => {
       testPatterns: ["**/*.test.ts"],
       ignorePatterns: [],
       allowedCommands: ["npm", "node", "git"],
-      adversarial: {
-        mode: "blackbox",
-      },
+      adversarial: defaultAdversarialConfig({ language: "typescript" }),
     }
 
     const diff = diffToolchainProfile(mixedProfile)
@@ -305,9 +296,7 @@ describe("diffToolchainProfile", () => {
       testPatterns: [],
       ignorePatterns: [],
       allowedCommands: [],
-      adversarial: {
-        mode: "blackbox",
-      },
+      adversarial: defaultAdversarialConfig({ language: "typescript" }),
     }
 
     const diff = diffToolchainProfile(profileWithDifferentArgs)
