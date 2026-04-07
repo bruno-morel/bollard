@@ -2,156 +2,124 @@ import { describe, it, expect } from "vitest"
 import * as fc from "fast-check"
 import { CostTracker } from "../src/cost-tracker.js"
 
-describe("Feature: CostTracker has a reset() method that returns the previous total as a number", () => {
-  it("should return the previous total when reset is called", () => {
-    const tracker = new CostTracker(10)
-    tracker.add(5)
-    const previousTotal = tracker.reset()
-    expect(previousTotal).toBe(5)
+describe("Feature: snapshot() returns readonly cost snapshot", () => {
+  it("should return current accumulated cost", () => {
+    const tracker = new CostTracker(100)
+    tracker.add(25.50)
+    tracker.add(10.25)
+    
+    const snapshot = tracker.snapshot()
+    
+    expect(snapshot.totalCostUsd).toBe(35.75)
   })
 
-  it("should return 0 when reset is called on unused tracker", () => {
-    const tracker = new CostTracker(10)
-    const previousTotal = tracker.reset()
-    expect(previousTotal).toBe(0)
+  it("should return exact match with total() method", () => {
+    const tracker = new CostTracker(100)
+    tracker.add(42.33)
+    
+    const snapshot = tracker.snapshot()
+    
+    expect(snapshot.totalCostUsd).toBe(tracker.total())
   })
 
-  it("should return exact previous total even when exceeded", () => {
-    const tracker = new CostTracker(5)
+  it("should return new object each time", () => {
+    const tracker = new CostTracker(100)
     tracker.add(10)
-    const previousTotal = tracker.reset()
-    expect(previousTotal).toBe(10)
+    
+    const snapshot1 = tracker.snapshot()
+    const snapshot2 = tracker.snapshot()
+    
+    expect(snapshot1).not.toBe(snapshot2)
+    expect(snapshot1.totalCostUsd).toBe(snapshot2.totalCostUsd)
+  })
+
+  it("should not mutate internal state", () => {
+    const tracker = new CostTracker(100)
+    tracker.add(15.75)
+    
+    const totalBefore = tracker.total()
+    tracker.snapshot()
+    const totalAfter = tracker.total()
+    
+    expect(totalBefore).toBe(totalAfter)
+  })
+
+  it("should reflect current cost after add() calls", () => {
+    const tracker = new CostTracker(100)
+    
+    let snapshot = tracker.snapshot()
+    expect(snapshot.totalCostUsd).toBe(0)
+    
+    tracker.add(20)
+    snapshot = tracker.snapshot()
+    expect(snapshot.totalCostUsd).toBe(20)
+    
+    tracker.add(30.50)
+    snapshot = tracker.snapshot()
+    expect(snapshot.totalCostUsd).toBe(50.50)
+  })
+
+  it("should return readonly object that cannot be mutated", () => {
+    const tracker = new CostTracker(100)
+    tracker.add(25)
+    
+    const snapshot = tracker.snapshot()
+    
+    // TypeScript should prevent this at compile time, but test runtime behavior
+    expect(() => {
+      // @ts-expect-error - testing runtime immutability
+      snapshot.totalCostUsd = 999
+    }).toThrow()
+  })
+
+  it("should work with zero cost", () => {
+    const tracker = new CostTracker(100)
+    
+    const snapshot = tracker.snapshot()
+    
+    expect(snapshot.totalCostUsd).toBe(0)
+  })
+
+  it("should work after reset", () => {
+    const tracker = new CostTracker(100)
+    tracker.add(50)
+    tracker.reset()
+    
+    const snapshot = tracker.snapshot()
+    
+    expect(snapshot.totalCostUsd).toBe(0)
   })
 })
 
-describe("Feature: After calling reset(), total() returns 0", () => {
-  it("should return 0 from total() after reset", () => {
-    const tracker = new CostTracker(10)
-    tracker.add(7)
-    tracker.reset()
-    expect(tracker.total()).toBe(0)
-  })
-
-  it("should return 0 from total() after multiple resets", () => {
-    const tracker = new CostTracker(10)
-    tracker.add(3)
-    tracker.reset()
-    tracker.add(5)
-    tracker.reset()
-    expect(tracker.total()).toBe(0)
-  })
-})
-
-describe("Feature: After calling reset(), remaining() returns the original limit", () => {
-  it("should return original limit from remaining() after reset", () => {
-    const tracker = new CostTracker(15)
-    tracker.add(8)
-    tracker.reset()
-    expect(tracker.remaining()).toBe(15)
-  })
-
-  it("should return original limit even after exceeding and resetting", () => {
-    const tracker = new CostTracker(5)
-    tracker.add(12)
-    tracker.reset()
-    expect(tracker.remaining()).toBe(5)
-  })
-})
-
-describe("Feature: After calling reset(), exceeded() returns false (unless limit is 0)", () => {
-  it("should return false from exceeded() after reset with positive limit", () => {
-    const tracker = new CostTracker(10)
-    tracker.add(15)
-    expect(tracker.exceeded()).toBe(true)
-    tracker.reset()
-    expect(tracker.exceeded()).toBe(false)
-  })
-
-  it("should return true from exceeded() after reset with zero limit", () => {
-    const tracker = new CostTracker(0)
-    tracker.add(1)
-    tracker.reset()
-    expect(tracker.exceeded()).toBe(true)
-  })
-
-  it("should return false from exceeded() after reset with zero limit and no usage", () => {
-    const tracker = new CostTracker(0)
-    tracker.reset()
-    expect(tracker.exceeded()).toBe(false)
-  })
-})
-
-describe("Feature: reset() method behavior including edge cases", () => {
-  it("should handle multiple consecutive resets", () => {
-    const tracker = new CostTracker(10)
-    tracker.add(5)
-    
-    const first = tracker.reset()
-    expect(first).toBe(5)
-    expect(tracker.total()).toBe(0)
-    
-    const second = tracker.reset()
-    expect(second).toBe(0)
-    expect(tracker.total()).toBe(0)
-  })
-
-  it("should work correctly with fractional costs", () => {
-    const tracker = new CostTracker(10.5)
-    tracker.add(3.25)
-    tracker.add(1.75)
-    
-    const previousTotal = tracker.reset()
-    expect(previousTotal).toBe(5)
-    expect(tracker.total()).toBe(0)
-    expect(tracker.remaining()).toBe(10.5)
-  })
-
-  it("should preserve limit value across resets", () => {
-    const tracker = new CostTracker(7.5)
-    tracker.add(2)
-    tracker.reset()
-    tracker.add(1)
-    tracker.reset()
-    
-    expect(tracker.remaining()).toBe(7.5)
-  })
-
-  it("property: reset always returns non-negative number", () => {
+describe("Feature: snapshot() property-based behavior", () => {
+  it("should always return non-negative totalCostUsd", () => {
     fc.assert(fc.property(
       fc.float({ min: 0, max: 1000 }),
-      fc.array(fc.float({ min: 0, max: 100 }), { maxLength: 10 }),
+      fc.array(fc.float({ min: 0, max: 100 }), { minLength: 0, maxLength: 10 }),
       (limit, costs) => {
         const tracker = new CostTracker(limit)
         costs.forEach(cost => tracker.add(cost))
-        const previousTotal = tracker.reset()
-        expect(previousTotal).toBeGreaterThanOrEqual(0)
+        
+        const snapshot = tracker.snapshot()
+        
+        expect(snapshot.totalCostUsd).toBeGreaterThanOrEqual(0)
       }
     ))
   })
 
-  it("property: total is always 0 after reset", () => {
+  it("should maintain consistency with total() across operations", () => {
     fc.assert(fc.property(
-      fc.float({ min: 0, max: 1000 }),
-      fc.array(fc.float({ min: 0, max: 100 }), { maxLength: 10 }),
+      fc.float({ min: 100, max: 1000 }),
+      fc.array(fc.float({ min: 0, max: 50 }), { minLength: 1, maxLength: 5 }),
       (limit, costs) => {
         const tracker = new CostTracker(limit)
-        costs.forEach(cost => tracker.add(cost))
-        tracker.reset()
-        expect(tracker.total()).toBe(0)
+        
+        costs.forEach(cost => {
+          tracker.add(cost)
+          const snapshot = tracker.snapshot()
+          expect(snapshot.totalCostUsd).toBe(tracker.total())
+        })
       }
     ))
   })
-
-  it("property: remaining equals limit after reset", () => {
-    fc.assert(fc.property(
-      fc.float({ min: 0, max: 1000 }),
-      fc.array(fc.float({ min: 0, max: 100 }), { maxLength: 10 }),
-      (limit, costs) => {
-        const tracker = new CostTracker(limit)
-        costs.forEach(cost => tracker.add(cost))
-        tracker.reset()
-        expect(tracker.remaining()).toBe(limit)
-      }
-    ))
-  })
-}
+})

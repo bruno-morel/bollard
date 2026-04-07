@@ -45,4 +45,8 @@ export class CostTracker {
     this._total = 0
     return previousTotal
   }
+
+  snapshot(): Readonly<{ totalCostUsd: number }> {
+    return Object.freeze({ totalCostUsd: this._total })
+  }
 }

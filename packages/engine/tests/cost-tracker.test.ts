@@ -246,6 +246,138 @@ describe("CostTracker", () => {
     })
   })
 
+  describe("snapshot()", () => {
+    it("returns current total cost in readonly object", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(3.5)
+      tracker.add(1.5)
+
+      const snapshot = tracker.snapshot()
+
+      expect(snapshot.totalCostUsd).toBe(5)
+      expect(tracker.total()).toBe(5) // Verify internal state unchanged
+    })
+
+    it("returns zero cost for new tracker", () => {
+      const tracker = new CostTracker(10)
+
+      const snapshot = tracker.snapshot()
+
+      expect(snapshot.totalCostUsd).toBe(0)
+    })
+
+    it("returns readonly object that cannot be mutated", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(2.5)
+
+      const snapshot = tracker.snapshot()
+
+      // Verify object is frozen
+      expect(Object.isFrozen(snapshot)).toBe(true)
+
+      // Attempt to mutate should throw in strict mode (which Vitest uses)
+      expect(() => {
+        // @ts-expect-error - intentionally trying to mutate readonly object
+        snapshot.totalCostUsd = 999
+      }).toThrow()
+
+      // Value should remain unchanged
+      expect(snapshot.totalCostUsd).toBe(2.5)
+    })
+
+    it("returns new object instance each time", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(1)
+
+      const snapshot1 = tracker.snapshot()
+      const snapshot2 = tracker.snapshot()
+
+      expect(snapshot1).not.toBe(snapshot2) // Different object references
+      expect(snapshot1.totalCostUsd).toBe(snapshot2.totalCostUsd) // Same values
+    })
+
+    it("reflects cost changes after add() calls", () => {
+      const tracker = new CostTracker(10)
+
+      const snapshot1 = tracker.snapshot()
+      expect(snapshot1.totalCostUsd).toBe(0)
+
+      tracker.add(2.5)
+      const snapshot2 = tracker.snapshot()
+      expect(snapshot2.totalCostUsd).toBe(2.5)
+
+      tracker.add(1.5)
+      const snapshot3 = tracker.snapshot()
+      expect(snapshot3.totalCostUsd).toBe(4)
+
+      // Previous snapshots remain unchanged
+      expect(snapshot1.totalCostUsd).toBe(0)
+      expect(snapshot2.totalCostUsd).toBe(2.5)
+    })
+
+    it("reflects reset state correctly", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+
+      const snapshotBefore = tracker.snapshot()
+      expect(snapshotBefore.totalCostUsd).toBe(5)
+
+      tracker.reset()
+
+      const snapshotAfter = tracker.snapshot()
+      expect(snapshotAfter.totalCostUsd).toBe(0)
+
+      // Previous snapshot unchanged
+      expect(snapshotBefore.totalCostUsd).toBe(5)
+    })
+
+    it("handles fractional costs accurately", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(1.234)
+      tracker.add(2.567)
+
+      const snapshot = tracker.snapshot()
+
+      expect(snapshot.totalCostUsd).toBeCloseTo(3.801, 10)
+    })
+
+    it("does not mutate internal state", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(3)
+
+      const totalBefore = tracker.total()
+      const remainingBefore = tracker.remaining()
+      const exceededBefore = tracker.exceeded()
+
+      const snapshot = tracker.snapshot()
+
+      // Verify snapshot call didn't change internal state
+      expect(tracker.total()).toBe(totalBefore)
+      expect(tracker.remaining()).toBe(remainingBefore)
+      expect(tracker.exceeded()).toBe(exceededBefore)
+      expect(snapshot.totalCostUsd).toBe(totalBefore)
+    })
+
+    it("works correctly with zero cost", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(0)
+
+      const snapshot = tracker.snapshot()
+
+      expect(snapshot.totalCostUsd).toBe(0)
+    })
+
+    it("works correctly when tracker has exceeded limit", () => {
+      const tracker = new CostTracker(5)
+      tracker.add(10)
+
+      const snapshot = tracker.snapshot()
+
+      expect(snapshot.totalCostUsd).toBe(10)
+      expect(tracker.exceeded()).toBe(true) // Verify exceeded state unchanged
+    })
+  })
+
   describe("property-based", () => {
     it("total equals sum of all added costs", () => {
       fc.assert(
