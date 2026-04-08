@@ -4,6 +4,8 @@ import { buildProjectTree, createAgenticHandler } from "../src/agent-handler.js"
 import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context.js"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
+import { executeAgent } from "@bollard/agents/src/executor.js"
+import { CostTracker } from "@bollard/engine/src/cost-tracker.js"
 
 // Mock external dependencies
 vi.mock("@bollard/agents/src/executor.js", () => ({
@@ -37,6 +39,16 @@ vi.mock("@bollard/agents/src/boundary-tester.js", () => ({
     role: "boundary-tester",
     instructions: "Mock boundary tester", 
     tools: []
+  })
+}))
+
+vi.mock("@bollard/agents/src/contract-tester.js", () => ({
+  createContractTesterAgent: vi.fn().mockReturnValue({
+    role: "contract-tester",
+    instructions: "Mock contract tester",
+    tools: [],
+    maxTurns: 10,
+    temperature: 0.4,
   })
 }))
 
@@ -273,5 +285,90 @@ describe("Feature: createAgenticHandler error conditions", () => {
 
     const result = await handler(malformedNode, context)
     expect(typeof result.success).toBe("boolean")
+  })
+})
+
+describe("contract-tester risk-gate guard", () => {
+  it("skips contract-tester agent when risk gate fires with skipContract", async () => {
+    const config: BollardConfig = {
+      llm: {
+        default: {
+          provider: "anthropic",
+          model: "claude-3-5-sonnet-20241022",
+        },
+      },
+      agent: { max_cost_usd: 10, max_duration_minutes: 30 },
+    }
+
+    const scopeConfig = (enabled: boolean) => ({
+      enabled,
+      integration: "independent" as const,
+      lifecycle: "ephemeral" as const,
+      concerns: {
+        correctness: "high" as const,
+        security: "medium" as const,
+        performance: "low" as const,
+        resilience: "off" as const,
+      },
+    })
+
+    const profile: ToolchainProfile = {
+      language: "typescript",
+      packageManager: "pnpm",
+      checks: {},
+      sourcePatterns: ["src/**/*.ts"],
+      testPatterns: ["tests/**/*.test.ts"],
+      ignorePatterns: ["node_modules"],
+      allowedCommands: ["pnpm"],
+      adversarial: {
+        boundary: scopeConfig(true),
+        contract: scopeConfig(true),
+        behavioral: scopeConfig(false),
+      },
+    }
+
+    const { handler } = await createAgenticHandler(config, "/test/work", profile)
+
+    const node: BlueprintNode = {
+      id: "generate-contract-tests",
+      name: "Generate Contract Tests",
+      type: "agentic",
+      agent: "contract-tester",
+    }
+
+    const ctx: PipelineContext = {
+      runId: "test-run-rg",
+      task: "test task",
+      blueprintId: "implement-feature",
+      config,
+      currentNode: "generate-contract-tests",
+      results: {
+        "assess-contract-risk": {
+          status: "ok",
+          data: { skipContract: true },
+        },
+      } as Record<string, PipelineContext["results"][string]>,
+      changedFiles: [],
+      toolchainProfile: profile,
+      costTracker: new CostTracker(10),
+      startedAt: Date.now(),
+      log: {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      },
+      upgradeRunId: vi.fn(),
+    }
+
+    const result = await handler(node, ctx)
+
+    expect(result).toEqual({
+      status: "ok",
+      data: "",
+      cost_usd: 0,
+      duration_ms: 0,
+    })
+    expect(executeAgent).not.toHaveBeenCalled()
   })
 })

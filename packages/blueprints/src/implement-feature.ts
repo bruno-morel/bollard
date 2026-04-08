@@ -382,6 +382,16 @@ export function createImplementFeatureBlueprint(
             | { skipContract?: boolean }
             | undefined
           if (riskGate?.skipContract) {
+            ctx.log.info("contract_grounding_result", {
+              event: "contract_grounding_result",
+              runId: ctx.runId,
+              language: ctx.toolchainProfile?.language ?? "unknown",
+              proposed: 0,
+              grounded: 0,
+              dropped: 0,
+              dropRate: 0,
+              droppedSymbols: [],
+            })
             return { status: "ok", data: { skipped: true, reason: "risk-gate" } }
           }
 

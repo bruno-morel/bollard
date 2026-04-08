@@ -316,8 +316,16 @@ export async function createAgenticHandler(
   const handler = async (node: BlueprintNode, ctx: PipelineContext): Promise<NodeResult> => {
     const agentRole = node.agent ?? "default"
 
-    if (agentRole === "contract-tester" && !profile?.adversarial.contract.enabled) {
-      return { status: "ok", data: "", cost_usd: 0, duration_ms: 0 }
+    if (agentRole === "contract-tester") {
+      if (!profile?.adversarial.contract.enabled) {
+        return { status: "ok", data: "", cost_usd: 0, duration_ms: 0 }
+      }
+      const riskGate = ctx.results["assess-contract-risk"]?.data as
+        | { skipContract?: boolean }
+        | undefined
+      if (riskGate?.skipContract) {
+        return { status: "ok", data: "", cost_usd: 0, duration_ms: 0 }
+      }
     }
 
     const agent = agents[agentRole as keyof typeof agents]

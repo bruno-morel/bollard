@@ -262,4 +262,35 @@ describe("downstream risk-gate skip propagation", () => {
       })
     }
   })
+
+  it("verify-claim-grounding emits all-zero contract_grounding_result when risk gate skips", async () => {
+    const execute = getContractNode("verify-claim-grounding")
+    const ctx = makeContext({
+      contractEnabled: true,
+      results: {
+        "assess-contract-risk": {
+          status: "ok",
+          data: { skipContract: true },
+        },
+      },
+    })
+
+    const result = await execute(ctx)
+
+    expect(result).toEqual({
+      status: "ok",
+      data: { skipped: true, reason: "risk-gate" },
+    })
+    expect(ctx.log.info).toHaveBeenCalledOnce()
+    expect(ctx.log.info).toHaveBeenCalledWith("contract_grounding_result", {
+      event: "contract_grounding_result",
+      runId: "test-run-001",
+      language: "typescript",
+      proposed: 0,
+      grounded: 0,
+      dropped: 0,
+      dropRate: 0,
+      droppedSymbols: [],
+    })
+  })
 })
