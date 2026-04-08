@@ -288,7 +288,7 @@ function buildContractTesterMessage(ctx: PipelineContext): string {
   lines.push(
     "",
     "# Instructions",
-    "Write one test file probing cross-module contracts. Focus on affectedEdges. Output ONLY the test code.",
+    "Emit a JSON claims document probing cross-module contracts. Focus on affectedEdges. Output ONLY the JSON document wrapped in a ```json fence, no other prose.",
   )
   return lines.join("\n")
 }

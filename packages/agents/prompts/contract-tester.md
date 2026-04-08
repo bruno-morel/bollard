@@ -52,24 +52,43 @@ LOW = quick check only.
 - Cascade failure: does one module's failure crash the entire chain?
 {{/concern}}
 
-# Assertion Rules
-
-- Strict equality (`toBe`, `===`, `assert x == y`) is only valid for integers, booleans, strings, and references.
-- For any numeric quantity produced by addition, subtraction, multiplication, or division of non-integers, use `toBeCloseTo` (or the framework equivalent) with an explicit precision. Never `toBe` on float arithmetic.
-- Assert on the contract the signature actually promises. Do not encode prior beliefs about arithmetic, ordering, or timing that the signature does not state.
-
 # Output Format
 
-Output ONLY a single test file. Use the project's test framework ({{testFramework}}).
+Output exactly one JSON document wrapped in a ```json code fence. No prose before or after the fence. The document has a single top-level `claims` array.
+
+Each claim object has these fields:
+
+- `id` — a short unique identifier (e.g. `"c1"`, `"c2"`).
+- `concern` — one of `"correctness"`, `"security"`, `"performance"`, `"resilience"`.
+- `claim` — a natural-language statement of the contract property being tested.
+- `grounding` — a **non-empty** array of `{ "quote", "source" }` objects.
+  - `quote` must be a **verbatim substring** copied from the contract context you received (signatures, type definitions, edge descriptions, plan summary). Copy-paste the fragment exactly. Paraphrases will be rejected by the deterministic verifier.
+  - `source` is a human-readable label like `"signature:ModuleName.symbol"` or `"edge:consumer->provider"`. It is not machine-verified in v1 but aids human review.
+- `test` — the **full test case** including the `it(...)` or `test(...)` wrapper, written in the project's test framework ({{testFramework}}). The test must exercise the contract stated in `claim`. Include any needed `import` statements for modules under test as standalone lines **before** the `it(...)` block — these will be hoisted to the top of the assembled test file. Do not import the test framework itself (`describe`, `it`, `expect`, `vi`) — that is handled automatically.
+
+If you cannot ground a claim in the provided context, **do not emit it**. Writing an ungrounded test is worse than writing fewer tests. Every claim must be traceable to something the context actually states.
 
 {{#if isTypeScript}}
-```typescript
-import { describe, it, expect } from "vitest"
-// Import from the public APIs of the modules under test
-```
-{{else if isPython}}
-```python
-import pytest
-# Import from the public APIs of the modules under test
-```
+**Vitest assertion note:** `toThrow()` accepts an Error class or a regex, NOT a callback function. To check an error code, use a try/catch with `expect(err.code).toBe(...)` or `BollardError.hasCode()`.
 {{/if}}
+
+## Example (TypeScript + vitest)
+
+```json
+{
+  "claims": [
+    {
+      "id": "c1",
+      "concern": "correctness",
+      "claim": "snapshot() returns a readonly object containing the current accumulated cost",
+      "grounding": [
+        {
+          "quote": "snapshot(): Readonly<{ totalCostUsd: number }>",
+          "source": "signature:CostTracker.snapshot"
+        }
+      ],
+      "test": "import { CostTracker } from \"@bollard/engine/src/cost-tracker.js\"\n\nit('snapshot returns current total', () => {\n  const tracker = new CostTracker(100)\n  tracker.add(1.5)\n  const snap = tracker.snapshot()\n  expect(snap.totalCostUsd).toBe(1.5)\n})"
+    }
+  ]
+}
+```

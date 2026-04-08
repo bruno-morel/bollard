@@ -23,7 +23,9 @@ const validErrorCodes: BollardErrorCode[] = [
   "DETECTION_FAILED",
   "PROFILE_INVALID",
   "PROVIDER_NOT_FOUND",
-  "MODEL_NOT_AVAILABLE"
+  "MODEL_NOT_AVAILABLE",
+  "CONTRACT_TESTER_OUTPUT_INVALID",
+  "CONTRACT_TESTER_NO_GROUNDED_CLAIMS"
 ]
 
 describe("Feature: BollardError construction and properties", () => {

@@ -7,7 +7,14 @@ import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import type { LLMProvider } from "@bollard/llm/src/types.js"
 import { generateVerifyCompose } from "@bollard/verify/src/compose-generator.js"
+import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
 import { buildContractContext } from "@bollard/verify/src/contract-extractor.js"
+import {
+  contractContextToCorpus,
+  parseClaimDocument,
+  verifyClaimGrounding,
+} from "@bollard/verify/src/contract-grounding.js"
+import type { ClaimRecord, EnabledConcerns } from "@bollard/verify/src/contract-grounding.js"
 import { runTests } from "@bollard/verify/src/dynamic.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
 import { resolveContractTestOutputRel } from "@bollard/verify/src/test-lifecycle.js"
@@ -269,6 +276,70 @@ export function createImplementFeatureBlueprint(
       },
 
       {
+        id: "verify-claim-grounding",
+        name: "Verify Claim Grounding",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const profile = ctx.toolchainProfile
+          if (!profile?.adversarial.contract.enabled) {
+            return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
+          }
+
+          const gen = ctx.results["generate-contract-tests"]
+          const raw = typeof gen?.data === "string" ? gen.data : ""
+          if (!raw.trim()) {
+            return { status: "ok", data: { skipped: true, reason: "no contract test output" } }
+          }
+
+          // Contract context is stashed on the extract-contracts node result — no new PipelineContext fields needed
+          const extractRes = ctx.results["extract-contracts"]?.data as
+            | { contract?: ContractContext }
+            | undefined
+          const contract = extractRes?.contract ?? {
+            modules: [],
+            edges: [],
+            affectedEdges: [],
+          }
+
+          const plan = ctx.plan as Record<string, unknown> | undefined
+          const planSummary =
+            typeof plan?.["summary"] === "string" ? (plan["summary"] as string) : undefined
+          const corpus = contractContextToCorpus(contract, planSummary)
+
+          const concerns = profile.adversarial.contract.concerns
+          const enabled: EnabledConcerns = {
+            correctness: concerns.correctness !== "off",
+            security: concerns.security !== "off",
+            performance: concerns.performance !== "off",
+            resilience: concerns.resilience !== "off",
+          }
+
+          try {
+            const doc = parseClaimDocument(raw)
+            const result = verifyClaimGrounding(doc, corpus, enabled)
+            return {
+              status: "ok",
+              data: { claims: result.kept, dropped: result.dropped },
+            }
+          } catch (err: unknown) {
+            if (BollardError.is(err)) {
+              return {
+                status: "fail",
+                error: { code: err.code, message: err.message },
+              }
+            }
+            return {
+              status: "fail",
+              error: {
+                code: "NODE_EXECUTION_FAILED",
+                message: err instanceof Error ? err.message : String(err),
+              },
+            }
+          }
+        },
+      },
+
+      {
         id: "write-contract-tests",
         name: "Write Contract Test Files",
         type: "deterministic",
@@ -278,11 +349,53 @@ export function createImplementFeatureBlueprint(
             return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
           }
 
-          const gen = ctx.results["generate-contract-tests"]
-          const out = typeof gen?.data === "string" ? gen.data : ""
-          if (!out.trim()) {
-            return { status: "ok", data: { skipped: true, reason: "no contract test output" } }
+          const verifyRes = ctx.results["verify-claim-grounding"]?.data as
+            | { skipped?: boolean; claims?: ClaimRecord[] }
+            | undefined
+          if (verifyRes?.skipped || !verifyRes?.claims || verifyRes.claims.length === 0) {
+            return {
+              status: "ok",
+              data: { skipped: true, reason: "no grounded claims" },
+            }
           }
+
+          const claims = verifyRes.claims
+          const lang = profile.language ?? "typescript"
+
+          // Hoist import lines from claim test bodies into the preamble
+          const hoistedImports = new Set<string>()
+          const strippedBodies: string[] = []
+          for (const c of claims) {
+            const lines = c.test.split("\n")
+            const bodyLines: string[] = []
+            for (const line of lines) {
+              if (line.trimStart().startsWith("import ")) {
+                hoistedImports.add(line.trim())
+              } else {
+                bodyLines.push(line)
+              }
+            }
+            const body = bodyLines.join("\n").trim()
+            if (body.length > 0) strippedBodies.push(body)
+          }
+
+          let preamble: string
+          let wrapStart: string
+          let wrapEnd: string
+          if (lang === "python") {
+            preamble = "import pytest\n"
+            wrapStart = ""
+            wrapEnd = ""
+          } else {
+            const vitestImport = 'import { describe, it, expect, vi } from "vitest"'
+            const allImports = [vitestImport, ...hoistedImports].join("\n")
+            preamble = `${allImports}\n`
+            wrapStart = '\ndescribe("contract tests", () => {\n'
+            wrapEnd = "\n})\n"
+          }
+
+          const testBodies = strippedBodies.join("\n\n")
+          const fileContent = `${preamble}${wrapStart}${testBodies}${wrapEnd}`
 
           const files = getAffectedSourceFiles(ctx)
           const leakedTokens: string[] = []
@@ -292,7 +405,7 @@ export function createImplementFeatureBlueprint(
               if (!filePath.endsWith(".ts") && !filePath.endsWith(".tsx")) continue
               const privateIds = extractPrivateIdentifiers(filePath, source)
               for (const id of privateIds) {
-                if (out.includes(id)) leakedTokens.push(id)
+                if (fileContent.includes(id)) leakedTokens.push(id)
               }
             } catch {
               /* skip */
@@ -325,14 +438,17 @@ export function createImplementFeatureBlueprint(
             derivedRelativePath: derivedRel,
             lifecycle: profile.adversarial.contract.lifecycle,
           })
-          const cleanOutput = stripMarkdownFences(out)
           const fullPath = resolve(workDir, testPath)
           await mkdir(dirname(fullPath), { recursive: true })
-          await writeFile(fullPath, cleanOutput, "utf-8")
+          await writeFile(fullPath, fileContent, "utf-8")
 
           return {
             status: "ok",
-            data: { testFile: testPath, bytesWritten: cleanOutput.length },
+            data: {
+              testFile: testPath,
+              bytesWritten: fileContent.length,
+              claimCount: claims.length,
+            },
           }
         },
       },

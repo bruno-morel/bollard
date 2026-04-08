@@ -4,8 +4,8 @@ import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
 describe("createImplementFeatureBlueprint", () => {
   const bp = createImplementFeatureBlueprint("/tmp/test")
 
-  it("has 16 nodes in the correct order", () => {
-    expect(bp.nodes).toHaveLength(16)
+  it("has 17 nodes in the correct order", () => {
+    expect(bp.nodes).toHaveLength(17)
     const ids = bp.nodes.map((n) => n.id)
     expect(ids).toEqual([
       "create-branch",
@@ -19,6 +19,7 @@ describe("createImplementFeatureBlueprint", () => {
       "run-tests",
       "extract-contracts",
       "generate-contract-tests",
+      "verify-claim-grounding",
       "write-contract-tests",
       "run-contract-tests",
       "docker-verify",
@@ -41,6 +42,7 @@ describe("createImplementFeatureBlueprint", () => {
       { id: "run-tests", type: "deterministic" },
       { id: "extract-contracts", type: "deterministic" },
       { id: "generate-contract-tests", type: "agentic" },
+      { id: "verify-claim-grounding", type: "deterministic" },
       { id: "write-contract-tests", type: "deterministic" },
       { id: "run-contract-tests", type: "deterministic" },
       { id: "docker-verify", type: "deterministic" },
