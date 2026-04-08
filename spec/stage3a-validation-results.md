@@ -120,19 +120,40 @@ repro for that class.
 **Disposition:** Implementation merged (`CostTracker.reset()` + 9 unit
 tests + 5 passing contract tests). Failing contract test removed.
 
-## Stage 3a status (updated 2026-04-07)
+## Check 5 re-run — contract-grounding Layer 1 (2026-04-08)
 
-**YELLOW — unchanged.** Pipeline end-to-end plumbing is now validated
-against a real LLM-generated contract test file, closing the "not re-run
-after `f14bd66`" gap. The remaining YELLOW item is narrower and now has
-a concrete repro:
+**Architecture change.** The contract-tester now emits a JSON claims
+document instead of a raw test file. A new deterministic node
+`verify-claim-grounding` (node 12) parses the claims, checks each
+`grounding.quote` against the `ContractCorpus` (flattened from
+`extract-contracts` output), and drops claims whose grounding does not
+appear in the context. Blueprint is now 17 nodes.
 
-- Contract-tester assertion quality — see the float-precision repro
-  under `.bollard/retro-adversarial/`. Next prompt revision should be
-  evaluated by re-running the same task and checking the generated file
-  contains no strict-equality assertions against float arithmetic.
+Design: [`spec/08-contract-tester-grounding.md`](08-contract-tester-grounding.md)
 
-GREEN criteria: re-run the `CostTracker.reset()` task (or an equivalent
-minimal contract-touching task) and have node 13 pass on its first
-attempt with contract tests that the reviewer would accept as correct
-contract statements, not just correct code.
+**Implementation:**
+- `packages/verify/src/contract-grounding.ts`: types + `parseClaimDocument` + `verifyClaimGrounding` + `contractContextToCorpus` + `normaliseForComparison`
+- `packages/engine/src/errors.ts`: `CONTRACT_TESTER_OUTPUT_INVALID`, `CONTRACT_TESTER_NO_GROUNDED_CLAIMS`
+- `packages/agents/prompts/contract-tester.md`: `# Assertion Rules` deleted; `# Output Format` replaced with JSON claims protocol
+- `packages/blueprints/src/implement-feature.ts`: new `verify-claim-grounding` node; `write-contract-tests` now assembles surviving claims
+- `packages/cli/src/agent-handler.ts`: instructions updated for JSON output
+- `packages/agents/src/evals/contract-tester/cases.ts`: assertions updated for JSON
+
+**Test suite:** 444 passed / 4 skipped (448 total). Typecheck + lint clean.
+
+**Regression run:** `CostTracker.subtract()` task, run ID `20260408-1711-run-7b3861`, branch `bollard/20260408-1711-run-7b3861`.
+
+- **Cost:** $1.53 / **Duration:** 211s
+- **All 17 nodes passed** on first attempt, no retries.
+- **verify-claim-grounding:** 5 claims kept, 0 dropped.
+- **run-contract-tests (node 14):** passed first attempt (5 claims × 1 test each = 5 tests, all green).
+- **Surviving claims:** c1 (negative input CONTRACT_VIOLATION), c2 (underflow CONTRACT_VIOLATION), c3 (reduces cost correctly), c4 (snapshot consistency), c5 (remaining calculation). All grounded in `subtract(usd: number): void`, `total(): number`, `snapshot(): Readonly<{...}>`, `BollardError`, and contract edges.
+- **No float exactness assertions, no frozen-object mutation tests** — the classes of failure from the retro-adversarial repro are structurally prevented by the grounding protocol.
+
+## Stage 3a status (updated 2026-04-08)
+
+**GREEN.** Layer 1 of the contract-tester grounding architecture
+([`spec/08-contract-tester-grounding.md`](08-contract-tester-grounding.md)) closes the
+contract-tester assertion quality gap that was the final YELLOW blocker.
+The `CostTracker.subtract()` regression task completed all 17 pipeline
+nodes on first attempt with 5 grounded contract claims and zero drops.
