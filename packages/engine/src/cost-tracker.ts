@@ -28,6 +28,24 @@ export class CostTracker {
     this._total += costUsd
   }
 
+  subtract(usd: number): void {
+    if (!Number.isFinite(usd) || usd < 0) {
+      throw new BollardError({
+        code: "CONTRACT_VIOLATION",
+        message: `Amount must be a non-negative finite number, got: ${usd}`,
+        context: { usd },
+      })
+    }
+    if (this._total - usd < 0) {
+      throw new BollardError({
+        code: "CONTRACT_VIOLATION",
+        message: `Cannot subtract ${usd} from total ${this._total}: result would be negative`,
+        context: { usd, currentTotal: this._total },
+      })
+    }
+    this._total -= usd
+  }
+
   total(): number {
     return this._total
   }

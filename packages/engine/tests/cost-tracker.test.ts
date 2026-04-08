@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import type { PipelineContext } from "../src/context.js"
 import { CostTracker } from "../src/cost-tracker.js"
 import { BollardError } from "../src/errors.js"
+import { CostTracker as PublicCostTracker } from "../src/types.js"
 
 describe("CostTracker", () => {
   it("starts with zero total", () => {
@@ -246,6 +247,178 @@ describe("CostTracker", () => {
     })
   })
 
+  describe("subtract()", () => {
+    it("reduces total cost by the given amount", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+      tracker.subtract(2)
+      expect(tracker.total()).toBe(3)
+    })
+
+    it("accepts zero as valid input", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+      tracker.subtract(0)
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("allows subtracting entire total to reach zero", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(3.5)
+      tracker.subtract(3.5)
+      expect(tracker.total()).toBe(0)
+    })
+
+    it("throws BollardError with CONTRACT_VIOLATION for negative input", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+
+      expect(() => tracker.subtract(-1)).toThrow(BollardError)
+      try {
+        tracker.subtract(-1)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty(
+          "message",
+          "Amount must be a non-negative finite number, got: -1",
+        )
+      }
+      // Verify total unchanged after error
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("throws BollardError with CONTRACT_VIOLATION when result would go below zero", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(3)
+
+      expect(() => tracker.subtract(4)).toThrow(BollardError)
+      try {
+        tracker.subtract(4)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty(
+          "message",
+          "Cannot subtract 4 from total 3: result would be negative",
+        )
+      }
+      // Verify total unchanged after error
+      expect(tracker.total()).toBe(3)
+    })
+
+    it("throws BollardError for NaN input", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+
+      expect(() => tracker.subtract(Number.NaN)).toThrow(BollardError)
+      try {
+        tracker.subtract(Number.NaN)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+      }
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("throws BollardError for Infinity input", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+
+      expect(() => tracker.subtract(Number.POSITIVE_INFINITY)).toThrow(BollardError)
+      try {
+        tracker.subtract(Number.POSITIVE_INFINITY)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+      }
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("throws BollardError for negative Infinity input", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+
+      expect(() => tracker.subtract(Number.NEGATIVE_INFINITY)).toThrow(BollardError)
+      try {
+        tracker.subtract(Number.NEGATIVE_INFINITY)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+      }
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("handles fractional amounts correctly", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5.75)
+      tracker.subtract(2.25)
+      expect(tracker.total()).toBe(3.5)
+    })
+
+    it("prevents underflow with fractional precision", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(1.1)
+
+      expect(() => tracker.subtract(1.2)).toThrow(BollardError)
+      try {
+        tracker.subtract(1.2)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+      }
+      expect(tracker.total()).toBe(1.1)
+    })
+
+    it("works correctly after reset", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+      tracker.reset()
+      tracker.add(3)
+      tracker.subtract(1)
+      expect(tracker.total()).toBe(2)
+    })
+
+    it("affects remaining budget correctly", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(7)
+      expect(tracker.remaining()).toBe(3)
+      tracker.subtract(2)
+      expect(tracker.remaining()).toBe(5)
+    })
+
+    it("affects exceeded status correctly", () => {
+      const tracker = new CostTracker(5)
+      tracker.add(6)
+      expect(tracker.exceeded()).toBe(true)
+      tracker.subtract(2)
+      expect(tracker.exceeded()).toBe(false)
+    })
+
+    it("can be called multiple times in sequence", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(8)
+      tracker.subtract(2)
+      tracker.subtract(1)
+      tracker.subtract(3)
+      expect(tracker.total()).toBe(2)
+    })
+
+    it("interacts correctly with add method", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(3)
+      tracker.subtract(1)
+      tracker.add(2)
+      tracker.subtract(0.5)
+      expect(tracker.total()).toBe(3.5)
+    })
+
+    it("snapshot reflects subtract operations", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+      const beforeSnapshot = tracker.snapshot()
+      tracker.subtract(2)
+      const afterSnapshot = tracker.snapshot()
+
+      expect(beforeSnapshot.totalCostUsd).toBe(5)
+      expect(afterSnapshot.totalCostUsd).toBe(3)
+    })
+  })
+
   describe("snapshot()", () => {
     it("returns current total cost in readonly object", () => {
       const tracker = new CostTracker(10)
@@ -429,6 +602,19 @@ describe("CostTracker", () => {
           },
         ),
       )
+    })
+  })
+
+  describe("Public API Integration", () => {
+    it("subtract method is accessible through @bollard/engine exports", () => {
+      const tracker = new PublicCostTracker(10)
+      tracker.add(5)
+      tracker.subtract(2)
+      expect(tracker.total()).toBe(3)
+
+      // Verify it's the same class
+      expect(tracker).toBeInstanceOf(CostTracker)
+      expect(typeof tracker.subtract).toBe("function")
     })
   })
 })
