@@ -49,7 +49,6 @@ docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan 
 - No semantic review agent — Stage 3c.
 - No production feedback loop (probes, drift detection) — Stage 4.
 - **Stage 3a GREEN:** Layer 1 grounding (`verifyClaimGrounding`) validated via `CostTracker.subtract()` regression — all 17 nodes passed, 5 grounded claims, 0 drops.
-- **Extractor rewrites pending:** Go and Rust extractor classes (`extractors/go.ts`, `extractors/rust.ts`) still contain the shallow Stage 2 stubs — workstreams 2–3 will wire them through the new `bollard-extract-go` / `bollard-extract-rs` helpers.
 - **`runBlueprint` signature:** takes an optional trailing `toolchainProfile` — omitting it silently disables contract nodes. Any new entry point that constructs a blueprint run must thread the profile through (see CLI `implement-feature` for the pattern).
 - **Vitest discovery of `.bollard/`:** `runTests` branches on paths containing `.bollard/` and uses `vitest.contract.config.ts`. Any new "write test to `.bollard/` then run it" flow must go through `runTests(profile, testFiles)` rather than invoking `pnpm run test` directly.
 
@@ -118,7 +117,7 @@ Pass `ANTHROPIC_API_KEY` via a `.env` file at the project root.
 Bollard ships two Docker targets:
 
 - **`dev`** (default, fast): Node 22 + pnpm + python3 + pre-built Go/Rust extractor helpers (`bollard-extract-go`, `bollard-extract-rs`). Use this for day-to-day TS development, unit tests, and any pipeline run that doesn't touch Go or Rust project code. Built by `docker compose build dev`.
-- **`dev-full`** (~2.24 GB; opt-in via compose profile `full`): extends `dev` with full Go 1.22 and Rust stable toolchains plus `pytest`/`ruff`. Required for Stage 3b validation runs and any pipeline that runs `go test` / `cargo test` / `pytest` against project code. Built by `docker compose --profile full build dev-full`. Run with `docker compose --profile full run --rm dev-full …`. The single consolidated RUN layer installs everything and cleans up build-only packages (curl, python3-pip) and unused GCC sanitizer runtimes in one pass to minimize image size.
+- **`dev-full`** (~2.24 GB; opt-in via compose profile `full`): extends `dev` with full Go 1.22 and Rust stable toolchains plus `pytest`/`ruff`. Required for Stage 3b validation runs and any pipeline that runs `go test` / `cargo test` / `pytest` against project code. Built by `docker compose --profile full build dev-full`. Run with `docker compose --profile full run --rm dev-full …`. The single consolidated RUN layer installs everything and cleans up build-only packages (curl, python3-pip) and unused GCC sanitizer runtimes in one pass to minimize image size. **Size floor is roughly 2.2 GB** (Rust toolchain + LLVM ~480 MB, Go ~224 MB, gcc/binutils/libc-dev ~120 MB, on top of the 989 MB `dev` base). Further trimming would require giving up a capability — don't chase it.
 
 CI runs the fast suite on `dev` and the Stage 3b validation suite on `dev-full`. Day-to-day contributors never need to build `dev-full` unless they're working on polyglot pipeline runs.
 
@@ -290,7 +289,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** ~8 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`
-- **Latest count (authoritative, 2026-04-08, post Stage 3b workstream 1):** `476` passed, `2` skipped (478 total). Skips: 2 LLM live smoke tests (no key). The two former Go/Rust `it.skipIf` blocks are replaced by 3 unconditional helper tests in `extractor-helpers.test.ts`.
+- **Latest count (authoritative, 2026-04-08, post Stage 3b workstream 3):** `484` passed, `2` skipped (486 total). Skips: 2 LLM live smoke tests (no key). The two former Go/Rust `it.skipIf` blocks are replaced by 3 unconditional helper tests in `extractor-helpers.test.ts`. Workstream 2 added 4 `GoAstExtractor` integration tests. Workstream 3 added 4 `RustSynExtractor` integration tests.
 
 ### Stage 3a follow-ups (agent UX)
 
@@ -366,7 +365,7 @@ Tracked here so they land in the next stage prompt without hunting through the v
 4. **Per-language mutation testing** — still Stage 3 remainder (Stryker / mutmut / cargo-mutants). Unblocked now that extractors are deterministic.
 5. **Semantic review agent** — still Stage 3 remainder.
 6. **Contract graph beyond TypeScript** — Python / Go / Rust workspace edge extraction (Stage 3b).
-7. **Streaming LLM responses** — deferred to Stage 3c per `spec/stage3a-progress-ux-prompt.md` §1 Option B; Option A (spinner + telemetry) already shipped.
+7. **Streaming LLM responses** — deferred to Stage 3c per `spec/archive/stage3a-progress-ux-prompt.md` §1 Option B; Option A (spinner + telemetry) already shipped.
 8. **Verification summary batching** — a single consolidated feedback message at turn budget exhaustion instead of per-check retries (Stage 4 candidate; related to the `deferPostCompletionVerifyFromTurn` tradeoff).
 9. **Git rollback on coder max-turns failure** — partially-written files remain on disk today.
 10. **Risk gate per-language refinement** — current skeleton is TypeScript-biased (scans diff for `^[+-]export`); Python/Go/Rust detection is Stage 3b.
@@ -623,7 +622,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - **Stage 3a GREEN (2026-04-08):** Layer 1 contract-tester grounding verifier (`verify-claim-grounding` node 12) + structured claims protocol. Validated end-to-end via `CostTracker.subtract()` self-test (17/17 nodes, 5/5 claims grounded). Post-mortem and principle in [ADR-0001](../spec/adr/0001-deterministic-filters-for-llm-output.md). Commits: `5e5e11f`, `dfced13`, `f9a9a47`, `82da59e`.
 
 ### DO NOT build yet:
-- **Streaming LLM responses (Stage 3c / 4 follow-up)** — `LLMProvider.chat_stream`, incremental delta events from `executeAgent`, CLI rendering of model output as it arrives (Option B in `spec/stage3a-progress-ux-prompt.md` §1). Deferred because it requires provider-specific streaming implementations (Anthropic, OpenAI, Google) and partial-response error handling; Option A (spinner + turn/tool telemetry without streaming) covers basic “feels alive” UX.
+- **Streaming LLM responses (Stage 3c / 4 follow-up)** — `LLMProvider.chat_stream`, incremental delta events from `executeAgent`, CLI rendering of model output as it arrives (Option B in `spec/archive/stage3a-progress-ux-prompt.md` §1). Deferred because it requires provider-specific streaming implementations (Anthropic, OpenAI, Google) and partial-response error handling; Option A (spinner + turn/tool telemetry without streaming) covers basic “feels alive” UX.
 - Per-language mutation testing (Stryker, mutmut, cargo-mutants, etc.) — Stage 3 remainder
 - Semantic review agent — Stage 3 remainder
 - Contract graph for Python/Go/Rust workspaces — Stage 3b+

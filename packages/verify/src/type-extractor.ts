@@ -5,7 +5,7 @@ import type { LLMProvider } from "@bollard/llm/src/types.js"
 import ts from "typescript"
 import { GoAstExtractor } from "./extractors/go.js"
 import { PythonAstExtractor } from "./extractors/python.js"
-import { RustExtractor } from "./extractors/rust.js"
+import { RustSynExtractor } from "./extractors/rust.js"
 
 export interface ExtractedSignature {
   filePath: string
@@ -430,7 +430,7 @@ export function getExtractor(
     case "go":
       return new GoAstExtractor(warn)
     case "rust":
-      return new RustExtractor(warn)
+      return new RustSynExtractor(warn)
     default:
       if (!provider || !model) {
         throw new BollardError({

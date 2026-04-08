@@ -1,12 +1,18 @@
-import { readFile } from "node:fs/promises"
-import { relative, resolve } from "node:path"
+import { execFile } from "node:child_process"
+import { dirname, relative, resolve } from "node:path"
+import { promisify } from "node:util"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
-import type { ExtractionResult, SignatureExtractor } from "../type-extractor.js"
+import type {
+  ExtractedSignature,
+  ExtractedTypeDefinition,
+  ExtractionResult,
+  SignatureExtractor,
+} from "../type-extractor.js"
 
-/**
- * Option B (stable Rust): line-oriented scan for pub items.
- * TODO (Stage 3b): prefer `cargo +nightly rustdoc -- --output-format json` for accuracy.
- */
+const execFileAsync = promisify(execFile)
+
+const HELPER = "bollard-extract-rs"
+
 function filterUnderWorkDir(
   files: string[],
   workDir: string | undefined,
@@ -19,7 +25,7 @@ function filterUnderWorkDir(
     const abs = resolve(f)
     const rel = relative(root, abs)
     if (rel.startsWith("..")) {
-      warn?.(`RustExtractor: skipping path outside workDir: ${f}`)
+      warn?.(`RustSynExtractor: skipping path outside workDir: ${f}`)
       continue
     }
     out.push(abs)
@@ -27,13 +33,7 @@ function filterUnderWorkDir(
   return out
 }
 
-const PUB_ITEM = /^\s*pub\s+(?:\([^)]*\)\s+)?(?:async\s+)?fn\s+(\w+)/
-const PUB_STRUCT = /^\s*pub\s+struct\s+(\w+)/
-const PUB_ENUM = /^\s*pub\s+enum\s+(\w+)/
-const PUB_TRAIT = /^\s*pub\s+trait\s+(\w+)/
-const PUB_TYPE = /^\s*pub\s+type\s+(\w+)/
-
-export class RustExtractor implements SignatureExtractor {
+export class RustSynExtractor implements SignatureExtractor {
   constructor(private readonly warn?: (msg: string) => void) {}
 
   async extract(
@@ -42,47 +42,39 @@ export class RustExtractor implements SignatureExtractor {
     workDir?: string,
   ): Promise<ExtractionResult> {
     const safe = filterUnderWorkDir(files, workDir, this.warn)
-    const signatures = []
-    for (const fp of safe) {
-      try {
-        const text = await readFile(fp, "utf-8")
-        const lines: string[] = []
-        for (const line of text.split("\n")) {
-          let m = PUB_ITEM.exec(line)
-          if (m) {
-            lines.push(`pub fn ${m[1]}(...) -> ...`)
-            continue
-          }
-          m = PUB_STRUCT.exec(line)
-          if (m) {
-            lines.push(`pub struct ${m[1]} { ... }`)
-            continue
-          }
-          m = PUB_ENUM.exec(line)
-          if (m) {
-            lines.push(`pub enum ${m[1]} { ... }`)
-            continue
-          }
-          m = PUB_TRAIT.exec(line)
-          if (m) {
-            lines.push(`pub trait ${m[1]} { ... }`)
-            continue
-          }
-          m = PUB_TYPE.exec(line)
-          if (m) {
-            lines.push(`pub type ${m[1]} = ...`)
-          }
-        }
-        signatures.push({
-          filePath: fp,
-          signatures: lines.join("\n"),
-          types: "",
-          imports: "",
-        })
-      } catch (err) {
-        this.warn?.(`RustExtractor: ${fp}: ${err instanceof Error ? err.message : String(err)}`)
+    if (safe.length === 0) return { signatures: [], types: [] }
+    try {
+      // The Rust helper resolves caller-relative paths against its own
+      // getcwd(), so we must launch it with cwd === workDir. The
+      // dirname(first) fallback only works when all files share a parent;
+      // if a future caller passes Rust files from sibling crates without
+      // a workDir, the helper will reject everything outside that dirname.
+      // TODO(stage-3b): assert workDir is always set, or compute a common
+      // ancestor across `safe` instead of leaning on safe[0].
+      const first = safe[0]
+      const cwd = workDir ? resolve(workDir) : dirname(first ?? ".")
+      const { stdout } = await execFileAsync(HELPER, safe, {
+        cwd,
+        maxBuffer: 8 * 1024 * 1024,
+        timeout: 60_000,
+      })
+      const parsed = JSON.parse(stdout) as {
+        signatures?: ExtractedSignature[]
+        types?: ExtractedTypeDefinition[]
+        warnings?: string[]
       }
+      if (parsed.warnings) {
+        for (const w of parsed.warnings) this.warn?.(`RustSynExtractor: ${w}`)
+      }
+      return {
+        signatures: parsed.signatures ?? [],
+        types: parsed.types ?? [],
+      }
+    } catch (err) {
+      this.warn?.(
+        `RustSynExtractor: ${err instanceof Error ? err.message : String(err)} — is bollard-extract-rs on PATH?`,
+      )
+      return { signatures: [], types: [] }
     }
-    return { signatures, types: [] }
   }
 }

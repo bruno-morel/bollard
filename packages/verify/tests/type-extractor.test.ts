@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process"
-import { readFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { BollardError } from "@bollard/engine/src/errors.js"
@@ -7,7 +8,7 @@ import type { LLMProvider } from "@bollard/llm/src/types.js"
 import { describe, expect, it } from "vitest"
 import { GoAstExtractor } from "../src/extractors/go.js"
 import { PythonAstExtractor } from "../src/extractors/python.js"
-import { RustExtractor } from "../src/extractors/rust.js"
+import { RustSynExtractor } from "../src/extractors/rust.js"
 import {
   type ExtractionResult,
   LlmFallbackExtractor,
@@ -323,7 +324,7 @@ describe("SignatureExtractor implementations", () => {
   it("getExtractor returns deterministic extractors for python, go, rust", () => {
     expect(getExtractor("python")).toBeInstanceOf(PythonAstExtractor)
     expect(getExtractor("go")).toBeInstanceOf(GoAstExtractor)
-    expect(getExtractor("rust")).toBeInstanceOf(RustExtractor)
+    expect(getExtractor("rust")).toBeInstanceOf(RustSynExtractor)
   })
 
   it("getExtractor with provider still uses PythonAstExtractor for python", () => {
@@ -357,6 +358,235 @@ describe("deterministic extractor integration (toolchain-gated)", () => {
       expect(result.signatures.length).toBeGreaterThan(0)
     },
   )
+})
+
+describe("GoAstExtractor", () => {
+  it("extracts exported function and skips unexported ones", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "go-ext-"))
+    try {
+      const goFile = join(dir, "main.go")
+      await writeFile(
+        goFile,
+        `package main
+
+func Add(a int, b int) int { return a + b }
+func privateHelper() {}
+`,
+      )
+      const extractor = new GoAstExtractor()
+      const result = await extractor.extract([goFile], undefined, dir)
+
+      expect(result.signatures).toHaveLength(1)
+      expect(result.signatures[0]?.filePath).toBe(goFile)
+      expect(result.signatures[0]?.signatures).toContain("Add")
+      expect(result.signatures[0]?.signatures).not.toContain("privateHelper")
+      expect(result.types).toHaveLength(0)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("extracts struct, interface, and type alias definitions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "go-ext-"))
+    try {
+      const goFile = join(dir, "types.go")
+      await writeFile(
+        goFile,
+        `package sample
+
+type User struct {
+	ID   string
+	Name string
+}
+
+type Reader interface {
+	Read(p []byte) (int, error)
+}
+
+type ID = string
+`,
+      )
+      const extractor = new GoAstExtractor()
+      const result = await extractor.extract([goFile], undefined, dir)
+
+      expect(result.signatures).toHaveLength(1)
+      expect(result.signatures[0]?.signatures).toContain("User")
+      expect(result.signatures[0]?.signatures).toContain("Reader")
+      expect(result.signatures[0]?.signatures).toContain("ID")
+
+      expect(result.types).toHaveLength(3)
+
+      const user = result.types.find((t) => t.name === "User")
+      expect(user).toBeDefined()
+      expect(user?.kind).toBe("type")
+      expect(user?.definition).toContain("string")
+
+      const reader = result.types.find((t) => t.name === "Reader")
+      expect(reader).toBeDefined()
+      expect(reader?.kind).toBe("interface")
+      expect(reader?.definition).toContain("Read")
+
+      const idAlias = result.types.find((t) => t.name === "ID")
+      expect(idAlias).toBeDefined()
+      expect(idAlias?.kind).toBe("type")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("skips files outside workDir with a warning", async () => {
+    const workDir = await mkdtemp(join(tmpdir(), "go-ext-wd-"))
+    const outside = await mkdtemp(join(tmpdir(), "go-ext-out-"))
+    try {
+      const inFile = join(workDir, "in.go")
+      const outFile = join(outside, "out.go")
+      await writeFile(inFile, "package a\nfunc InFunc() {}\n")
+      await writeFile(outFile, "package b\nfunc OutFunc() {}\n")
+
+      const warnings: string[] = []
+      const extractor = new GoAstExtractor((m) => warnings.push(m))
+      const result = await extractor.extract([inFile, outFile], undefined, workDir)
+
+      expect(warnings.some((w) => w.includes("skipping path outside workDir"))).toBe(true)
+      expect(result.signatures).toHaveLength(1)
+      expect(result.signatures[0]?.filePath).toBe(inFile)
+    } finally {
+      await rm(workDir, { recursive: true, force: true })
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it("returns empty signatures and emits warning for unparseable file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "go-ext-bad-"))
+    try {
+      const badFile = join(dir, "bad.go")
+      await writeFile(badFile, "this is not go code {{{")
+
+      const warnings: string[] = []
+      const extractor = new GoAstExtractor((m) => warnings.push(m))
+      const result = await extractor.extract([badFile], undefined, dir)
+
+      expect(result.signatures).toHaveLength(1)
+      expect(result.signatures[0]?.signatures).toBe("")
+      expect(warnings.some((w) => w.startsWith("GoAstExtractor:"))).toBe(true)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("RustSynExtractor", () => {
+  it("extracts exported function and skips private ones", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "rust-ext-"))
+    try {
+      const rsFile = join(dir, "lib.rs")
+      await writeFile(
+        rsFile,
+        `pub fn add(a: i32, b: i32) -> i32 { a + b }
+fn helper() -> bool { true }
+`,
+      )
+      const extractor = new RustSynExtractor()
+      const result = await extractor.extract([rsFile], undefined, dir)
+
+      expect(result.signatures).toHaveLength(1)
+      expect(result.signatures[0]?.filePath).toBe(rsFile)
+      expect(result.signatures[0]?.signatures).toContain("add")
+      expect(result.signatures[0]?.signatures).not.toContain("helper")
+      expect(result.types).toHaveLength(0)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("extracts struct, enum, trait, and type alias definitions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "rust-ext-"))
+    try {
+      const rsFile = join(dir, "types.rs")
+      await writeFile(
+        rsFile,
+        `pub struct Foo {
+    pub x: i32,
+}
+
+pub enum Bar {
+    A,
+    B,
+}
+
+pub trait Baz {
+    fn process(&self);
+}
+
+pub type Qux = Vec<i32>;
+`,
+      )
+      const extractor = new RustSynExtractor()
+      const result = await extractor.extract([rsFile], undefined, dir)
+
+      expect(result.types).toHaveLength(4)
+
+      const foo = result.types.find((t) => t.name === "Foo")
+      expect(foo).toBeDefined()
+      expect(foo?.definition).toBeTruthy()
+
+      const bar = result.types.find((t) => t.name === "Bar")
+      expect(bar).toBeDefined()
+      expect(bar?.kind).toBe("enum")
+      expect(bar?.definition).toBeTruthy()
+
+      const baz = result.types.find((t) => t.name === "Baz")
+      expect(baz).toBeDefined()
+      expect(baz?.kind).toBe("interface")
+      expect(baz?.definition).toBeTruthy()
+
+      const qux = result.types.find((t) => t.name === "Qux")
+      expect(qux).toBeDefined()
+      expect(qux?.definition).toBeTruthy()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("skips files outside workDir with a warning", async () => {
+    const workDir = await mkdtemp(join(tmpdir(), "rust-ext-wd-"))
+    const outside = await mkdtemp(join(tmpdir(), "rust-ext-out-"))
+    try {
+      const inFile = join(workDir, "in.rs")
+      const outFile = join(outside, "out.rs")
+      await writeFile(inFile, "pub fn inside() -> bool { true }\n")
+      await writeFile(outFile, "pub fn outside() -> bool { false }\n")
+
+      const warnings: string[] = []
+      const extractor = new RustSynExtractor((m) => warnings.push(m))
+      const result = await extractor.extract([inFile, outFile], undefined, workDir)
+
+      expect(warnings.some((w) => w.includes("skipping path outside workDir"))).toBe(true)
+      expect(result.signatures).toHaveLength(1)
+      expect(result.signatures[0]?.filePath).toBe(inFile)
+    } finally {
+      await rm(workDir, { recursive: true, force: true })
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it("returns empty result and emits warning for unparseable input", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "rust-ext-bad-"))
+    try {
+      const badFile = join(dir, "bad.rs")
+      await writeFile(badFile, "pub fn (((\n")
+
+      const warnings: string[] = []
+      const extractor = new RustSynExtractor((m) => warnings.push(m))
+      const result = await extractor.extract([badFile], undefined, dir)
+
+      expect(result.signatures).toHaveLength(1)
+      expect(result.signatures[0]?.signatures).toBe("")
+      expect(warnings.some((w) => w.startsWith("RustSynExtractor:"))).toBe(true)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe("LlmFallbackExtractor", () => {

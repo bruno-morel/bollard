@@ -30,9 +30,6 @@ interface HelperResult {
   warnings?: string[]
 }
 
-// TODO(workstream-2): replace with GoAstExtractor assertions once that class shells out to the helper
-// TODO(workstream-3): replace with RustExtractor assertions once that class shells out to the helper
-
 describe("bollard-extract-go helper", () => {
   it("extracts exported items and skips private ones from a Go file", async () => {
     const { stdout } = await execFileAsync("bollard-extract-go", [GO_FIXTURE], {
