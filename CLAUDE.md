@@ -234,7 +234,7 @@ bollard/
 │   │
 │   ├── blueprints/               ← BLUEPRINT DEFINITIONS (Stage 1 + 1.5 + 2)
 │   │   ├── src/
-│   │   │   ├── implement-feature.ts  # 17-node pipeline: boundary + contract (with grounding verifier) + docker-verify
+│   │   │   ├── implement-feature.ts  # 18-node pipeline: boundary + contract (with risk gate + grounding verifier) + docker-verify
 │   │   │   └── write-tests-helpers.ts  # deriveAdversarialTestPath (scope: boundary | contract), stripMarkdownFences
 │   │   └── tests/
 │   │       ├── implement-feature.test.ts  # node order, types, structure
@@ -321,7 +321,7 @@ Full per-check results: [`spec/stage3a-validation-results.md`](../spec/stage3a-v
 
 Full 17-node `implement-feature` self-test ran against the `CostTracker.subtract()` task:
 
-- 17/17 nodes passed on first attempt, no retries
+- 17/17 nodes passed on first attempt, no retries (Node count increased to 18 post-validation with the addition of the risk-gate skeleton, Stage 3a+ commit <TBD>.)
 - `verify-claim-grounding`: 5 claims proposed / 5 grounded / 0 dropped
 - Surviving contract tests in `.bollard/tests/contract/add-a-subtract-usd-method/cost-tracker.contract.test.ts` assert legitimate properties (negative input throws, underflow throws, basic subtraction, interaction with `add`, `snapshot` reflects subtracted cost). No float-exactness or frozen-mutation traps.
 - Test suite before → after: 406 passed / 4 skipped → **461 passed / 4 skipped** (+55 from golden corpus and pipeline-generated tests)
@@ -339,7 +339,7 @@ docker compose run --rm -e BOLLARD_AUTO_APPROVE=1 dev sh -c \
 
 Tracked here so they land in the next stage prompt without hunting through the validation results file:
 
-1. **Contract-tester grounding (Layer 1)** — shipped via [spec/08-contract-tester-grounding.md](../spec/08-contract-tester-grounding.md) and validated GREEN on 2026-04-08. Structured claims protocol with deterministic `verifyClaimGrounding` replaces the prompt-rule-per-failure approach. Blueprint is 17 nodes (new `verify-claim-grounding` deterministic node between `generate-contract-tests` and `write-contract-tests`). Principle captured in [ADR-0001](../spec/adr/0001-deterministic-filters-for-llm-output.md). Open action: emit a `contract_grounding_result` log event per run so Stage 3b has a drop-rate baseline.
+1. **Contract-tester grounding (Layer 1)** — shipped via [spec/08-contract-tester-grounding.md](../spec/08-contract-tester-grounding.md) and validated GREEN on 2026-04-08. Structured claims protocol with deterministic `verifyClaimGrounding` replaces the prompt-rule-per-failure approach. Blueprint is 18 nodes (`assess-contract-risk` risk-gate node after `run-tests`, plus `verify-claim-grounding` deterministic node between `generate-contract-tests` and `write-contract-tests`). Principle captured in [ADR-0001](../spec/adr/0001-deterministic-filters-for-llm-output.md). Open action: emit a `contract_grounding_result` log event per run so Stage 3b has a drop-rate baseline.
 2. **Go / Rust in the dev image** — so the two `it.skipIf` extractor tests become unconditional. Likely a second dev Dockerfile stage or a dedicated `Dockerfile.dev-full`.
 4. **Per-language mutation testing** — still Stage 3 remainder (Stryker / mutmut / cargo-mutants). Unblocked now that extractors are deterministic.
 5. **Semantic review agent** — still Stage 3 remainder.
@@ -347,6 +347,7 @@ Tracked here so they land in the next stage prompt without hunting through the v
 7. **Streaming LLM responses** — deferred to Stage 3c per `spec/stage3a-progress-ux-prompt.md` §1 Option B; Option A (spinner + telemetry) already shipped.
 8. **Verification summary batching** — a single consolidated feedback message at turn budget exhaustion instead of per-check retries (Stage 4 candidate; related to the `deferPostCompletionVerifyFromTurn` tradeoff).
 9. **Git rollback on coder max-turns failure** — partially-written files remain on disk today.
+10. **Risk gate per-language refinement** — current skeleton is TypeScript-biased (scans diff for `^[+-]export`); Python/Go/Rust detection is Stage 3b.
 
 ## Key Types (Source of Truth)
 
@@ -445,7 +446,7 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 
 ### implement-feature blueprint (packages/blueprints/src/implement-feature.ts)
 
-17-node pipeline:
+18-node pipeline:
 
 1. **create-branch** (deterministic) — `git checkout -b bollard/{runId}`
 2. **generate-plan** (agentic/planner) — planner agent explores codebase, produces JSON plan
@@ -456,14 +457,15 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 7. **generate-tests** (agentic/boundary-tester) — boundary-scope adversarial tests
 8. **write-tests** (deterministic) — strip fences, `deriveAdversarialTestPath(..., "boundary")`, leak scan
 9. **run-tests** (deterministic) — profile-driven test execution
-10. **extract-contracts** (deterministic) — `buildContractContext` (skipped when `!profile.adversarial.contract.enabled`)
-11. **generate-contract-tests** (agentic/contract-tester) — emits JSON claims document (skipped in agent-handler when contract disabled)
-12. **verify-claim-grounding** (deterministic) — `parseClaimDocument` + `verifyClaimGrounding` against `ContractCorpus`; drops ungrounded claims, fails on zero survivors (`CONTRACT_TESTER_NO_GROUNDED_CLAIMS`) or malformed JSON (`CONTRACT_TESTER_OUTPUT_INVALID`)
-13. **write-contract-tests** (deterministic) — assembles surviving claim `.test` fields into a test file, `resolveContractTestOutputRel` + contract path basename, TS leak scan
-14. **run-contract-tests** (deterministic) — `runTests` with only the new contract test file path
-15. **docker-verify** (deterministic) — Docker-isolated adversarial test execution (gracefully degrades without Docker)
-16. **generate-diff** (deterministic) — `git diff --stat main`
-17. **approve-pr** (human_gate) — shows diff summary, waits for human approval
+10. **assess-contract-risk** (deterministic) — emits `contract_scope_decision` event; skips downstream contract nodes when risk is low and no exported symbols changed
+11. **extract-contracts** (deterministic) — `buildContractContext` (skipped when `!profile.adversarial.contract.enabled` or risk-gate says skip)
+12. **generate-contract-tests** (agentic/contract-tester) — emits JSON claims document (skipped in agent-handler when contract disabled)
+13. **verify-claim-grounding** (deterministic) — `parseClaimDocument` + `verifyClaimGrounding` against `ContractCorpus`; drops ungrounded claims, fails on zero survivors (`CONTRACT_TESTER_NO_GROUNDED_CLAIMS`) or malformed JSON (`CONTRACT_TESTER_OUTPUT_INVALID`)
+14. **write-contract-tests** (deterministic) — assembles surviving claim `.test` fields into a test file, `resolveContractTestOutputRel` + contract path basename, TS leak scan
+15. **run-contract-tests** (deterministic) — `runTests` with only the new contract test file path
+16. **docker-verify** (deterministic) — Docker-isolated adversarial test execution (gracefully degrades without Docker)
+17. **generate-diff** (deterministic) — `git diff --stat main`
+18. **approve-pr** (human_gate) — shows diff summary, waits for human approval
 
 ### CLI commands
 
@@ -588,7 +590,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - `LLMClient` resolves `"openai"` and `"google"` providers via env vars
 - `promote-test` CLI command — copy adversarial tests to project test directory
 - `bollard init` generates `.bollard.yml` and `.bollard/mcp.json`
-- Blueprint now has **17 nodes** (contract nodes + grounding verifier between `run-tests` and `docker-verify`)
+- Blueprint now has **18 nodes** (risk gate + contract nodes + grounding verifier between `run-tests` and `docker-verify`)
 
 ### Stage 3a (DONE) — Contract scope bundle
 - `AdversarialConfig` per scope + `concerns.ts` defaults and YAML merge (`CONCERN_CONFIG_INVALID` on bad config)

@@ -2,6 +2,7 @@ import { execFile } from "node:child_process"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { promisify } from "node:util"
+import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { Blueprint, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
@@ -50,6 +51,32 @@ function getAffectedSourceFiles(ctx: PipelineContext): string[] {
   }
 
   return allFiles.filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
+}
+
+export function scanDiffForExportChanges(diffText: string): boolean {
+  return diffText.split("\n").some((line) => /^[+-]export\s/.test(line))
+}
+
+// Crude TypeScript-biased check; Stage 3b refines per-language
+// (see ADR-0001 action-item 6 and spec/07-adversarial-scopes.md).
+async function hasExportedSymbolChanges(
+  workDir: string,
+  profile: ToolchainProfile,
+  warn: (message: string, data?: Record<string, unknown>) => void,
+): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["diff", "main", "--", ...profile.sourcePatterns],
+      { cwd: workDir },
+    )
+    return scanDiffForExportChanges(stdout)
+  } catch (err: unknown) {
+    warn("hasExportedSymbolChanges: git diff failed, assuming exports changed", {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return true
+  }
 }
 
 export interface BlueprintLlmConfig {
@@ -254,6 +281,57 @@ export function createImplementFeatureBlueprint(
       },
 
       {
+        id: "assess-contract-risk",
+        name: "Assess Contract Risk",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const profile = ctx.toolchainProfile
+
+          if (profile?.adversarial.contract.enabled !== true) {
+            ctx.log.info("contract_scope_decision", {
+              event: "contract_scope_decision",
+              runId: ctx.runId,
+              decision: "skipped-by-profile",
+              riskLevel: "n/a",
+              touchesExportedSymbols: false,
+              skipContract: true,
+            })
+            return {
+              status: "ok",
+              data: { skipContract: true, reason: "contract scope disabled in profile" },
+            }
+          }
+
+          const plan = ctx.plan as { risk_assessment?: { level?: unknown } } | undefined
+          const riskLevel =
+            typeof plan?.risk_assessment?.level === "string"
+              ? plan.risk_assessment.level.toLowerCase()
+              : "unknown"
+          const touchesExportedSymbols = await hasExportedSymbolChanges(
+            workDir,
+            profile,
+            ctx.log.warn,
+          )
+          const skipContract = riskLevel === "low" && !touchesExportedSymbols
+
+          const decision = skipContract ? "skipped-by-risk-gate" : "run"
+          ctx.log.info("contract_scope_decision", {
+            event: "contract_scope_decision",
+            runId: ctx.runId,
+            decision,
+            riskLevel,
+            touchesExportedSymbols,
+            skipContract,
+          })
+
+          return {
+            status: "ok",
+            data: { skipContract, riskLevel, touchesExportedSymbols },
+          }
+        },
+      },
+
+      {
         id: "extract-contracts",
         name: "Extract Contract Graph",
         type: "deterministic",
@@ -261,6 +339,12 @@ export function createImplementFeatureBlueprint(
           const profile = ctx.toolchainProfile
           if (!profile?.adversarial.contract.enabled) {
             return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
+          }
+          const riskGate = ctx.results["assess-contract-risk"]?.data as
+            | { skipContract?: boolean }
+            | undefined
+          if (riskGate?.skipContract) {
+            return { status: "ok", data: { skipped: true, reason: "risk-gate" } }
           }
           const affected = getAffectedSourceFiles(ctx)
           const contract = await buildContractContext(affected, profile, workDir, ctx.log.warn)
@@ -293,6 +377,12 @@ export function createImplementFeatureBlueprint(
               droppedSymbols: [],
             })
             return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
+          }
+          const riskGate = ctx.results["assess-contract-risk"]?.data as
+            | { skipContract?: boolean }
+            | undefined
+          if (riskGate?.skipContract) {
+            return { status: "ok", data: { skipped: true, reason: "risk-gate" } }
           }
 
           const gen = ctx.results["generate-contract-tests"]
@@ -386,6 +476,12 @@ export function createImplementFeatureBlueprint(
           const profile = ctx.toolchainProfile
           if (!profile?.adversarial.contract.enabled) {
             return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
+          }
+          const riskGate = ctx.results["assess-contract-risk"]?.data as
+            | { skipContract?: boolean }
+            | undefined
+          if (riskGate?.skipContract) {
+            return { status: "ok", data: { skipped: true, reason: "risk-gate" } }
           }
 
           const verifyRes = ctx.results["verify-claim-grounding"]?.data as
@@ -500,6 +596,12 @@ export function createImplementFeatureBlueprint(
           const profile = ctx.toolchainProfile
           if (!profile?.adversarial.contract.enabled) {
             return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
+          }
+          const riskGate = ctx.results["assess-contract-risk"]?.data as
+            | { skipContract?: boolean }
+            | undefined
+          if (riskGate?.skipContract) {
+            return { status: "ok", data: { skipped: true, reason: "risk-gate" } }
           }
 
           const writeRes = ctx.results["write-contract-tests"]?.data as
