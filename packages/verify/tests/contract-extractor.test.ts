@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { buildContractContext } from "../src/contract-extractor.js"
 
 const THIS_DIR = dirname(fileURLToPath(import.meta.url))
@@ -70,5 +70,26 @@ describe("buildContractContext", () => {
     expect(blob).not.toContain("skipVerificationAfterTurn")
     expect(blob).not.toContain("processConcernBlocks")
     expect(blob).not.toContain("extractClassSignature")
+  })
+
+  it("returns empty graph and warns for an unimplemented language provider", async () => {
+    const ruby: ToolchainProfile = {
+      ...tsProfile,
+      language: "ruby",
+      adversarial: defaultAdversarialConfig({ language: "ruby" }),
+    }
+    const warn = vi.fn()
+    const ctx = await buildContractContext([], ruby, REPO_ROOT, warn)
+    expect(ctx).toEqual({ modules: [], edges: [], affectedEdges: [] })
+    expect(warn).toHaveBeenCalledOnce()
+    expect(warn.mock.calls[0]?.[0]).toContain("ruby")
+    expect(warn.mock.calls[0]?.[0]).toContain("provider not implemented")
+  })
+
+  it("routes TypeScript profile through the provider and returns modules", async () => {
+    const ctx = await buildContractContext([], tsProfile, REPO_ROOT)
+    expect(ctx.modules.length).toBeGreaterThan(0)
+    const languages = new Set(ctx.modules.map((m) => m.language))
+    expect(languages).toEqual(new Set(["typescript"]))
   })
 })

@@ -125,6 +125,16 @@ export interface ContractContext {
   affectedEdges: ContractEdge[]
 }
 
+export interface ContractGraphProvider {
+  readonly language: LanguageId
+  build(
+    affectedFiles: string[],
+    profile: ToolchainProfile,
+    workDir: string,
+    warn?: (msg: string) => void,
+  ): Promise<ContractContext>
+}
+
 async function readWorkspacePackageRoots(workDir: string): Promise<Map<string, string>> {
   const idToRoot = new Map<string, string>()
   const wsPath = join(workDir, "pnpm-workspace.yaml")
@@ -256,97 +266,114 @@ function parseImportSpecs(sourceFile: ts.SourceFile): { spec: string; names: str
   return out
 }
 
+class TypeScriptContractProvider implements ContractGraphProvider {
+  readonly language: LanguageId = "typescript"
+
+  async build(
+    affectedFiles: string[],
+    _profile: ToolchainProfile,
+    workDir: string,
+    warn?: (msg: string) => void,
+  ): Promise<ContractContext> {
+    const idToRoot = await readWorkspacePackageRoots(workDir)
+    if (idToRoot.size === 0) {
+      warn?.(
+        "buildContractContext: no workspace packages found (pnpm-workspace.yaml + package.json names)",
+      )
+      return { modules: [], edges: [], affectedEdges: [] }
+    }
+
+    const extractor = new TsCompilerExtractor()
+    const modules: ModuleNode[] = []
+
+    for (const [id, root] of idToRoot) {
+      const files = await listPackageSourceFiles(root)
+      if (files.length === 0) continue
+      const surface = await publicSurfaceFilesForPackage(root)
+      const merged = await extractor.extract(files, _profile, workDir)
+      const signatures = filterByPublicSurface(merged.signatures, surface)
+      const types = filterByPublicSurface(merged.types, surface)
+      const errorTypes = types.filter((t) => t.name.endsWith("Error")).map((t) => t.name)
+      modules.push({
+        id,
+        language: "typescript",
+        rootPath: resolve(root),
+        publicExports: signatures,
+        errorTypes,
+      })
+    }
+
+    const modById = new Map(modules.map((m) => [m.id, m]))
+    const edgeMap = new Map<string, ContractEdge>()
+
+    for (const [id, root] of idToRoot) {
+      const files = await listPackageSourceFiles(root)
+      for (const fp of files) {
+        let text: string
+        try {
+          text = await readFile(fp, "utf-8")
+        } catch {
+          continue
+        }
+        const sf = ts.createSourceFile(fp, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+        const abs = resolve(fp)
+        const consumer = packageForPath(abs, idToRoot)
+        if (!consumer || consumer.id !== id) continue
+
+        for (const imp of parseImportSpecs(sf)) {
+          if (!imp.spec.startsWith("@bollard/")) continue
+          const toId = workspacePackageIdFromImportSpec(imp.spec)
+          if (!toId || !idToRoot.has(toId)) continue
+          const key = `${consumer.id}->${toId}`
+          let edge = edgeMap.get(key)
+          if (!edge) {
+            const prov = modById.get(toId)
+            edge = {
+              from: consumer.id,
+              to: toId,
+              importedSymbols: [],
+              providerErrors: [...(prov?.errorTypes ?? [])],
+              consumerCatches: [],
+            }
+            edgeMap.set(key, edge)
+          }
+          for (const n of imp.names) {
+            if (!edge.importedSymbols.includes(n)) edge.importedSymbols.push(n)
+          }
+        }
+      }
+    }
+
+    const edges = [...edgeMap.values()]
+
+    const touched = new Set<string>()
+    for (const rel of affectedFiles) {
+      const abs = resolve(workDir, rel)
+      const p = packageForPath(abs, idToRoot)
+      if (p) touched.add(p.id)
+    }
+    const affectedEdges = edges.filter((e) => touched.has(e.from) || touched.has(e.to))
+
+    return { modules, edges, affectedEdges }
+  }
+}
+
+const PROVIDERS: Partial<Record<LanguageId, ContractGraphProvider>> = {
+  typescript: new TypeScriptContractProvider(),
+}
+
 export async function buildContractContext(
   affectedFiles: string[],
   profile: ToolchainProfile,
   workDir: string,
   warn?: (msg: string) => void,
 ): Promise<ContractContext> {
-  if (profile.language !== "typescript") {
+  const provider = PROVIDERS[profile.language]
+  if (!provider) {
     warn?.(
-      `buildContractContext: ${profile.language} not implemented in Stage 3a — returning empty graph`,
+      `buildContractContext: ${profile.language} provider not implemented — returning empty graph`,
     )
     return { modules: [], edges: [], affectedEdges: [] }
   }
-
-  const idToRoot = await readWorkspacePackageRoots(workDir)
-  if (idToRoot.size === 0) {
-    warn?.(
-      "buildContractContext: no workspace packages found (pnpm-workspace.yaml + package.json names)",
-    )
-    return { modules: [], edges: [], affectedEdges: [] }
-  }
-
-  const extractor = new TsCompilerExtractor()
-  const modules: ModuleNode[] = []
-
-  for (const [id, root] of idToRoot) {
-    const files = await listPackageSourceFiles(root)
-    if (files.length === 0) continue
-    const surface = await publicSurfaceFilesForPackage(root)
-    const merged = await extractor.extract(files, profile, workDir)
-    const signatures = filterByPublicSurface(merged.signatures, surface)
-    const types = filterByPublicSurface(merged.types, surface)
-    const errorTypes = types.filter((t) => t.name.endsWith("Error")).map((t) => t.name)
-    modules.push({
-      id,
-      language: "typescript",
-      rootPath: resolve(root),
-      publicExports: signatures,
-      errorTypes,
-    })
-  }
-
-  const modById = new Map(modules.map((m) => [m.id, m]))
-  const edgeMap = new Map<string, ContractEdge>()
-
-  for (const [id, root] of idToRoot) {
-    const files = await listPackageSourceFiles(root)
-    for (const fp of files) {
-      let text: string
-      try {
-        text = await readFile(fp, "utf-8")
-      } catch {
-        continue
-      }
-      const sf = ts.createSourceFile(fp, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
-      const abs = resolve(fp)
-      const consumer = packageForPath(abs, idToRoot)
-      if (!consumer || consumer.id !== id) continue
-
-      for (const imp of parseImportSpecs(sf)) {
-        if (!imp.spec.startsWith("@bollard/")) continue
-        const toId = workspacePackageIdFromImportSpec(imp.spec)
-        if (!toId || !idToRoot.has(toId)) continue
-        const key = `${consumer.id}->${toId}`
-        let edge = edgeMap.get(key)
-        if (!edge) {
-          const prov = modById.get(toId)
-          edge = {
-            from: consumer.id,
-            to: toId,
-            importedSymbols: [],
-            providerErrors: [...(prov?.errorTypes ?? [])],
-            consumerCatches: [],
-          }
-          edgeMap.set(key, edge)
-        }
-        for (const n of imp.names) {
-          if (!edge.importedSymbols.includes(n)) edge.importedSymbols.push(n)
-        }
-      }
-    }
-  }
-
-  const edges = [...edgeMap.values()]
-
-  const touched = new Set<string>()
-  for (const rel of affectedFiles) {
-    const abs = resolve(workDir, rel)
-    const p = packageForPath(abs, idToRoot)
-    if (p) touched.add(p.id)
-  }
-  const affectedEdges = edges.filter((e) => touched.has(e.from) || touched.has(e.to))
-
-  return { modules, edges, affectedEdges }
+  return provider.build(affectedFiles, profile, workDir, warn)
 }
