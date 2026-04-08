@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: dev
     volumes:
       - .:/app
       - node_modules:/app/node_modules
@@ -24,6 +25,35 @@ services:
       - NODE_OPTIONS=--disable-warning=DEP0040
     entrypoint: ["pnpm"]
 
+  dev-full:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev-full
+    volumes:
+      - .:/app
+      - node_modules_full:/app/node_modules
+      - engine_modules_full:/app/packages/engine/node_modules
+      - llm_modules_full:/app/packages/llm/node_modules
+      - cli_modules_full:/app/packages/cli/node_modules
+      - agents_modules_full:/app/packages/agents/node_modules
+      - verify_modules_full:/app/packages/verify/node_modules
+      - blueprints_modules_full:/app/packages/blueprints/node_modules
+      - detect_modules_full:/app/packages/detect/node_modules
+      - mcp_modules_full:/app/packages/mcp/node_modules
+      - /var/run/docker.sock:/var/run/docker.sock
+      - go_cache:/root/.cache/go-build
+      - cargo_cache:/root/.cargo/registry
+    working_dir: /app
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - BOLLARD_AUTO_APPROVE=${BOLLARD_AUTO_APPROVE:-}
+      - NODE_OPTIONS=--disable-warning=DEP0040
+    entrypoint: ["pnpm"]
+
 volumes:
   node_modules:
   engine_modules:
@@ -34,3 +64,14 @@ volumes:
   blueprints_modules:
   detect_modules:
   mcp_modules:
+  node_modules_full:
+  engine_modules_full:
+  llm_modules_full:
+  cli_modules_full:
+  agents_modules_full:
+  verify_modules_full:
+  blueprints_modules_full:
+  detect_modules_full:
+  mcp_modules_full:
+  go_cache:
+  cargo_cache:

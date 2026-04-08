@@ -49,7 +49,7 @@ docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan 
 - No semantic review agent — Stage 3c.
 - No production feedback loop (probes, drift detection) — Stage 4.
 - **Stage 3a GREEN:** Layer 1 grounding (`verifyClaimGrounding`) validated via `CostTracker.subtract()` regression — all 17 nodes passed, 5 grounded claims, 0 drops.
-- **Dev image Go/Rust gap:** `packages/verify/tests/type-extractor.test.ts` has two `it.skipIf(go/rustc absent)` integration tests marked `TODO(stage-3b)`. The deterministic extractors exist, but CI can't exercise them until the dev image grows a Go + Rust toolchain (or we add a `Dockerfile.dev-full` variant).
+- **Extractor rewrites pending:** Go and Rust extractor classes (`extractors/go.ts`, `extractors/rust.ts`) still contain the shallow Stage 2 stubs — workstreams 2–3 will wire them through the new `bollard-extract-go` / `bollard-extract-rs` helpers.
 - **`runBlueprint` signature:** takes an optional trailing `toolchainProfile` — omitting it silently disables contract nodes. Any new entry point that constructs a blueprint run must thread the profile through (see CLI `implement-feature` for the pattern).
 - **Vitest discovery of `.bollard/`:** `runTests` branches on paths containing `.bollard/` and uses `vitest.contract.config.ts`. Any new "write test to `.bollard/` then run it" flow must go through `runTests(profile, testFiles)` rather than invoking `pnpm run test` directly.
 
@@ -113,12 +113,33 @@ The `compose.yaml` mounts the workspace as a volume so edits are reflected immed
 
 Pass `ANTHROPIC_API_KEY` via a `.env` file at the project root.
 
-## Project Structure (Stage 3a)
+### Two images: `dev` and `dev-full`
+
+Bollard ships two Docker targets:
+
+- **`dev`** (default, fast): Node 22 + pnpm + python3 + pre-built Go/Rust extractor helpers (`bollard-extract-go`, `bollard-extract-rs`). Use this for day-to-day TS development, unit tests, and any pipeline run that doesn't touch Go or Rust project code. Built by `docker compose build dev`.
+- **`dev-full`** (~2.24 GB; opt-in via compose profile `full`): extends `dev` with full Go 1.22 and Rust stable toolchains plus `pytest`/`ruff`. Required for Stage 3b validation runs and any pipeline that runs `go test` / `cargo test` / `pytest` against project code. Built by `docker compose --profile full build dev-full`. Run with `docker compose --profile full run --rm dev-full …`. The single consolidated RUN layer installs everything and cleans up build-only packages (curl, python3-pip) and unused GCC sanitizer runtimes in one pass to minimize image size.
+
+CI runs the fast suite on `dev` and the Stage 3b validation suite on `dev-full`. Day-to-day contributors never need to build `dev-full` unless they're working on polyglot pipeline runs.
+
+## Project Structure (Stage 3b)
 
 ```
 bollard/
-├── Dockerfile                    # Node 22 + pnpm dev image
-├── compose.yaml                  # Docker Compose for all dev commands
+├── Dockerfile                    # Multi-stage: go-helper-builder, rust-helper-builder, dev, dev-full
+├── compose.yaml                  # Docker Compose for all dev commands (dev + dev-full behind `full` profile)
+├── scripts/
+│   ├── extract_go/               # Go AST extractor helper (bollard-extract-go binary)
+│   │   ├── go.mod
+│   │   ├── main.go
+│   │   ├── extract.go
+│   │   └── extract_test.go
+│   ├── extract_rs/               # Rust syn-based extractor helper (bollard-extract-rs binary)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── main.rs
+│   │       └── extract.rs
+│   └── retro-adversarial.ts
 ├── docker/
 │   ├── Dockerfile.verify         # Black-box adversarial test container (Node 22 + vitest)
 │   ├── Dockerfile.verify-python  # Node + Python 3 runtime
@@ -228,6 +249,7 @@ bollard/
 │   │       ├── static.test.ts    # 4 tests — structure + live integration
 │   │       ├── dynamic.test.ts   # 2 tests — integration test
 │   │       ├── type-extractor.test.ts  # signatures, types, extractors
+│   │       ├── extractor-helpers.test.ts  # 3 tests — bollard-extract-go/rs helper binaries
 │   │       ├── contract-extractor.test.ts
 │   │       ├── compose-generator.test.ts  # 6 tests — YAML generation per language/mode
 │   │       └── test-lifecycle.test.ts  # lifecycle resolution, output dirs, metadata
@@ -268,7 +290,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** ~8 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`
-- **Latest count (authoritative, 2026-04-08, post Stage 3a GREEN):** `461` passed, `4` skipped (465 total). Skips: 2 LLM live smoke tests (no key) + 2 toolchain-gated extractor integration tests (`go` / `rustc` absent from dev image — TODO(stage-3b)).
+- **Latest count (authoritative, 2026-04-08, post Stage 3b workstream 1):** `476` passed, `2` skipped (478 total). Skips: 2 LLM live smoke tests (no key). The two former Go/Rust `it.skipIf` blocks are replaced by 3 unconditional helper tests in `extractor-helpers.test.ts`.
 
 ### Stage 3a follow-ups (agent UX)
 
@@ -340,7 +362,7 @@ docker compose run --rm -e BOLLARD_AUTO_APPROVE=1 dev sh -c \
 Tracked here so they land in the next stage prompt without hunting through the validation results file:
 
 1. **Contract-tester grounding (Layer 1)** — shipped via [spec/08-contract-tester-grounding.md](../spec/08-contract-tester-grounding.md) and validated GREEN on 2026-04-08. Structured claims protocol with deterministic `verifyClaimGrounding` replaces the prompt-rule-per-failure approach. Blueprint is 18 nodes (`assess-contract-risk` risk-gate node after `run-tests`, plus `verify-claim-grounding` deterministic node between `generate-contract-tests` and `write-contract-tests`). Principle captured in [ADR-0001](../spec/adr/0001-deterministic-filters-for-llm-output.md). Open action: emit a `contract_grounding_result` log event per run so Stage 3b has a drop-rate baseline.
-2. **Go / Rust in the dev image** — so the two `it.skipIf` extractor tests become unconditional. Likely a second dev Dockerfile stage or a dedicated `Dockerfile.dev-full`.
+2. ~~**Go / Rust in the dev image**~~ — **Done (Stage 3b workstream 1).** Multi-stage Dockerfile builds `bollard-extract-go` and `bollard-extract-rs` helper binaries into the `dev` image. `dev-full` adds full Go + Rust toolchains behind the `full` compose profile. The two `it.skipIf` extractor tests are replaced by unconditional helper tests in `extractor-helpers.test.ts`.
 4. **Per-language mutation testing** — still Stage 3 remainder (Stryker / mutmut / cargo-mutants). Unblocked now that extractors are deterministic.
 5. **Semantic review agent** — still Stage 3 remainder.
 6. **Contract graph beyond TypeScript** — Python / Go / Rust workspace edge extraction (Stage 3b).

@@ -9,3 +9,4 @@ _tmp_*/
 .cursor/
 .vscode/
 .idea/
+.stage3b-slim-audit.log
