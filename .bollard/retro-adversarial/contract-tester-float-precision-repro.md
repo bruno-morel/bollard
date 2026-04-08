@@ -94,3 +94,35 @@ alongside merged `CostTracker.snapshot()` implementation.
 Teach contract-tester that **readonly / frozen snapshot objects** may throw on
 mutation at runtime in strict engines, so tests should use `toThrow()` (or avoid
 asserting mutation behavior) when the implementation is allowed to freeze.
+
+---
+
+## 2026-04-08 — Layer 1 grounding architecture
+
+Both the float-exactness case and the readonly-mutation case are now
+handled architecturally by Layer 1 of the contract-tester grounding
+design ([`spec/08-contract-tester-grounding.md`](../../spec/08-contract-tester-grounding.md)).
+
+The `# Assertion Rules` section in the prompt was removed entirely.
+Instead, the contract-tester now emits a JSON claims document where each
+claim must include a `grounding` array with verbatim quotes from the
+contract context. A new deterministic node (`verify-claim-grounding`)
+runs `verifyClaimGrounding` which checks each quote as a substring of
+the flattened corpus. Claims whose grounding does not appear in the
+context are dropped before any test file is written.
+
+- **Float case:** The claim "adding 0.1 and 0.2 yields exactly 0.3"
+  would need a grounding quote entailing exact arithmetic. The return
+  type says `number`; nothing in the corpus promises exactness. The
+  verifier drops the claim with reason `grounding_not_in_context`.
+
+- **Readonly case:** The claim "mutation of snapshot does not throw at
+  runtime" would need a grounding quote entailing runtime mutability.
+  Under v1 (substring match only), if the agent quotes
+  `Readonly<{ totalCostUsd: number }>`, the quote *exists* in the
+  corpus, so v1 keeps it. The runtime test remains the final gate.
+  Layer 2 (NormalizedContract with compile-time annotations vs runtime
+  guarantees) addresses this gap.
+
+The per-failure prompt rules are no longer needed because the grounding
+protocol makes unjustified claims structurally impossible to emit.

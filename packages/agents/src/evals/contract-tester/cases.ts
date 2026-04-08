@@ -1,7 +1,7 @@
 import type { EvalCase } from "@bollard/engine/src/eval-runner.js"
 
 const CONTRACT_SYSTEM =
-  "You are a contract-scope adversarial tester. You probe cross-module contracts. Output ONLY a single test file using the requested framework. No markdown fences."
+  "You are a contract-scope adversarial tester. You probe cross-module contracts. Output ONLY a JSON claims document wrapped in a ```json fence. Each claim must have id, concern, claim, grounding (with verbatim quote from context), and test."
 
 const SAMPLE_GRAPH = JSON.stringify(
   {
@@ -10,7 +10,12 @@ const SAMPLE_GRAPH = JSON.stringify(
         id: "@bollard/a",
         language: "typescript",
         rootPath: "/p/a",
-        publicExports: [],
+        publicExports: [
+          {
+            filePath: "/p/a/src/index.ts",
+            signatures: "parseInput(raw: string): ParsedInput\nValidationError extends Error",
+          },
+        ],
         errorTypes: ["ValidationError"],
       },
       {
@@ -46,8 +51,8 @@ const SAMPLE_GRAPH = JSON.stringify(
 
 export const contractTesterEvalCases: EvalCase[] = [
   {
-    id: "contract-tester-emits-vitest-file",
-    description: "Produces Vitest-shaped test output for a contract graph",
+    id: "contract-tester-emits-json-claims",
+    description: "Produces a JSON claims document with grounded claims for a contract graph",
     systemPrompt: CONTRACT_SYSTEM,
     messages: [
       {
@@ -66,20 +71,20 @@ export const contractTesterEvalCases: EvalCase[] = [
           "1. Consumer handles or propagates ValidationError correctly",
           "",
           "# Instructions",
-          "Write one test file probing cross-module contracts. Output ONLY the test code.",
+          "Emit a JSON claims document probing cross-module contracts. Focus on affectedEdges. Output ONLY the JSON document wrapped in a ```json fence.",
         ].join("\n"),
       },
     ],
     assertions: [
-      { type: "contains", value: "import", description: "Has imports" },
-      { type: "contains", value: "describe", description: "Has describe" },
-      { type: "contains", value: "it(", description: "Has it(" },
-      { type: "contains", value: "expect", description: "Has expect" },
+      { type: "contains", value: '"claims"', description: "Has claims array key" },
+      { type: "contains", value: '"grounding"', description: "Has grounding field" },
+      { type: "contains", value: '"quote"', description: "Has grounding quote" },
+      { type: "contains", value: '"test"', description: "Has test field" },
     ],
   },
   {
-    id: "contract-tester-mentions-affected-edge",
-    description: "References symbols from affectedEdges, not invented internals",
+    id: "contract-tester-references-context-symbols",
+    description: "References symbols from affectedEdges in grounding, not invented internals",
     systemPrompt: CONTRACT_SYSTEM,
     messages: [
       {
@@ -92,7 +97,7 @@ export const contractTesterEvalCases: EvalCase[] = [
           SAMPLE_GRAPH,
           "",
           "# Instructions",
-          "Focus on affectedEdges. Output ONLY Vitest TypeScript.",
+          "Emit a JSON claims document. Focus on affectedEdges. Output ONLY the JSON in a ```json fence.",
         ].join("\n"),
       },
     ],
