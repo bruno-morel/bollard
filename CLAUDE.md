@@ -9,7 +9,7 @@ Bollard is an **artifact integrity framework** for AI-assisted software developm
 Bollard has completed **Stage 2** (adversarial verification infrastructure) and **Stage 3a** (contract-scope adversarial testing — first slice of Stage 3, **validated GREEN on 2026-04-08** — see [spec/stage3a-validation-results.md](../spec/stage3a-validation-results.md) and the "Stage 3a Validation" section below). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, boundary tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 (first half) fixed critical agent infrastructure issues: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. Stage 2 (second half) added Docker-isolated verification containers, LLM fallback signature extraction for edge languages, in-language adversarial test generation, adversarial test lifecycle (ephemeral + persistent-native), MCP server (`@bollard/mcp`), and OpenAI + Google LLM providers. **Stage 3a** adds per-scope `AdversarialConfig` with concern weights, `boundary-tester` + `contract-tester` agents, deterministic extractors for Python/Go/Rust, TypeScript contract graph (`buildContractContext`), four contract blueprint nodes, and `bollard contract` / MCP `bollard_contract`.
 
 The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md) and the [Stage 3a → 3b follow-ups](#stage-3a--stage-3b-follow-ups) section below):
-- **Stage 3a follow-ups (blockers before calling 3a GREEN):** one full 17-node `implement-feature` self-test with Layer 1 grounding (see [spec/08-contract-tester-grounding.md](../spec/08-contract-tester-grounding.md)); Go/Rust toolchains in dev image.
+- **Stage 3a follow-ups (open, non-blocking):** `contract_grounding_result` log event per run (drop-rate baseline for Stage 3b); Go/Rust toolchains in dev image so the two `it.skipIf` extractor tests become unconditional.
 - **Stage 3b:** Contract graph beyond TypeScript (Python / Go / Rust workspaces); deeper extractor accuracy.
 - **Stage 3c:** Per-language mutation testing (Stryker / mutmut / cargo-mutants); semantic review agent; streaming LLM responses (deferred from 3a progress UX).
 - **Stage 4:** Behavioral-scope adversarial testing + production feedback loop.
@@ -268,7 +268,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** ~8 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`
-- **Latest count (authoritative, 2026-04-08):** `444` passed, `4` skipped (448 total). Skips: 2 LLM live smoke tests (no key) + 2 toolchain-gated extractor integration tests (`go` / `rustc` absent from dev image — TODO(stage-3b)).
+- **Latest count (authoritative, 2026-04-08, post Stage 3a GREEN):** `461` passed, `4` skipped (465 total). Skips: 2 LLM live smoke tests (no key) + 2 toolchain-gated extractor integration tests (`go` / `rustc` absent from dev image — TODO(stage-3b)).
 
 ### Stage 3a follow-ups (agent UX)
 
@@ -298,7 +298,7 @@ docker compose run --rm dev --filter @bollard/cli run start -- contract
 
 Full per-check results: [`spec/stage3a-validation-results.md`](../spec/stage3a-validation-results.md).
 
-- **Test suite:** 406 passed / 4 skipped; typecheck + lint clean.
+- **Test suite (post-GREEN, 2026-04-08):** 461 passed / 4 skipped; typecheck + lint clean. (+55 from grounding golden corpus and pipeline-generated `CostTracker.subtract()` tests.)
 - **Information barrier fix:** `buildContractContext` now limits `publicExports` / reachable types to files in the `package.json` `exports["."]` re-export closure — private engine internals (`compactOlderTurns`, `deferPostCompletionVerifyFromTurn`, etc.) no longer leak into the contract-tester prompt. Regression test added.
 - **Executor rename:** `ExecutorOptions.skipVerificationAfterTurn` → `deferPostCompletionVerifyFromTurn` (more accurately describes the deferral semantics — the post-completion verification hook is deferred above the 80% turn budget, not permanently skipped).
 - **`pnpm.overrides` for `vite >= 7.3.2`:** Clears the high-severity GHSA surfaced by `pnpm audit --audit-level=high` — unblocks the `static-checks` node in `implement-feature`.
@@ -317,24 +317,29 @@ Full per-check results: [`spec/stage3a-validation-results.md`](../spec/stage3a-v
 | `13cfc1e` | Toolchain-gated Go/Rust/Python extractor integration tests |
 | `f14bd66` | `vitest.contract.config.ts` + `runTests` branch for `.bollard/` paths; dynamic integration test; Biome override |
 
-### YELLOW, not GREEN — why
+### GREEN — validated 2026-04-08
 
-A full 16-node `implement-feature` LLM self-test was **not re-run** after `f14bd66`. The three earlier attempts during validation hit distinct blockers that were each fixed, but no single run exercised the end-to-end pipeline with **all** Stage 3a fixes in place. The remaining risk is **LLM-generated contract test quality** (an earlier generated file had incorrect `CostTracker` expectations — that's a prompt-quality issue, not infrastructure). Infrastructure for discovering and resolving workspace imports is covered by the dynamic integration test.
+Full 17-node `implement-feature` self-test ran against the `CostTracker.subtract()` task:
 
-To flip YELLOW → GREEN:
+- 17/17 nodes passed on first attempt, no retries
+- `verify-claim-grounding`: 5 claims proposed / 5 grounded / 0 dropped
+- Surviving contract tests in `.bollard/tests/contract/add-a-subtract-usd-method/cost-tracker.contract.test.ts` assert legitimate properties (negative input throws, underflow throws, basic subtraction, interaction with `add`, `snapshot` reflects subtracted cost). No float-exactness or frozen-mutation traps.
+- Test suite before → after: 406 passed / 4 skipped → **461 passed / 4 skipped** (+55 from golden corpus and pipeline-generated tests)
+
+Grounding-layer post-mortem and the "when to add a deterministic filter" principle are captured in [spec/adr/0001-deterministic-filters-for-llm-output.md](../spec/adr/0001-deterministic-filters-for-llm-output.md). Read it before adding any similar post-filter in Stage 3b.
+
+**Reproduction command** (for future regression runs — the `sh -c` wrapper is mandatory because Compose v2 intercepts bare `--filter`):
 
 ```bash
 docker compose run --rm -e BOLLARD_AUTO_APPROVE=1 dev sh -c \
   'pnpm --filter @bollard/cli run start -- run implement-feature --task "…" --work-dir /app'
 ```
 
-**Gotcha:** `docker compose run --filter …` is parsed by Compose v2 as a Compose flag — you must wrap pnpm's `--filter` in `sh -c '…'`.
-
 ### Stage 3a → Stage 3b follow-ups
 
 Tracked here so they land in the next stage prompt without hunting through the validation results file:
 
-1. **Contract-tester grounding (Layer 1)** — shipped via [spec/08-contract-tester-grounding.md](../spec/08-contract-tester-grounding.md). Structured claims protocol with deterministic `verifyClaimGrounding` replaces the prompt-rule-per-failure approach. Blueprint is now 17 nodes (new `verify-claim-grounding` deterministic node). Pending GREEN flip via `implement-feature` self-test.
+1. **Contract-tester grounding (Layer 1)** — shipped via [spec/08-contract-tester-grounding.md](../spec/08-contract-tester-grounding.md) and validated GREEN on 2026-04-08. Structured claims protocol with deterministic `verifyClaimGrounding` replaces the prompt-rule-per-failure approach. Blueprint is 17 nodes (new `verify-claim-grounding` deterministic node between `generate-contract-tests` and `write-contract-tests`). Principle captured in [ADR-0001](../spec/adr/0001-deterministic-filters-for-llm-output.md). Open action: emit a `contract_grounding_result` log event per run so Stage 3b has a drop-rate baseline.
 2. **Go / Rust in the dev image** — so the two `it.skipIf` extractor tests become unconditional. Likely a second dev Dockerfile stage or a dedicated `Dockerfile.dev-full`.
 4. **Per-language mutation testing** — still Stage 3 remainder (Stryker / mutmut / cargo-mutants). Unblocked now that extractors are deterministic.
 5. **Semantic review agent** — still Stage 3 remainder.
@@ -590,7 +595,8 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - `boundary-tester` + `{{#concern}}` templating; `contract-tester` + `buildContractContext` (TypeScript monorepo)
 - CLI `contract`, MCP `bollard_contract`, `examples/bollard.yml`
 - Dev image includes `python3` for the Python extractor script
-- **Stage 3a validation fixes (2026-04-07):** contract context re-export closure (information barrier), `deferPostCompletionVerifyFromTurn` rename, `pnpm.overrides` for `vite >= 7.3.2`, `runBlueprint(..., toolchainProfile?)`, `vitest.contract.config.ts` for `.bollard/` paths, toolchain-gated extractor tests. Status: **YELLOW** pending one full `implement-feature` re-run.
+- **Stage 3a validation fixes (2026-04-07):** contract context re-export closure (information barrier), `deferPostCompletionVerifyFromTurn` rename, `pnpm.overrides` for `vite >= 7.3.2`, `runBlueprint(..., toolchainProfile?)`, `vitest.contract.config.ts` for `.bollard/` paths, toolchain-gated extractor tests.
+- **Stage 3a GREEN (2026-04-08):** Layer 1 contract-tester grounding verifier (`verify-claim-grounding` node 12) + structured claims protocol. Validated end-to-end via `CostTracker.subtract()` self-test (17/17 nodes, 5/5 claims grounded). Post-mortem and principle in [ADR-0001](../spec/adr/0001-deterministic-filters-for-llm-output.md). Commits: `5e5e11f`, `dfced13`, `f9a9a47`, `82da59e`.
 
 ### DO NOT build yet:
 - **Streaming LLM responses (Stage 3c / 4 follow-up)** — `LLMProvider.chat_stream`, incremental delta events from `executeAgent`, CLI rendering of model output as it arrives (Option B in `spec/stage3a-progress-ux-prompt.md` §1). Deferred because it requires provider-specific streaming implementations (Anthropic, OpenAI, Google) and partial-response error handling; Option A (spinner + turn/tool telemetry without streaming) covers basic “feels alive” UX.

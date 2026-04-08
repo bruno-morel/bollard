@@ -282,12 +282,32 @@ export function createImplementFeatureBlueprint(
         execute: async (ctx: PipelineContext): Promise<NodeResult> => {
           const profile = ctx.toolchainProfile
           if (!profile?.adversarial.contract.enabled) {
+            ctx.log.info("contract_grounding_result", {
+              event: "contract_grounding_result",
+              runId: ctx.runId,
+              language: ctx.toolchainProfile?.language ?? "unknown",
+              proposed: 0,
+              grounded: 0,
+              dropped: 0,
+              dropRate: 0,
+              droppedSymbols: [],
+            })
             return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
           }
 
           const gen = ctx.results["generate-contract-tests"]
           const raw = typeof gen?.data === "string" ? gen.data : ""
           if (!raw.trim()) {
+            ctx.log.info("contract_grounding_result", {
+              event: "contract_grounding_result",
+              runId: ctx.runId,
+              language: ctx.toolchainProfile?.language ?? "unknown",
+              proposed: 0,
+              grounded: 0,
+              dropped: 0,
+              dropRate: 0,
+              droppedSymbols: [],
+            })
             return { status: "ok", data: { skipped: true, reason: "no contract test output" } }
           }
 
@@ -317,6 +337,25 @@ export function createImplementFeatureBlueprint(
           try {
             const doc = parseClaimDocument(raw)
             const result = verifyClaimGrounding(doc, corpus, enabled)
+
+            const proposed = doc.claims.length
+            const grounded = result.kept.length
+            const droppedCount = result.dropped.length
+            const dropRate =
+              proposed === 0 ? 0 : Math.round((droppedCount / proposed) * 1000) / 1000
+            const droppedSymbols = [...new Set(result.dropped.map((d) => d.id))].sort()
+
+            ctx.log.info("contract_grounding_result", {
+              event: "contract_grounding_result",
+              runId: ctx.runId,
+              language: ctx.toolchainProfile?.language ?? "unknown",
+              proposed,
+              grounded,
+              dropped: droppedCount,
+              dropRate,
+              droppedSymbols,
+            })
+
             return {
               status: "ok",
               data: { claims: result.kept, dropped: result.dropped },
