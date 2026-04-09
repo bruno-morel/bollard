@@ -20,28 +20,82 @@ function stripAnsi(text: string): string {
   return text.replace(ANSI_PATTERN, "")
 }
 
-// Stage 3: add deterministic parsers for pytest, go test, cargo test output.
-// Currently parseSummary only handles Vitest output format.
-// Non-Vitest test runners still work (profile-driven cmd execution) — only the
-// parsed summary (passed/failed counts) falls back to zero/error detection.
-function parseSummary(
-  output: string,
-): Pick<TestRunResult, "passed" | "failed" | "total" | "failedTests"> {
-  const clean = stripAnsi(output)
+type ParsedSummary = Pick<TestRunResult, "passed" | "failed" | "total" | "failedTests">
+
+function parseVitestSummary(clean: string): ParsedSummary | null {
   const testsLine = clean.match(/Tests\s+(?:(\d+)\s+failed\s*\|\s*)?(\d+)\s+passed\s*\((\d+)\)/)
-  if (testsLine) {
-    const failed = testsLine[1] ? Number(testsLine[1]) : 0
-    const passed = Number(testsLine[2])
-    const total = Number(testsLine[3])
-    return { passed, failed, total, failedTests: [] }
+  if (!testsLine) return null
+  const failed = testsLine[1] ? Number(testsLine[1]) : 0
+  const passed = Number(testsLine[2])
+  const total = Number(testsLine[3])
+  return { passed, failed, total, failedTests: [] }
+}
+
+function parsePytestSummary(clean: string): ParsedSummary | null {
+  const summaryMatch = clean.match(/=+\s+(.*?)\s+in\s+[\d.]+s\s*=+/)
+  if (!summaryMatch) return null
+  const summary = summaryMatch[1] ?? ""
+  const passedMatch = summary.match(/(\d+)\s+passed/)
+  const failedMatch = summary.match(/(\d+)\s+failed/)
+  const passed = passedMatch ? Number(passedMatch[1]) : 0
+  const failed = failedMatch ? Number(failedMatch[1]) : 0
+  const total = passed + failed
+  const failedNames: string[] = []
+  const failedTests = clean.matchAll(/FAILED\s+(\S+)/g)
+  for (const m of failedTests) {
+    if (m[1]) failedNames.push(m[1])
   }
+  return { passed, failed, total, failedTests: failedNames }
+}
+
+function parseGoTestSummary(clean: string): ParsedSummary | null {
+  const okMatches = [...clean.matchAll(/^ok\s+\S+/gm)]
+  const failMatches = [...clean.matchAll(/^FAIL\s+(\S+)/gm)]
+  if (okMatches.length === 0 && failMatches.length === 0) return null
+  const failedNames: string[] = []
+  const individualFails = clean.matchAll(/---\s+FAIL:\s+(\S+)/g)
+  for (const m of individualFails) {
+    if (m[1]) failedNames.push(m[1])
+  }
+  const passLines = [...clean.matchAll(/---\s+PASS:\s+/g)].length
+  const passed = passLines || okMatches.length
+  const failed = failedNames.length || failMatches.length
+  return { passed, failed, total: passed + failed, failedTests: failedNames }
+}
+
+function parseCargoTestSummary(clean: string): ParsedSummary | null {
+  const resultMatch = clean.match(/test result:\s+\S+\.\s+(\d+)\s+passed;\s+(\d+)\s+failed/)
+  if (!resultMatch) return null
+  const passed = Number(resultMatch[1])
+  const failed = Number(resultMatch[2])
+  const failedNames: string[] = []
+  const failedTests = clean.matchAll(/test\s+(\S+)\s+\.\.\.\s+FAILED/g)
+  for (const m of failedTests) {
+    if (m[1]) failedNames.push(m[1])
+  }
+  return { passed, failed, total: passed + failed, failedTests: failedNames }
+}
+
+export function parseSummary(output: string): ParsedSummary {
+  const clean = stripAnsi(output)
+
+  const vitest = parseVitestSummary(clean)
+  if (vitest) return vitest
+
+  const pytest = parsePytestSummary(clean)
+  if (pytest) return pytest
+
+  const goTest = parseGoTestSummary(clean)
+  if (goTest) return goTest
+
+  const cargo = parseCargoTestSummary(clean)
+  if (cargo) return cargo
 
   const failedNames: string[] = []
   const failMatch = clean.matchAll(/FAIL\s+(\S+\.test\.ts)/g)
   for (const m of failMatch) {
     if (m[1]) failedNames.push(m[1])
   }
-
   return { passed: 0, failed: failedNames.length || 0, total: 0, failedTests: failedNames }
 }
 

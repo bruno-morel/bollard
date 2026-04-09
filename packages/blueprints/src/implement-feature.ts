@@ -2,7 +2,7 @@ import { execFile } from "node:child_process"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { promisify } from "node:util"
-import type { ToolchainProfile } from "@bollard/detect/src/types.js"
+import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { Blueprint, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
@@ -53,12 +53,51 @@ function getAffectedSourceFiles(ctx: PipelineContext): string[] {
   return allFiles.filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
 }
 
-export function scanDiffForExportChanges(diffText: string): boolean {
-  return diffText.split("\n").some((line) => /^[+-]export\s/.test(line))
+export function scanDiffForExportChanges(diffText: string, language?: LanguageId): boolean {
+  const lines = diffText.split("\n")
+  return lines.some((line) => isExportChangeLine(line, language))
 }
 
-// Crude TypeScript-biased check; Stage 3b refines per-language
-// (see ADR-0001 action-item 6 and spec/07-adversarial-scopes.md).
+function isExportChangeLine(line: string, language?: LanguageId): boolean {
+  if (!line.startsWith("+") && !line.startsWith("-")) return false
+  const content = line.slice(1)
+
+  switch (language) {
+    case "python":
+      return isPythonExportChange(content)
+    case "go":
+      return isGoExportChange(content)
+    case "rust":
+      return isRustExportChange(content)
+    default:
+      return /^export\s/.test(content)
+  }
+}
+
+function isPythonExportChange(content: string): boolean {
+  const trimmed = content.trimStart()
+  if (content === trimmed) {
+    if (/^(def|class|async\s+def)\s/.test(trimmed)) return true
+  }
+  if (trimmed.includes("__all__")) return true
+  if (/^from\s+\./.test(trimmed)) return true
+  return false
+}
+
+function isGoExportChange(content: string): boolean {
+  const trimmed = content.trimStart()
+  if (/^(func|type|var|const)\s+[A-Z]/.test(trimmed)) return true
+  if (/^func\s*\([^)]+\)\s*[A-Z]/.test(trimmed)) return true
+  return false
+}
+
+function isRustExportChange(content: string): boolean {
+  const trimmed = content.trimStart()
+  if (/^pub\s+(fn|struct|enum|trait|type|mod|use)\s/.test(trimmed)) return true
+  if (/^pub\s*\(/.test(trimmed)) return true
+  return false
+}
+
 async function hasExportedSymbolChanges(
   workDir: string,
   profile: ToolchainProfile,
@@ -70,7 +109,7 @@ async function hasExportedSymbolChanges(
       ["diff", "main", "--", ...profile.sourcePatterns],
       { cwd: workDir },
     )
-    return scanDiffForExportChanges(stdout)
+    return scanDiffForExportChanges(stdout, profile.language)
   } catch (err: unknown) {
     warn("hasExportedSymbolChanges: git diff failed, assuming exports changed", {
       error: err instanceof Error ? err.message : String(err),

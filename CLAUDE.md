@@ -42,7 +42,7 @@ docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan 
 - Behavioral-scope adversarial testing and extractor — Stage 4.
 - Contract graph (`buildContractContext`) supports **TypeScript, Python, Go, and Rust** workspaces; other languages return an empty graph with a warning.
 - Per-language mutation testing not yet implemented — Stage 3 remainder.
-- Test output parsing is Vitest-specific (`parseSummary`) — non-Vitest runners work via profile-driven execution but parsed summary falls back to zero/error detection. Stage 3 adds deterministic parsers for pytest, go test, cargo test.
+- Test output parsing supports Vitest, pytest, `go test`, and `cargo test` summary formats. Non-standard runners fall back to zero/error detection.
 - Unknown languages still need an LLM provider for signature extraction (`getExtractor` throws `PROVIDER_NOT_FOUND` without one).
 - No behavioral extractor (topology, endpoints, failure modes) — Stage 4.
 - No rollback on coder max-turns failure — partially-written files remain on disk.
@@ -295,7 +295,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** ~8 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`
-- **Latest count (authoritative, 2026-04-09, post Stage 3b workstream 7):** `501` passed, `2` skipped (503 total). Skips: 2 LLM live smoke tests (no key). The two former Go/Rust `it.skipIf` blocks are replaced by 3 unconditional helper tests in `extractor-helpers.test.ts`. Workstream 2 added 4 `GoAstExtractor` integration tests. Workstream 3 added 4 `RustSynExtractor` integration tests. Workstream 5 added 5 `PythonContractProvider` tests. Workstream 6 added 5 `GoContractProvider` tests. Workstream 7 added 5 `RustContractProvider` tests.
+- **Latest count (authoritative, 2026-04-09, post Stage 3b workstream 8):** `523` passed, `2` skipped (525 total). Skips: 2 LLM live smoke tests (no key). The two former Go/Rust `it.skipIf` blocks are replaced by 3 unconditional helper tests in `extractor-helpers.test.ts`. Workstream 2 added 4 `GoAstExtractor` integration tests. Workstream 3 added 4 `RustSynExtractor` integration tests. Workstream 5 added 5 `PythonContractProvider` tests. Workstream 6 added 5 `GoContractProvider` tests. Workstream 7 added 5 `RustContractProvider` tests. Workstream 8 added 14 `scanDiffForExportChanges` polyglot tests and 8 `parseSummary` polyglot tests.
 
 ### Stage 3a follow-ups (agent UX)
 
@@ -374,7 +374,7 @@ Tracked here so they land in the next stage prompt without hunting through the v
 7. **Streaming LLM responses** — deferred to Stage 3c per `spec/archive/stage3a-progress-ux-prompt.md` §1 Option B; Option A (spinner + telemetry) already shipped.
 8. **Verification summary batching** — a single consolidated feedback message at turn budget exhaustion instead of per-check retries (Stage 4 candidate; related to the `deferPostCompletionVerifyFromTurn` tradeoff).
 9. **Git rollback on coder max-turns failure** — partially-written files remain on disk today.
-10. **Risk gate per-language refinement** — current skeleton is TypeScript-biased (scans diff for `^[+-]export`); Python/Go/Rust detection is Stage 3b.
+10. ~~**Risk gate per-language refinement**~~ — **Done (Stage 3b workstream 8).** `scanDiffForExportChanges` now accepts `LanguageId`; Python (top-level `def`/`class`, `__all__`, `from .x import`), Go (capitalized `func`/`type`/`var`/`const`), and Rust (`pub fn`/`struct`/`enum`/`trait`/`type`/`mod`) patterns implemented.
 
 ## Key Types (Source of Truth)
 

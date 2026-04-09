@@ -126,6 +126,70 @@ describe("scanDiffForExportChanges", () => {
     ].join("\n")
     expect(scanDiffForExportChanges(diff)).toBe(false)
   })
+
+  describe("python", () => {
+    it("detects top-level def at column 0 as export change", () => {
+      expect(scanDiffForExportChanges("+def greet(name):", "python")).toBe(true)
+    })
+
+    it("ignores indented def (class method, not top-level)", () => {
+      expect(scanDiffForExportChanges("+    def helper(self):", "python")).toBe(false)
+    })
+
+    it("detects __all__ changes", () => {
+      expect(scanDiffForExportChanges('+__all__ = ["foo", "bar"]', "python")).toBe(true)
+    })
+
+    it("detects re-export in __init__.py", () => {
+      expect(scanDiffForExportChanges("+from .core import greet", "python")).toBe(true)
+    })
+
+    it("detects top-level async def as export change", () => {
+      expect(scanDiffForExportChanges("+async def fetch_data():", "python")).toBe(true)
+    })
+
+    it("detects top-level class as export change", () => {
+      expect(scanDiffForExportChanges("+class UserService:", "python")).toBe(true)
+    })
+  })
+
+  describe("go", () => {
+    it("detects exported function (capitalized)", () => {
+      expect(scanDiffForExportChanges("+func Login(user string) error {", "go")).toBe(true)
+    })
+
+    it("ignores unexported function (lowercase)", () => {
+      expect(scanDiffForExportChanges("+func helper() {", "go")).toBe(false)
+    })
+
+    it("detects exported type", () => {
+      expect(scanDiffForExportChanges("+type Config struct {", "go")).toBe(true)
+    })
+
+    it("detects exported method on receiver", () => {
+      expect(scanDiffForExportChanges("+func (s *Server) Handle() {", "go")).toBe(true)
+    })
+  })
+
+  describe("rust", () => {
+    it("detects pub fn as export change", () => {
+      expect(scanDiffForExportChanges("+pub fn process(data: &[u8]) -> Result<()> {", "rust")).toBe(
+        true,
+      )
+    })
+
+    it("ignores private fn (no pub)", () => {
+      expect(scanDiffForExportChanges("+fn internal_helper() {", "rust")).toBe(false)
+    })
+
+    it("detects pub struct as export change", () => {
+      expect(scanDiffForExportChanges("+pub struct Config {", "rust")).toBe(true)
+    })
+
+    it("detects pub(crate) as visibility boundary change", () => {
+      expect(scanDiffForExportChanges("+pub(crate) fn setup() {", "rust")).toBe(true)
+    })
+  })
 })
 
 describe("assess-contract-risk node", () => {
