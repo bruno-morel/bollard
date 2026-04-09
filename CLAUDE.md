@@ -6,12 +6,10 @@
 
 Bollard is an **artifact integrity framework** for AI-assisted software development. It ensures every artifact (code, tests, docs, infra) is produced, adversarially verified, and mechanically proven sound before shipping. The core innovation: separate the producer from the verifier, then prove the verification itself is meaningful (via mutation testing).
 
-Bollard has completed **Stage 2** (adversarial verification infrastructure) and **Stage 3a** (contract-scope adversarial testing — first slice of Stage 3, **validated GREEN on 2026-04-08** — see [spec/stage3a-validation-results.md](../spec/stage3a-validation-results.md) and the "Stage 3a Validation" section below). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, boundary tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 (first half) fixed critical agent infrastructure issues: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. Stage 2 (second half) added Docker-isolated verification containers, LLM fallback signature extraction for edge languages, in-language adversarial test generation, adversarial test lifecycle (ephemeral + persistent-native), MCP server (`@bollard/mcp`), and OpenAI + Google LLM providers. **Stage 3a** adds per-scope `AdversarialConfig` with concern weights, `boundary-tester` + `contract-tester` agents, deterministic extractors for Python/Go/Rust, TypeScript contract graph (`buildContractContext`), four contract blueprint nodes, and `bollard contract` / MCP `bollard_contract`.
+Bollard has completed **Stage 2** (adversarial verification infrastructure), **Stage 3a** (contract-scope adversarial testing — **validated GREEN on 2026-04-08**), and **Stage 3b** (multi-language contract graph + dev ergonomics — **validated GREEN on 2026-04-09** — see [spec/stage3b-validation-results.md](../spec/stage3b-validation-results.md) and the "Stage 3b Validation" section below). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, boundary tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 (first half) fixed critical agent infrastructure issues: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. Stage 2 (second half) added Docker-isolated verification containers, LLM fallback signature extraction for edge languages, in-language adversarial test generation, adversarial test lifecycle (ephemeral + persistent-native), MCP server (`@bollard/mcp`), and OpenAI + Google LLM providers. **Stage 3a** adds per-scope `AdversarialConfig` with concern weights, `boundary-tester` + `contract-tester` agents, deterministic extractors for Python/Go/Rust, TypeScript contract graph (`buildContractContext`), four contract blueprint nodes, and `bollard contract` / MCP `bollard_contract`. **Stage 3b** adds polyglot dev image with pre-built Go/Rust extractor helpers, `dev-full` image with full Go/Rust/Python toolchains, `ContractGraphProvider` interface with Python/Go/Rust providers, polyglot risk gate (`scanDiffForExportChanges`), polyglot test summary parsers, and ADR-0002 for the syn-based Rust extractor helper.
 
-The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md) and the [Stage 3a → 3b follow-ups](#stage-3a--stage-3b-follow-ups) section below):
-- **Stage 3a follow-ups (open, non-blocking):** `contract_grounding_result` log event per run (drop-rate baseline for Stage 3b); Go/Rust toolchains in dev image so the two `it.skipIf` extractor tests become unconditional.
-- **Stage 3b:** Contract graph beyond TypeScript (Python / Go / Rust workspaces); deeper extractor accuracy.
-- **Stage 3c:** Per-language mutation testing (Stryker / mutmut / cargo-mutants); semantic review agent; streaming LLM responses (deferred from 3a progress UX).
+The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md) and the [Stage 3b → 3c follow-ups](#stage-3b--stage-3c-follow-ups) section below):
+- **Stage 3c:** Per-language mutation testing (Stryker / mutmut / cargo-mutants); semantic review agent; streaming LLM responses (deferred from 3a progress UX); `detectToolchain` for `go.work`-only layouts.
 - **Stage 4:** Behavioral-scope adversarial testing + production feedback loop.
 - **Stage 5:** Self-hosting + self-improvement.
 
@@ -295,7 +293,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** ~8 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`
-- **Latest count (authoritative, 2026-04-09, post Stage 3b workstream 8):** `523` passed, `2` skipped (525 total). Skips: 2 LLM live smoke tests (no key). The two former Go/Rust `it.skipIf` blocks are replaced by 3 unconditional helper tests in `extractor-helpers.test.ts`. Workstream 2 added 4 `GoAstExtractor` integration tests. Workstream 3 added 4 `RustSynExtractor` integration tests. Workstream 5 added 5 `PythonContractProvider` tests. Workstream 6 added 5 `GoContractProvider` tests. Workstream 7 added 5 `RustContractProvider` tests. Workstream 8 added 14 `scanDiffForExportChanges` polyglot tests and 8 `parseSummary` polyglot tests.
+- **Latest count (authoritative, 2026-04-09, post Stage 3b validation GREEN):** `523` passed, `2` skipped (525 total). Skips: 2 LLM live smoke tests (no key). The two former Go/Rust `it.skipIf` blocks are replaced by 3 unconditional helper tests in `extractor-helpers.test.ts`. Workstream 2 added 4 `GoAstExtractor` integration tests. Workstream 3 added 4 `RustSynExtractor` integration tests. Workstream 5 added 5 `PythonContractProvider` tests. Workstream 6 added 5 `GoContractProvider` tests. Workstream 7 added 5 `RustContractProvider` tests. Workstream 8 added 14 `scanDiffForExportChanges` polyglot tests and 8 `parseSummary` polyglot tests. Stage 3b validation (Check 9) confirmed 18/18 pipeline nodes with 6/6 grounded claims.
 
 ### Stage 3a follow-ups (agent UX)
 
@@ -362,19 +360,62 @@ docker compose run --rm -e BOLLARD_AUTO_APPROVE=1 dev sh -c \
   'pnpm --filter @bollard/cli run start -- run implement-feature --task "…" --work-dir /app'
 ```
 
-### Stage 3a → Stage 3b follow-ups
+## Stage 3b Validation (2026-04-09) — Status **GREEN**
+
+Full per-check results: [`spec/stage3b-validation-results.md`](../spec/stage3b-validation-results.md).
+
+- **Test suite:** 523 passed / 2 skipped; typecheck + lint clean.
+- **Dev image:** `bollard-extract-go` 0.1.0, `bollard-extract-rs` 0.1.0, Python 3.11.2 on PATH.
+- **`dev-full` image:** 2.23 GB — Go 1.22.6, Rust 1.94.1, Python 3.11.2, pytest 9.0.3, ruff 0.15.10.
+- **Extractors:** All four deterministic extractors pass (TS:2, Py:2, Go:4, Rs:4) + 3 helper binary tests.
+- **Contract providers:** 22 tests across `buildContractContext` router (7), `PythonContractProvider` (5), `GoContractProvider` (5), `RustContractProvider` (5).
+- **Contract graph (self):** 8 modules, 18 edges, all TypeScript — identical to Stage 3a baseline.
+- **Risk gate polyglot:** 16 `scanDiffForExportChanges` tests (TS + Python + Go + Rust).
+- **Test parsers polyglot:** 8 `parseSummary` tests (Vitest + pytest + `go test` + `cargo test`).
+- **Fixture tests:** Python (2 modules / 1 edge), Go (2/1 with root `go.mod`), Rust (2/1).
+- **ADR-0002:** `spec/adr/0002-syn-helper-for-rust-extraction.md` exists with correct frontmatter.
+- **File structure:** Barrel 7 lines, 5 provider files (1,367 LOC), no stale monolith.
+
+### GREEN — validated 2026-04-09
+
+Full 18-node `implement-feature` self-test ran against the `CostTracker.subtract()` task:
+
+- **18/18 nodes passed** on first attempt, 0 retries
+- `verify-claim-grounding`: 6 claims proposed / 6 grounded / 0 dropped
+- `contract_grounding_result`: `{"proposed":6,"grounded":6,"dropped":0,"dropRate":0}`
+- Coder turns: 42/60, cost $1.40, duration 222s
+- Post-run cleanup restored test suite to 523 passed / 2 skipped
+
+### Stage 3b commits on `main`
+
+| Commit | Summary |
+|--------|---------|
+| `cb37b8b` | Stage 3a+: contract-scope risk gate skeleton |
+| `663dd14` | Stage 3a+: risk-gate measurement correctness |
+| `b43e0e3` | Stage 3b: polyglot dev image + slim dev-full (2.43GB → 2.24GB) |
+| `122ca6b` | Stage 3b: rewrite Rust extractor to shell out to bollard-extract-rs |
+| `4274ffc` | Stage 3b: ADR-0002 — syn helper for Rust signature extraction |
+| `bb3f9d5` | Stage 3b: refactor buildContractContext into ContractGraphProvider |
+| `d5d116a` | Stage 3b: add GoContractProvider to buildContractContext |
+| `8d05523` | Stage 3b: split contract-extractor.ts into per-provider files (PythonContractProvider) |
+| `6676004` | Stage 3b: add RustContractProvider to buildContractContext |
+| `0e0a6b1` | Stage 3b: cleanup gitignore, worktree ref, and Go extractor tweaks |
+| `d3ee41c` | Stage 3b: polyglot risk gate + test summary parsers |
+
+### Stage 3b → Stage 3c follow-ups
 
 Tracked here so they land in the next stage prompt without hunting through the validation results file:
 
-1. **Contract-tester grounding (Layer 1)** — shipped via [spec/08-contract-tester-grounding.md](../spec/08-contract-tester-grounding.md) and validated GREEN on 2026-04-08. Structured claims protocol with deterministic `verifyClaimGrounding` replaces the prompt-rule-per-failure approach. Blueprint is 18 nodes (`assess-contract-risk` risk-gate node after `run-tests`, plus `verify-claim-grounding` deterministic node between `generate-contract-tests` and `write-contract-tests`). Principle captured in [ADR-0001](../spec/adr/0001-deterministic-filters-for-llm-output.md). Open action: emit a `contract_grounding_result` log event per run so Stage 3b has a drop-rate baseline.
-2. ~~**Go / Rust in the dev image**~~ — **Done (Stage 3b workstream 1).** Multi-stage Dockerfile builds `bollard-extract-go` and `bollard-extract-rs` helper binaries into the `dev` image. `dev-full` adds full Go + Rust toolchains behind the `full` compose profile. The two `it.skipIf` extractor tests are replaced by unconditional helper tests in `extractor-helpers.test.ts`.
-4. **Per-language mutation testing** — still Stage 3 remainder (Stryker / mutmut / cargo-mutants). Unblocked now that extractors are deterministic.
-5. **Semantic review agent** — still Stage 3 remainder.
-6. ~~**Contract graph beyond TypeScript**~~ — ~~Python~~ ~~Go~~ ~~Rust~~ workspace edge extraction — **Done** (WS5 Python, WS6 Go, WS7 Rust). JavaScript remains Stage 4.
+1. ~~**Contract-tester grounding (Layer 1)**~~ — **Done (Stage 3a).** Shipped via [spec/08-contract-tester-grounding.md](../spec/08-contract-tester-grounding.md). `contract_grounding_result` log event emits per run. Validated GREEN in both Stage 3a and 3b.
+2. ~~**Go / Rust in the dev image**~~ — **Done (Stage 3b workstream 1).** Multi-stage Dockerfile builds `bollard-extract-go` and `bollard-extract-rs` helper binaries into the `dev` image. `dev-full` adds full Go + Rust toolchains behind the `full` compose profile.
+3. ~~**Contract graph beyond TypeScript**~~ — **Done (Stage 3b workstreams 4-7).** `ContractGraphProvider` interface + Python / Go / Rust providers. JavaScript remains Stage 4.
+4. ~~**Risk gate per-language refinement**~~ — **Done (Stage 3b workstream 8).** `scanDiffForExportChanges` now accepts `LanguageId`; Python, Go, and Rust patterns implemented.
+5. **Per-language mutation testing** — Stage 3c (Stryker / mutmut / cargo-mutants). Unblocked now that extractors are deterministic.
+6. **Semantic review agent** — Stage 3c.
 7. **Streaming LLM responses** — deferred to Stage 3c per `spec/archive/stage3a-progress-ux-prompt.md` §1 Option B; Option A (spinner + telemetry) already shipped.
-8. **Verification summary batching** — a single consolidated feedback message at turn budget exhaustion instead of per-check retries (Stage 4 candidate; related to the `deferPostCompletionVerifyFromTurn` tradeoff).
-9. **Git rollback on coder max-turns failure** — partially-written files remain on disk today.
-10. ~~**Risk gate per-language refinement**~~ — **Done (Stage 3b workstream 8).** `scanDiffForExportChanges` now accepts `LanguageId`; Python (top-level `def`/`class`, `__all__`, `from .x import`), Go (capitalized `func`/`type`/`var`/`const`), and Rust (`pub fn`/`struct`/`enum`/`trait`/`type`/`mod`) patterns implemented.
+8. **`detectToolchain` for `go.work`-only layouts** — Stage 3c. Go detection requires root `go.mod`; `go.work` without root `go.mod` not detected. Provider works correctly once detected.
+9. **Verification summary batching** — Stage 4. Single consolidated feedback message instead of per-check retries.
+10. **Git rollback on coder max-turns failure** — Stage 4. Partially-written files remain on disk today.
 
 ## Key Types (Source of Truth)
 
