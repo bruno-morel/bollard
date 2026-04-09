@@ -40,7 +40,7 @@ docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan 
 
 - Docker-isolated verification requires Docker-in-Docker (`docker.sock` mount) — degrades gracefully when unavailable.
 - Behavioral-scope adversarial testing and extractor — Stage 4.
-- Contract graph (`buildContractContext`) is **TypeScript / pnpm-workspace monorepos** in Stage 3a; other languages return an empty graph with a warning.
+- Contract graph (`buildContractContext`) supports **TypeScript, Python, and Go** workspaces; other languages return an empty graph with a warning.
 - Per-language mutation testing not yet implemented — Stage 3 remainder.
 - Test output parsing is Vitest-specific (`parseSummary`) — non-Vitest runners work via profile-driven execution but parsed summary falls back to zero/error detection. Stage 3 adds deterministic parsers for pytest, go test, cargo test.
 - Unknown languages still need an LLM provider for signature extraction (`getExtractor` throws `PROVIDER_NOT_FOUND` without one).
@@ -240,7 +240,7 @@ bollard/
 │   │   │   ├── static.ts         # runStaticChecks(workDir, profile?) — profile-driven or hardcoded fallback
 │   │   │   ├── dynamic.ts        # runTests(workDir, testFiles?, profile?) — profile-driven test execution
 │   │   │   ├── type-extractor.ts # SignatureExtractor, TsCompilerExtractor, LlmFallbackExtractor, getExtractor
-│   │   │   ├── contract-extractor.ts # buildContractContext (TS workspace graph)
+│   │   │   ├── contract-extractor.ts # buildContractContext (TS + Python + Go workspace graph)
 │   │   │   ├── extractors/       # python.ts, go.ts, rust.ts — deterministic SignatureExtractor
 │   │   │   ├── compose-generator.ts  # generateVerifyCompose — dynamic compose.verify.yml from ToolchainProfile
 │   │   │   └── test-lifecycle.ts # resolveTestOutputDir, resolveContractTestOutputRel, writeTestMetadata, …
@@ -289,7 +289,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** ~8 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`
-- **Latest count (authoritative, 2026-04-08, post Stage 3b workstream 3):** `484` passed, `2` skipped (486 total). Skips: 2 LLM live smoke tests (no key). The two former Go/Rust `it.skipIf` blocks are replaced by 3 unconditional helper tests in `extractor-helpers.test.ts`. Workstream 2 added 4 `GoAstExtractor` integration tests. Workstream 3 added 4 `RustSynExtractor` integration tests.
+- **Latest count (authoritative, 2026-04-09, post Stage 3b workstream 6):** `496` passed, `2` skipped (498 total). Skips: 2 LLM live smoke tests (no key). The two former Go/Rust `it.skipIf` blocks are replaced by 3 unconditional helper tests in `extractor-helpers.test.ts`. Workstream 2 added 4 `GoAstExtractor` integration tests. Workstream 3 added 4 `RustSynExtractor` integration tests. Workstream 5 added 5 `PythonContractProvider` tests. Workstream 6 added 5 `GoContractProvider` tests.
 
 ### Stage 3a follow-ups (agent UX)
 
@@ -364,7 +364,7 @@ Tracked here so they land in the next stage prompt without hunting through the v
 2. ~~**Go / Rust in the dev image**~~ — **Done (Stage 3b workstream 1).** Multi-stage Dockerfile builds `bollard-extract-go` and `bollard-extract-rs` helper binaries into the `dev` image. `dev-full` adds full Go + Rust toolchains behind the `full` compose profile. The two `it.skipIf` extractor tests are replaced by unconditional helper tests in `extractor-helpers.test.ts`.
 4. **Per-language mutation testing** — still Stage 3 remainder (Stryker / mutmut / cargo-mutants). Unblocked now that extractors are deterministic.
 5. **Semantic review agent** — still Stage 3 remainder.
-6. **Contract graph beyond TypeScript** — Python / Go / Rust workspace edge extraction (Stage 3b).
+6. **Contract graph beyond TypeScript** — ~~Python~~ ~~Go~~ / Rust workspace edge extraction (Stage 3b). Python (WS5) and Go (WS6) shipped.
 7. **Streaming LLM responses** — deferred to Stage 3c per `spec/archive/stage3a-progress-ux-prompt.md` §1 Option B; Option A (spinner + telemetry) already shipped.
 8. **Verification summary batching** — a single consolidated feedback message at turn budget exhaustion instead of per-check retries (Stage 4 candidate; related to the `deferPostCompletionVerifyFromTurn` tradeoff).
 9. **Git rollback on coder max-turns failure** — partially-written files remain on disk today.
@@ -622,6 +622,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - **Stage 3a GREEN (2026-04-08):** Layer 1 contract-tester grounding verifier (`verify-claim-grounding` node 12) + structured claims protocol. Validated end-to-end via `CostTracker.subtract()` self-test (17/17 nodes, 5/5 claims grounded). Post-mortem and principle in [ADR-0001](../spec/adr/0001-deterministic-filters-for-llm-output.md). Commits: `5e5e11f`, `dfced13`, `f9a9a47`, `82da59e`.
 
 ### DO NOT build yet:
+- **New languages outside the current five (TS/JS/Python/Go/Rust)** — Java, Kotlin, C#/.NET, Ruby, PHP are sequenced into three waves (Stage 3c → 4+ → 5+). Full design in [spec/07-adversarial-scopes.md §12.1](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md). Do not add language detectors, extractors, or verify images for any of these languages ad-hoc — each wave is coordinated so the dev image, `dev-full` image, mutation testing pattern, and contract graph all land together. Swift, Scala, Elixir, F#, Clojure, Haskell, OCaml, Nim, and Zig are explicit non-goals with no near-term timeline.
 - **Streaming LLM responses (Stage 3c / 4 follow-up)** — `LLMProvider.chat_stream`, incremental delta events from `executeAgent`, CLI rendering of model output as it arrives (Option B in `spec/archive/stage3a-progress-ux-prompt.md` §1). Deferred because it requires provider-specific streaming implementations (Anthropic, OpenAI, Google) and partial-response error handling; Option A (spinner + turn/tool telemetry without streaming) covers basic “feels alive” UX.
 - Per-language mutation testing (Stryker, mutmut, cargo-mutants, etc.) — Stage 3 remainder
 - Semantic review agent — Stage 3 remainder
