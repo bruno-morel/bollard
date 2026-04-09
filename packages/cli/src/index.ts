@@ -609,7 +609,13 @@ async function main(): Promise<void> {
       log(`  Layer 1 (project tests):     ${DIM}(no test framework detected)${RESET}`)
     }
     log("  Layer 2 (adversarial tests): bollard/verify container")
-    log(`  Layer 3 (mutation testing):  ${DIM}(Stage 3+)${RESET}`)
+    if (profile.mutation?.enabled) {
+      log(
+        `  Layer 3 (mutation testing):  ${BOLD}${profile.mutation.tool}${RESET} (threshold: ${profile.mutation.threshold}%, concurrency: ${profile.mutation.concurrency})`,
+      )
+    } else {
+      log(`  Layer 3 (mutation testing):  ${DIM}not configured${RESET}`)
+    }
     log("")
 
     const adversarialMode = rest.includes("--mode=in-language")

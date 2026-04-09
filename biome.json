@@ -30,7 +30,12 @@
   },
   "overrides": [
     {
-      "include": ["vitest.config.ts", "vitest.adversarial.config.ts", "vitest.contract.config.ts"],
+      "include": [
+        "vitest.config.ts",
+        "vitest.adversarial.config.ts",
+        "vitest.contract.config.ts",
+        "vitest.stryker.config.ts"
+      ],
       "linter": {
         "rules": {
           "style": {
@@ -41,6 +46,15 @@
     }
   ],
   "files": {
-    "ignore": ["node_modules", "dist", "*.json", "*.d.ts", "*.js", "*.map", "*.adversarial.test.ts"]
+    "ignore": [
+      "node_modules",
+      "dist",
+      "*.json",
+      "*.d.ts",
+      "*.js",
+      "*.map",
+      "*.adversarial.test.ts",
+      ".stryker-tmp"
+    ]
   }
 }

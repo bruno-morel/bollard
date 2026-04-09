@@ -31,3 +31,11 @@ adversarial:
     enabled: false # Stage 4
     integration: independent
     lifecycle: ephemeral
+
+# Mutation testing — opt-in per-language (Stryker for JS/TS, mutmut for Python, etc.)
+mutation:
+  enabled: true
+  tool: stryker
+  threshold: 60
+  timeoutMs: 300000
+  concurrency: 2

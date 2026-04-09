@@ -1,7 +1,11 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { detectToolchain } from "@bollard/detect/src/detect.js"
-import type { ToolchainProfile, VerificationCommand } from "@bollard/detect/src/types.js"
+import type {
+  MutationToolId,
+  ToolchainProfile,
+  VerificationCommand,
+} from "@bollard/detect/src/types.js"
 import type { BollardConfig } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import { parse as parseYaml } from "yaml"
@@ -96,6 +100,15 @@ const bollardYamlSchema = z
     risk: z.record(z.unknown()).optional(),
     toolchain: toolchainYamlSchema.optional(),
     adversarial: rootAdversarialYamlSchema.optional(),
+    mutation: z
+      .object({
+        enabled: z.boolean().optional(),
+        tool: z.string().optional(),
+        threshold: z.number().optional(),
+        timeoutMs: z.number().optional(),
+        concurrency: z.number().optional(),
+      })
+      .optional(),
   })
   .strict()
 
@@ -133,6 +146,17 @@ export async function resolveConfig(
     applyToolchainOverrides(profile, yamlResult.toolchain, {
       skipLegacyAdversarial: Boolean(yamlResult.adversarial),
     })
+  }
+  if (yamlResult?.mutation) {
+    const ym = yamlResult.mutation
+    const tool = typeof ym.tool === "string" ? ym.tool : "stryker"
+    profile.mutation = {
+      enabled: ym.enabled !== false,
+      tool: tool as MutationToolId,
+      threshold: typeof ym.threshold === "number" ? ym.threshold : 80,
+      timeoutMs: typeof ym.timeoutMs === "number" ? ym.timeoutMs : 300_000,
+      concurrency: typeof ym.concurrency === "number" ? ym.concurrency : 2,
+    }
   }
 
   applyEnvVars(config, sources)
@@ -257,6 +281,13 @@ function applyToolchainOverrides(
 interface LoadedBollardYaml {
   toolchain?: z.infer<typeof toolchainYamlSchema>
   adversarial?: z.infer<typeof rootAdversarialYamlSchema>
+  mutation?: {
+    enabled?: boolean | undefined
+    tool?: string | undefined
+    threshold?: number | undefined
+    timeoutMs?: number | undefined
+    concurrency?: number | undefined
+  }
 }
 
 function loadBollardYaml(
@@ -324,6 +355,7 @@ function loadBollardYaml(
   return {
     ...(data.toolchain !== undefined ? { toolchain: data.toolchain } : {}),
     ...(data.adversarial !== undefined ? { adversarial: data.adversarial } : {}),
+    ...(data.mutation !== undefined ? { mutation: data.mutation } : {}),
   }
 }
 

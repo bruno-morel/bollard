@@ -33,6 +33,15 @@ describe("TypeScript detector", () => {
     expect(result?.allowedCommands).toContain("biome")
   })
 
+  it("detects Stryker from devDependencies in package.json", async () => {
+    const result = await detectTypescript(TS_PROJECT)
+    expect(result).not.toBeNull()
+    expect(result?.mutation).toBeDefined()
+    expect(result?.mutation?.enabled).toBe(true)
+    expect(result?.mutation?.tool).toBe("stryker")
+    expect(result?.mutation?.threshold).toBe(80)
+  })
+
   it("returns null for non-TypeScript projects", async () => {
     expect(await detectTypescript(JS_PROJECT)).toBeNull()
     expect(await detectTypescript(PY_PROJECT)).toBeNull()

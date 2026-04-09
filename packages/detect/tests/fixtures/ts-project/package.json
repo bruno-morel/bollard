@@ -1,5 +1,8 @@
 {
   "name": "test-ts-project",
   "version": "0.0.1",
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@stryker-mutator/core": "^8.0.0"
+  }
 }

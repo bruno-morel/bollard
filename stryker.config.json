@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker/master/packages/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "vitest": {
+    "configFile": "vitest.stryker.config.ts"
+  },
+  "mutate": [
+    "packages/engine/src/**/*.ts",
+    "packages/detect/src/**/*.ts",
+    "packages/verify/src/**/*.ts",
+    "packages/blueprints/src/**/*.ts",
+    "!packages/*/src/**/*.test.ts"
+  ],
+  "reporters": ["json", "clear-text", "progress"],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": null
+  },
+  "concurrency": 2,
+  "timeoutMS": 60000,
+  "tempDirName": ".stryker-tmp"
+}

@@ -9,3 +9,5 @@ _tmp_*/
 .cursor/
 .vscode/
 .idea/
+reports/
+.stryker-tmp/

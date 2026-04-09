@@ -67,6 +67,14 @@ export interface VerificationCommand {
   source: ConfigSource
 }
 
+export interface MutationConfig {
+  enabled: boolean
+  tool: MutationToolId
+  threshold: number
+  timeoutMs: number
+  concurrency: number
+}
+
 export interface ToolchainProfile {
   language: LanguageId
   packageManager?: PackageManagerId
@@ -79,11 +87,7 @@ export interface ToolchainProfile {
     secretScan?: VerificationCommand
   }
 
-  mutation?: {
-    tool: MutationToolId
-    command: string
-    changedFilesPlaceholder: string
-  }
+  mutation?: MutationConfig
 
   sourcePatterns: string[]
   testPatterns: string[]

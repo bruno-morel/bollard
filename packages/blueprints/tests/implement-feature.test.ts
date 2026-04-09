@@ -4,8 +4,8 @@ import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
 describe("createImplementFeatureBlueprint", () => {
   const bp = createImplementFeatureBlueprint("/tmp/test")
 
-  it("has 18 nodes in the correct order", () => {
-    expect(bp.nodes).toHaveLength(18)
+  it("has 19 nodes in the correct order", () => {
+    expect(bp.nodes).toHaveLength(19)
     const ids = bp.nodes.map((n) => n.id)
     expect(ids).toEqual([
       "create-branch",
@@ -23,6 +23,7 @@ describe("createImplementFeatureBlueprint", () => {
       "verify-claim-grounding",
       "write-contract-tests",
       "run-contract-tests",
+      "run-mutation-testing",
       "docker-verify",
       "generate-diff",
       "approve-pr",
@@ -47,6 +48,7 @@ describe("createImplementFeatureBlueprint", () => {
       { id: "verify-claim-grounding", type: "deterministic" },
       { id: "write-contract-tests", type: "deterministic" },
       { id: "run-contract-tests", type: "deterministic" },
+      { id: "run-mutation-testing", type: "deterministic" },
       { id: "docker-verify", type: "deterministic" },
       { id: "generate-diff", type: "deterministic" },
       { id: "approve-pr", type: "human_gate" },
@@ -119,9 +121,9 @@ describe("createImplementFeatureBlueprint", () => {
     ])
   })
 
-  it("docker-verify follows contract test nodes", () => {
+  it("docker-verify follows mutation testing node", () => {
     const idx = bp.nodes.findIndex((n) => n.id === "docker-verify")
-    expect(bp.nodes[idx - 1]?.id).toBe("run-contract-tests")
+    expect(bp.nodes[idx - 1]?.id).toBe("run-mutation-testing")
     expect(bp.nodes[idx + 1]?.id).toBe("generate-diff")
   })
 

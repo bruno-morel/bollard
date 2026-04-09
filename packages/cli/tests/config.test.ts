@@ -203,4 +203,50 @@ describe("resolveConfig", () => {
 
     expect(profile.adversarial.boundary.mode).toBe("in-language")
   })
+
+  it("parses mutation section from .bollard.yml with all fields", async () => {
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}")
+    const yaml = [
+      "mutation:",
+      "  enabled: true",
+      "  tool: stryker",
+      "  threshold: 90",
+      "  timeoutMs: 600000",
+      "  concurrency: 4",
+    ].join("\n")
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    const { profile } = await resolveConfig(undefined, tempDir)
+
+    expect(profile.mutation).toBeDefined()
+    expect(profile.mutation?.enabled).toBe(true)
+    expect(profile.mutation?.tool).toBe("stryker")
+    expect(profile.mutation?.threshold).toBe(90)
+    expect(profile.mutation?.timeoutMs).toBe(600000)
+    expect(profile.mutation?.concurrency).toBe(4)
+  })
+
+  it("defaults threshold and concurrency when mutation section is minimal", async () => {
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}")
+    const yaml = ["mutation:", "  enabled: true"].join("\n")
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    const { profile } = await resolveConfig(undefined, tempDir)
+
+    expect(profile.mutation).toBeDefined()
+    expect(profile.mutation?.enabled).toBe(true)
+    expect(profile.mutation?.tool).toBe("stryker")
+    expect(profile.mutation?.threshold).toBe(80)
+    expect(profile.mutation?.timeoutMs).toBe(300_000)
+    expect(profile.mutation?.concurrency).toBe(2)
+  })
+
+  it("leaves mutation undefined when section absent from .bollard.yml", async () => {
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}")
+    writeFileSync(join(tempDir, ".bollard.yml"), "llm:\n  default:\n    model: test\n")
+
+    const { profile } = await resolveConfig(undefined, tempDir)
+
+    expect(profile.mutation).toBeUndefined()
+  })
 })

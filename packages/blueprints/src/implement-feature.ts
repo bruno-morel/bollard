@@ -17,6 +17,7 @@ import {
 } from "@bollard/verify/src/contract-grounding.js"
 import type { ClaimRecord, EnabledConcerns } from "@bollard/verify/src/contract-grounding.js"
 import { runTests } from "@bollard/verify/src/dynamic.js"
+import { runMutationTesting } from "@bollard/verify/src/mutation.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
 import { resolveContractTestOutputRel } from "@bollard/verify/src/test-lifecycle.js"
 import { extractPrivateIdentifiers, getExtractor } from "@bollard/verify/src/type-extractor.js"
@@ -672,6 +673,56 @@ export function createImplementFeatureBlueprint(
             }
           }
           return { status: "ok", data: result }
+        },
+      },
+
+      {
+        id: "run-mutation-testing",
+        name: "Mutation Testing",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const profile = ctx.toolchainProfile
+          if (!profile?.mutation?.enabled) {
+            return {
+              status: "ok",
+              data: { skipped: true, reason: "mutation testing not enabled" },
+            }
+          }
+
+          const startMs = Date.now()
+          const result = await runMutationTesting(workDir, profile)
+          ctx.mutationScore = result.score
+
+          ctx.log.info("mutation_testing_result", {
+            event: "mutation_testing_result",
+            runId: ctx.runId,
+            score: result.score,
+            killed: result.killed,
+            survived: result.survived,
+            noCoverage: result.noCoverage,
+            timeout: result.timeout,
+            totalMutants: result.totalMutants,
+            duration_ms: result.duration_ms,
+          })
+
+          const threshold = profile.mutation.threshold
+          if (result.totalMutants > 0 && result.score < threshold) {
+            return {
+              status: "fail",
+              data: result,
+              error: {
+                code: "MUTATION_THRESHOLD_NOT_MET",
+                message: `Mutation score ${result.score.toFixed(1)}% is below threshold ${threshold}% (${result.survived} survived, ${result.noCoverage} no coverage)`,
+              },
+            }
+          }
+
+          return {
+            status: "ok",
+            data: result,
+            cost_usd: 0,
+            duration_ms: Date.now() - startMs,
+          }
         },
       },
 

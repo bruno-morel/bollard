@@ -295,6 +295,18 @@ bollard/
 - **Source:** ~8 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`
 - **Latest count (authoritative, 2026-04-09, post Stage 3b validation GREEN):** `523` passed, `2` skipped (525 total). Skips: 2 LLM live smoke tests (no key). The two former Go/Rust `it.skipIf` blocks are replaced by 3 unconditional helper tests in `extractor-helpers.test.ts`. Workstream 2 added 4 `GoAstExtractor` integration tests. Workstream 3 added 4 `RustSynExtractor` integration tests. Workstream 5 added 5 `PythonContractProvider` tests. Workstream 6 added 5 `GoContractProvider` tests. Workstream 7 added 5 `RustContractProvider` tests. Workstream 8 added 14 `scanDiffForExportChanges` polyglot tests and 8 `parseSummary` polyglot tests. Stage 3b validation (Check 9) confirmed 18/18 pipeline nodes with 6/6 grounded claims.
 
+### Mutation Testing (Stage 3c)
+
+- **Tool:** Stryker 9.6.0 + `@stryker-mutator/vitest-runner`
+- **Baseline score (engine):** 70.74% (79.09% on covered code)
+- **Baseline score (engine + detect + verify + blueprints):** 45.32% (63.02% on covered code)
+- **Default threshold:** 60% (configurable via `.bollard.yml` `mutation:` section)
+- **Run command:** `docker compose run --rm dev exec stryker run`
+- **Config:** `stryker.config.json` (root); `vitest.stryker.config.ts` excludes integration tests that break on instrumented code
+- **Pipeline node:** `run-mutation-testing` (node 16 of 19), opt-in via `mutation.enabled: true` in `.bollard.yml`
+- **Dockerfile:** `procps` required in dev image for Stryker's worker process management
+- **Full results:** [spec/stage3c-validation-results.md](spec/stage3c-validation-results.md)
+
 ### Stage 3a follow-ups (agent UX)
 
 Long LLM waits no longer look frozen: `executeAgent` emits optional `AgentProgressEvent`s (`turn_start` / `turn_end` / `tool_call_start` / `tool_call_end`) via `AgentContext.progress`. The CLI wires them to `createAgentSpinner()` — TTY sessions get an in-place braille spinner with elapsed time and per-tool hints; non-TTY (CI, pipes) gets one line per milestone with no ANSI escapes. See `packages/cli/src/spinner.ts` and `packages/agents/tests/executor.progress.test.ts`.

@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import {
   deriveAllowedCommands,
@@ -89,6 +89,8 @@ export async function detect(cwd: string): Promise<Partial<ToolchainProfile> | n
   const linterTool = detectLinterTool(cwd)
   const extraTools = linterTool ? [linterTool] : []
 
+  const mutation = detectStryker(cwd)
+
   return {
     language: "typescript",
     packageManager: pkg,
@@ -108,9 +110,30 @@ export async function detect(cwd: string): Promise<Partial<ToolchainProfile> | n
         source: "auto-detected",
       },
     },
+    ...(mutation !== undefined ? { mutation } : {}),
     sourcePatterns: deriveSourcePatterns("typescript"),
     testPatterns: deriveTestPatterns("typescript"),
     ignorePatterns: deriveIgnorePatterns("typescript"),
     allowedCommands: deriveAllowedCommands("typescript", pkg, extraTools),
   }
+}
+
+function detectStryker(cwd: string): ToolchainProfile["mutation"] | undefined {
+  try {
+    const raw = readFileSync(join(cwd, "package.json"), "utf-8")
+    const pkg = JSON.parse(raw) as Record<string, unknown>
+    const devDeps = (pkg["devDependencies"] ?? {}) as Record<string, unknown>
+    if (devDeps["@stryker-mutator/core"]) {
+      return {
+        enabled: true,
+        tool: "stryker",
+        threshold: 80,
+        timeoutMs: 300_000,
+        concurrency: 2,
+      }
+    }
+  } catch {
+    // package.json missing or unparseable — no Stryker detection
+  }
+  return undefined
 }

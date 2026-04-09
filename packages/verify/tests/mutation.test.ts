@@ -1,0 +1,305 @@
+import { promisify } from "node:util"
+import type { MutationConfig, ToolchainProfile } from "@bollard/detect/src/types.js"
+import { afterEach, describe, expect, it, vi } from "vitest"
+
+const { mockExecFileAsync, mockWriteFile, mockReadFile } = vi.hoisted(() => ({
+  mockExecFileAsync: vi.fn(),
+  mockWriteFile: vi.fn(),
+  mockReadFile: vi.fn(),
+}))
+
+vi.mock("node:child_process", () => {
+  const mockFn = Object.assign(vi.fn(), {
+    [promisify.custom]: mockExecFileAsync,
+  })
+  return { execFile: mockFn }
+})
+
+vi.mock("node:fs/promises", () => ({
+  writeFile: mockWriteFile,
+  readFile: mockReadFile,
+}))
+
+const { parseStrykerReport, StrykerProvider, runMutationTesting } = await import(
+  "../src/mutation.js"
+)
+
+function makeProfile(overrides?: Partial<MutationConfig>): ToolchainProfile {
+  const scopeConfig = (enabled: boolean) => ({
+    enabled,
+    integration: "independent" as const,
+    lifecycle: "ephemeral" as const,
+    concerns: {
+      correctness: "high" as const,
+      security: "medium" as const,
+      performance: "low" as const,
+      resilience: "off" as const,
+    },
+  })
+  return {
+    language: "typescript",
+    packageManager: "pnpm",
+    checks: {},
+    sourcePatterns: ["packages/*/src/**/*.ts"],
+    testPatterns: ["packages/*/tests/**/*.test.ts"],
+    ignorePatterns: ["node_modules"],
+    allowedCommands: ["pnpm"],
+    adversarial: {
+      boundary: scopeConfig(true),
+      contract: scopeConfig(true),
+      behavioral: scopeConfig(false),
+    },
+    mutation: {
+      enabled: true,
+      tool: "stryker",
+      threshold: 80,
+      timeoutMs: 300_000,
+      concurrency: 2,
+      ...overrides,
+    },
+  }
+}
+
+function makeSampleReport(mutants: Array<{ status: string }>): string {
+  return JSON.stringify({
+    schemaVersion: "1",
+    thresholds: { high: 80, low: 60 },
+    files: {
+      "src/foo.ts": {
+        language: "typescript",
+        source: "const x = 1",
+        mutants: mutants.map((m, i) => ({
+          id: String(i),
+          mutatorName: "BooleanLiteral",
+          status: m.status,
+        })),
+      },
+    },
+  })
+}
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+describe("parseStrykerReport", () => {
+  it("parses a complete report with mixed statuses", () => {
+    const report = JSON.stringify({
+      schemaVersion: "1",
+      thresholds: { high: 80, low: 60 },
+      files: {
+        "src/a.ts": {
+          language: "typescript",
+          source: "",
+          mutants: [
+            { id: "1", mutatorName: "BooleanLiteral", status: "Killed" },
+            { id: "2", mutatorName: "StringLiteral", status: "Survived" },
+            { id: "3", mutatorName: "ArithmeticOperator", status: "NoCoverage" },
+            { id: "4", mutatorName: "BlockStatement", status: "CompileError" },
+          ],
+        },
+        "src/b.ts": {
+          language: "typescript",
+          source: "",
+          mutants: [
+            { id: "5", mutatorName: "ConditionalExpression", status: "Killed" },
+            { id: "6", mutatorName: "EqualityOperator", status: "Timeout" },
+          ],
+        },
+      },
+    })
+
+    const result = parseStrykerReport(report)
+
+    expect(result.killed).toBe(2)
+    expect(result.survived).toBe(1)
+    expect(result.noCoverage).toBe(1)
+    expect(result.timeout).toBe(1)
+    expect(result.totalMutants).toBe(5)
+    expect(result.score).toBeCloseTo(60, 1)
+  })
+
+  it("returns zero score for empty report", () => {
+    const report = JSON.stringify({
+      schemaVersion: "1",
+      thresholds: { high: 80, low: 60 },
+      files: {},
+    })
+
+    const result = parseStrykerReport(report)
+
+    expect(result.score).toBe(0)
+    expect(result.totalMutants).toBe(0)
+    expect(result.killed).toBe(0)
+  })
+
+  it("excludes CompileError/RuntimeError/Ignored/Pending from denominator", () => {
+    const report = JSON.stringify({
+      schemaVersion: "1",
+      thresholds: { high: 80, low: 60 },
+      files: {
+        "src/c.ts": {
+          language: "typescript",
+          source: "",
+          mutants: [
+            { id: "1", mutatorName: "BooleanLiteral", status: "CompileError" },
+            { id: "2", mutatorName: "BooleanLiteral", status: "RuntimeError" },
+            { id: "3", mutatorName: "BooleanLiteral", status: "Ignored" },
+            { id: "4", mutatorName: "BooleanLiteral", status: "Pending" },
+          ],
+        },
+      },
+    })
+
+    const result = parseStrykerReport(report)
+
+    expect(result.totalMutants).toBe(0)
+    expect(result.score).toBe(0)
+  })
+
+  it("handles 100% kill rate", () => {
+    const report = makeSampleReport([
+      { status: "Killed" },
+      { status: "Killed" },
+      { status: "Killed" },
+    ])
+
+    const result = parseStrykerReport(report)
+
+    expect(result.score).toBe(100)
+    expect(result.killed).toBe(3)
+    expect(result.totalMutants).toBe(3)
+  })
+
+  it("counts Timeout as killed in score", () => {
+    const report = makeSampleReport([
+      { status: "Timeout" },
+      { status: "Timeout" },
+      { status: "Survived" },
+    ])
+
+    const result = parseStrykerReport(report)
+
+    expect(result.timeout).toBe(2)
+    expect(result.survived).toBe(1)
+    expect(result.totalMutants).toBe(3)
+    expect(result.score).toBeCloseTo(66.67, 1)
+  })
+})
+
+describe("StrykerProvider.run config generation", () => {
+  it("generates config with mutate derived from profile sourcePatterns", async () => {
+    mockWriteFile.mockResolvedValue(undefined)
+    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
+    mockReadFile.mockResolvedValue(makeSampleReport([{ status: "Killed" }]))
+
+    const profile = makeProfile()
+    const provider = new StrykerProvider()
+    await provider.run("/tmp/test", profile)
+
+    expect(mockWriteFile).toHaveBeenCalledOnce()
+    const writtenJson = JSON.parse(mockWriteFile.mock.calls[0][1] as string)
+    expect(writtenJson.mutate).toContain("packages/*/src/**/*.ts")
+    expect(writtenJson.mutate.some((p: string) => p.startsWith("!"))).toBe(true)
+  })
+
+  it("falls back to vitest.config.ts when no test config flag", async () => {
+    mockWriteFile.mockResolvedValue(undefined)
+    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
+    mockReadFile.mockResolvedValue(makeSampleReport([{ status: "Killed" }]))
+
+    const profile = makeProfile()
+    const provider = new StrykerProvider()
+    await provider.run("/tmp/test", profile)
+
+    const writtenJson = JSON.parse(mockWriteFile.mock.calls[0][1] as string)
+    expect(writtenJson.vitest.configFile).toBe("vitest.config.ts")
+  })
+
+  it("uses threshold and concurrency from MutationConfig", async () => {
+    mockWriteFile.mockResolvedValue(undefined)
+    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
+    mockReadFile.mockResolvedValue(makeSampleReport([{ status: "Killed" }]))
+
+    const profile = makeProfile({ threshold: 90, concurrency: 4 })
+    const provider = new StrykerProvider()
+    await provider.run("/tmp/test", profile)
+
+    const writtenJson = JSON.parse(mockWriteFile.mock.calls[0][1] as string)
+    expect(writtenJson.thresholds.high).toBe(90)
+    expect(writtenJson.concurrency).toBe(4)
+  })
+})
+
+describe("runMutationTesting", () => {
+  it("returns zero result when mutation is disabled", async () => {
+    const profile = makeProfile({ enabled: false })
+
+    const result = await runMutationTesting("/tmp/test", profile)
+
+    expect(result.score).toBe(0)
+    expect(result.totalMutants).toBe(0)
+    expect(mockExecFileAsync).not.toHaveBeenCalled()
+  })
+
+  it("returns zero result for unsupported language", async () => {
+    const profile = makeProfile()
+    profile.language = "go"
+
+    const result = await runMutationTesting("/tmp/test", profile)
+
+    expect(result.score).toBe(0)
+    expect(result.totalMutants).toBe(0)
+    expect(mockExecFileAsync).not.toHaveBeenCalled()
+  })
+
+  it("returns zero result when Stryker binary fails", async () => {
+    mockWriteFile.mockResolvedValue(undefined)
+    const enoent = new Error("spawn pnpm ENOENT") as NodeJS.ErrnoException
+    enoent.code = "ENOENT"
+    mockExecFileAsync.mockRejectedValue(enoent)
+
+    const profile = makeProfile()
+    const result = await runMutationTesting("/tmp/test", profile)
+
+    expect(result.score).toBe(0)
+    expect(result.totalMutants).toBe(0)
+    expect(result.duration_ms).toBeGreaterThanOrEqual(0)
+  })
+
+  it("returns zero result when report file is missing", async () => {
+    mockWriteFile.mockResolvedValue(undefined)
+    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
+    const enoent = new Error("ENOENT: no such file") as NodeJS.ErrnoException
+    enoent.code = "ENOENT"
+    mockReadFile.mockRejectedValue(enoent)
+
+    const profile = makeProfile()
+    const result = await runMutationTesting("/tmp/test", profile)
+
+    expect(result.score).toBe(0)
+    expect(result.totalMutants).toBe(0)
+  })
+
+  it("returns parsed result on successful run", async () => {
+    mockWriteFile.mockResolvedValue(undefined)
+    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
+    mockReadFile.mockResolvedValue(
+      makeSampleReport([
+        { status: "Killed" },
+        { status: "Killed" },
+        { status: "Survived" },
+        { status: "Killed" },
+      ]),
+    )
+
+    const profile = makeProfile()
+    const result = await runMutationTesting("/tmp/test", profile)
+
+    expect(result.score).toBe(75)
+    expect(result.killed).toBe(3)
+    expect(result.survived).toBe(1)
+    expect(result.totalMutants).toBe(4)
+    expect(result.reportPath).toContain("mutation.json")
+  })
+})
