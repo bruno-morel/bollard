@@ -40,7 +40,7 @@ docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan 
 
 - Docker-isolated verification requires Docker-in-Docker (`docker.sock` mount) — degrades gracefully when unavailable.
 - Behavioral-scope adversarial testing and extractor — Stage 4.
-- Contract graph (`buildContractContext`) supports **TypeScript, Python, and Go** workspaces; other languages return an empty graph with a warning.
+- Contract graph (`buildContractContext`) supports **TypeScript, Python, Go, and Rust** workspaces; other languages return an empty graph with a warning.
 - Per-language mutation testing not yet implemented — Stage 3 remainder.
 - Test output parsing is Vitest-specific (`parseSummary`) — non-Vitest runners work via profile-driven execution but parsed summary falls back to zero/error detection. Stage 3 adds deterministic parsers for pytest, go test, cargo test.
 - Unknown languages still need an LLM provider for signature extraction (`getExtractor` throws `PROVIDER_NOT_FOUND` without one).
@@ -240,7 +240,13 @@ bollard/
 │   │   │   ├── static.ts         # runStaticChecks(workDir, profile?) — profile-driven or hardcoded fallback
 │   │   │   ├── dynamic.ts        # runTests(workDir, testFiles?, profile?) — profile-driven test execution
 │   │   │   ├── type-extractor.ts # SignatureExtractor, TsCompilerExtractor, LlmFallbackExtractor, getExtractor
-│   │   │   ├── contract-extractor.ts # buildContractContext (TS + Python + Go workspace graph)
+│   │   │   ├── contract-extractor.ts # Barrel re-export from contract-providers/
+│   │   │   ├── contract-providers/
+│   │   │   │   ├── types.ts          # ModuleNode, ContractEdge, ContractContext, ContractGraphProvider, buildContractContext router
+│   │   │   │   ├── typescript.ts     # TypeScriptContractProvider + TS workspace helpers
+│   │   │   │   ├── python.ts         # PythonContractProvider + Python workspace helpers
+│   │   │   │   ├── go.ts             # GoContractProvider + Go workspace helpers
+│   │   │   │   └── rust.ts           # RustContractProvider + Cargo workspace helpers
 │   │   │   ├── extractors/       # python.ts, go.ts, rust.ts — deterministic SignatureExtractor
 │   │   │   ├── compose-generator.ts  # generateVerifyCompose — dynamic compose.verify.yml from ToolchainProfile
 │   │   │   └── test-lifecycle.ts # resolveTestOutputDir, resolveContractTestOutputRel, writeTestMetadata, …
@@ -289,7 +295,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** ~8 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`
-- **Latest count (authoritative, 2026-04-09, post Stage 3b workstream 6):** `496` passed, `2` skipped (498 total). Skips: 2 LLM live smoke tests (no key). The two former Go/Rust `it.skipIf` blocks are replaced by 3 unconditional helper tests in `extractor-helpers.test.ts`. Workstream 2 added 4 `GoAstExtractor` integration tests. Workstream 3 added 4 `RustSynExtractor` integration tests. Workstream 5 added 5 `PythonContractProvider` tests. Workstream 6 added 5 `GoContractProvider` tests.
+- **Latest count (authoritative, 2026-04-09, post Stage 3b workstream 7):** `501` passed, `2` skipped (503 total). Skips: 2 LLM live smoke tests (no key). The two former Go/Rust `it.skipIf` blocks are replaced by 3 unconditional helper tests in `extractor-helpers.test.ts`. Workstream 2 added 4 `GoAstExtractor` integration tests. Workstream 3 added 4 `RustSynExtractor` integration tests. Workstream 5 added 5 `PythonContractProvider` tests. Workstream 6 added 5 `GoContractProvider` tests. Workstream 7 added 5 `RustContractProvider` tests.
 
 ### Stage 3a follow-ups (agent UX)
 
@@ -364,7 +370,7 @@ Tracked here so they land in the next stage prompt without hunting through the v
 2. ~~**Go / Rust in the dev image**~~ — **Done (Stage 3b workstream 1).** Multi-stage Dockerfile builds `bollard-extract-go` and `bollard-extract-rs` helper binaries into the `dev` image. `dev-full` adds full Go + Rust toolchains behind the `full` compose profile. The two `it.skipIf` extractor tests are replaced by unconditional helper tests in `extractor-helpers.test.ts`.
 4. **Per-language mutation testing** — still Stage 3 remainder (Stryker / mutmut / cargo-mutants). Unblocked now that extractors are deterministic.
 5. **Semantic review agent** — still Stage 3 remainder.
-6. **Contract graph beyond TypeScript** — ~~Python~~ ~~Go~~ / Rust workspace edge extraction (Stage 3b). Python (WS5) and Go (WS6) shipped.
+6. ~~**Contract graph beyond TypeScript**~~ — ~~Python~~ ~~Go~~ ~~Rust~~ workspace edge extraction — **Done** (WS5 Python, WS6 Go, WS7 Rust). JavaScript remains Stage 4.
 7. **Streaming LLM responses** — deferred to Stage 3c per `spec/archive/stage3a-progress-ux-prompt.md` §1 Option B; Option A (spinner + telemetry) already shipped.
 8. **Verification summary batching** — a single consolidated feedback message at turn budget exhaustion instead of per-check retries (Stage 4 candidate; related to the `deferPostCompletionVerifyFromTurn` tradeoff).
 9. **Git rollback on coder max-turns failure** — partially-written files remain on disk today.

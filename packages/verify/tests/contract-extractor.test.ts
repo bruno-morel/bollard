@@ -374,3 +374,141 @@ describe("GoContractProvider", () => {
     expect(ctx.affectedEdges[0]?.to).toBe("example.com/myapp/svc/auth")
   })
 })
+
+// ── Rust contract graph provider tests ────────────────────────────────
+
+describe("RustContractProvider", () => {
+  let tempDir: string
+
+  const rustProfile: ToolchainProfile = {
+    language: "rust",
+    packageManager: "cargo",
+    checks: {
+      test: {
+        label: "cargo test",
+        cmd: "cargo",
+        args: ["test"],
+        source: "auto-detected",
+      },
+    },
+    sourcePatterns: ["**/*.rs"],
+    testPatterns: ["**/*_test.rs"],
+    ignorePatterns: [],
+    allowedCommands: ["cargo"],
+    adversarial: defaultAdversarialConfig({ language: "rust" }),
+  }
+
+  async function writeFixture(relPath: string, content: string): Promise<void> {
+    const abs = join(tempDir, relPath)
+    await mkdir(dirname(abs), { recursive: true })
+    await writeFile(abs, content, "utf-8")
+  }
+
+  beforeEach(async () => {
+    tempDir = join(tmpdir(), `bollard-rs-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    await mkdir(tempDir, { recursive: true })
+  })
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true })
+  })
+
+  it("discovers Cargo workspace with cross-crate import", async () => {
+    await writeFixture("Cargo.toml", '[workspace]\nmembers = ["crates/auth", "crates/billing"]\n')
+    await writeFixture(
+      "crates/auth/Cargo.toml",
+      '[package]\nname = "auth"\nversion = "0.1.0"\nedition = "2021"\n',
+    )
+    await writeFixture("crates/auth/src/lib.rs", "pub fn login(user: &str) -> bool { true }\n")
+    await writeFixture(
+      "crates/billing/Cargo.toml",
+      '[package]\nname = "billing"\nversion = "0.1.0"\nedition = "2021"\n',
+    )
+    await writeFixture(
+      "crates/billing/src/lib.rs",
+      'use auth::login;\npub fn charge() { login("x"); }\n',
+    )
+
+    const ctx = await buildContractContext([], rustProfile, tempDir)
+
+    expect(ctx.modules).toHaveLength(2)
+    const ids = ctx.modules.map((m) => m.id).sort()
+    expect(ids).toEqual(["auth", "billing"])
+
+    const authMod = ctx.modules.find((m) => m.id === "auth")
+    expect(authMod?.language).toBe("rust")
+    expect(authMod?.publicExports.some((s) => s.signatures.includes("login"))).toBe(true)
+
+    expect(ctx.edges).toHaveLength(1)
+    expect(ctx.edges[0]?.from).toBe("billing")
+    expect(ctx.edges[0]?.to).toBe("auth")
+    expect(ctx.edges[0]?.importedSymbols).toContain("auth")
+  })
+
+  it("falls back to single-crate when no [workspace]", async () => {
+    await writeFixture(
+      "Cargo.toml",
+      '[package]\nname = "mylib"\nversion = "0.1.0"\nedition = "2021"\n',
+    )
+    await writeFixture("src/lib.rs", 'pub fn hello() -> String { String::from("hi") }\n')
+
+    const ctx = await buildContractContext([], rustProfile, tempDir)
+
+    expect(ctx.modules).toHaveLength(1)
+    expect(ctx.modules[0]?.id).toBe("mylib")
+    expect(ctx.modules[0]?.publicExports.some((s) => s.signatures.includes("hello"))).toBe(true)
+    expect(ctx.edges).toHaveLength(0)
+  })
+
+  it("filters pub(crate) items from public surface", async () => {
+    await writeFixture(
+      "Cargo.toml",
+      '[package]\nname = "mylib"\nversion = "0.1.0"\nedition = "2021"\n',
+    )
+    await writeFixture("src/lib.rs", "pub fn public_fn() {}\npub(crate) fn internal_fn() {}\n")
+
+    const ctx = await buildContractContext([], rustProfile, tempDir)
+
+    expect(ctx.modules).toHaveLength(1)
+    const mod = ctx.modules[0]
+    const allSigs = mod?.publicExports.flatMap((s) => s.signatures) ?? []
+    const joined = allSigs.join("\n")
+    expect(joined).toContain("public_fn")
+    expect(joined).not.toContain("internal_fn")
+  })
+
+  it("returns empty graph and warns for an empty workspace", async () => {
+    const warn = vi.fn()
+    const ctx = await buildContractContext([], rustProfile, tempDir, warn)
+
+    expect(ctx).toEqual({ modules: [], edges: [], affectedEdges: [] })
+    expect(warn).toHaveBeenCalled()
+  })
+
+  it("normalizes hyphens to underscores for cross-crate edge matching", async () => {
+    await writeFixture(
+      "Cargo.toml",
+      '[workspace]\nmembers = ["crates/my-crate", "crates/consumer"]\n',
+    )
+    await writeFixture(
+      "crates/my-crate/Cargo.toml",
+      '[package]\nname = "my-crate"\nversion = "0.1.0"\nedition = "2021"\n',
+    )
+    await writeFixture("crates/my-crate/src/lib.rs", "pub fn do_stuff() {}\n")
+    await writeFixture(
+      "crates/consumer/Cargo.toml",
+      '[package]\nname = "consumer"\nversion = "0.1.0"\nedition = "2021"\n',
+    )
+    await writeFixture(
+      "crates/consumer/src/lib.rs",
+      "use my_crate::do_stuff;\npub fn run() { do_stuff(); }\n",
+    )
+
+    const ctx = await buildContractContext([], rustProfile, tempDir)
+
+    expect(ctx.modules).toHaveLength(2)
+    expect(ctx.edges).toHaveLength(1)
+    expect(ctx.edges[0]?.from).toBe("consumer")
+    expect(ctx.edges[0]?.to).toBe("my-crate")
+  })
+})

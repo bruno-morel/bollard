@@ -3,6 +3,7 @@ import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { ExtractedSignature } from "../type-extractor.js"
 import { GoContractProvider } from "./go.js"
 import { PythonContractProvider } from "./python.js"
+import { RustContractProvider } from "./rust.js"
 import { TypeScriptContractProvider } from "./typescript.js"
 
 export interface ModuleNode {
@@ -50,6 +51,7 @@ const PROVIDERS: Partial<Record<LanguageId, ContractGraphProvider>> = {
   typescript: new TypeScriptContractProvider(),
   python: new PythonContractProvider(),
   go: new GoContractProvider(),
+  rust: new RustContractProvider(),
 }
 
 export async function buildContractContext(
