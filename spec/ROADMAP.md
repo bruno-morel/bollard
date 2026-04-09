@@ -24,7 +24,7 @@ Contract-scope coverage beyond TypeScript monorepos, plus the infrastructure deb
 
 - **Per-language mutation testing** — Stryker (JS/TS), mutmut (Python), cargo-mutants (Rust), go-mutesting (Go). Unblocked now that extractors are deterministic. Mutation testing against both Layer 1 (project tests) and Layer 2 (adversarial tests) is the Stage 3c exit criterion.
 - **Semantic review agent** — separate agent that sees diff + plan (but not implementation internals) and flags misalignments. Information barrier enforced by prompt construction + postcondition scan, same pattern as contract-tester.
-- **Streaming LLM responses** — `LLMProvider.chat_stream`, partial/streaming tool-call assembly, and CLI rendering of tokens as they arrive. Design notes and rationale for deferring vs. spinner-based progress: [stage3a-progress-ux-prompt.md](./stage3a-progress-ux-prompt.md) (§1 Option B, §6). Option A (spinner + turn/tool telemetry) already shipped in Stage 3a.
+- **Streaming LLM responses** — `LLMProvider.chat_stream`, partial/streaming tool-call assembly, and CLI rendering of tokens as they arrive. Design notes and rationale for deferring vs. spinner-based progress: [archive/stage3a-progress-ux-prompt.md](./archive/stage3a-progress-ux-prompt.md) (§1 Option B, §6). Option A (spinner + turn/tool telemetry) already shipped in Stage 3a.
 - **Verification summary batching** — replace per-check retry loops with a single consolidated feedback message when the turn budget is close to exhaustion. Related to the `deferPostCompletionVerifyFromTurn` tradeoff that caused Stage 2 validation's TS static-check failure.
 - **Git rollback on coder max-turns failure** — partially-written files remain on disk today. Needs a worktree/branch strategy that can be reset atomically when the coder agent exhausts its turn budget.
 
@@ -106,6 +106,44 @@ Now a core concern across multiple stages. See [06-toolchain-profiles.md](06-too
 - **Stage 3:** Per-language mutation testing (Stryker, mutmut, go-mutesting, cargo-mutants), deterministic type extractors for Python/Go/Rust, mutation testing against both Layer 1 and Layer 2 test suites.
 
 The persistent-native adversarial test mode (tests written in the project's language, integrated with the project's test runner) is a Stage 2 deliverable. See [06-toolchain-profiles.md](06-toolchain-profiles.md) Section 13 for the ephemeral vs. persistent-native lifecycle model.
+
+---
+
+## Stage 3c → 5+: Language Coverage Expansion
+
+Stage 3a ships with deterministic support for TypeScript, JavaScript, Python, Go, and Rust. Additional major languages are sequenced into three waves. **Full design and rationale in [07-adversarial-scopes.md §12.1](07-adversarial-scopes.md#121-language-expansion-roadmap).**
+
+Each new language is a four-step integration: detector (`packages/detect/src/languages/<lang>.ts`), deterministic `SignatureExtractor` (ideally a compiled helper binary, same pattern as `bollard-extract-go` / `bollard-extract-rs`), Docker verify image (`docker/Dockerfile.verify-<lang>`), and mutation-testing wrapper.
+
+### Wave 1 — Stage 3c: Java + Kotlin (JVM)
+- **Why first:** largest enterprise footprint; **PIT** is the flagship mutation tool in any language, so Java becomes Bollard's reference mutation-testing integration
+- Detection: `pom.xml` / `build.gradle*` / `settings.gradle*`
+- Toolchain: javac + kotlinc, SpotBugs/Checkstyle/ErrorProne/ktlint/detekt, JUnit 5 / TestNG, Temurin JDK 21
+- Extractor: JavaParser-based CLI jar (`bollard-extract-java`) in dev image; Kotlin shares the helper
+- Mutation: **PIT** (`pitest`)
+- Contract graph: Gradle/Maven `project(...)` references map directly to `ContractContext` module edges
+
+### Wave 2 — Stage 4+: C#/.NET
+- **Why second:** `dotnet` CLI is one cohesive entry point, Roslyn gives a first-class AST API, and **Stryker.NET** is healthy. Sequenced after Wave 1 to reuse the Bollard mutation-testing integration contract established there
+- Detection: `*.csproj` / `*.sln` / `global.json`
+- Toolchain: `dotnet build` / `dotnet format` / `dotnet test`, xUnit/NUnit/MSTest
+- Extractor: Roslyn-based .NET global tool (`bollard-extract-dotnet`) — Roslyn's semantic model gives richer type information than any current extractor
+- Mutation: **Stryker.NET**
+- Contract graph: `.sln` + `ProjectReference` elements give a deterministic module graph
+
+### Wave 3 — Stage 5+: Ruby + PHP
+- **Why third:** smaller cohesive audiences, both underserved by AI tooling. PHP is the dark horse — massive install base plus **Infection** (on par with PIT and Stryker.NET)
+- **Ruby:** `Gemfile` detection, Sorbet/RBS typecheck (optional — contract scope is weaker without it), RuboCop, RSpec/Minitest, **mutant** (validate licensing), Prism-based helper for projects without Sorbet
+- **PHP:** `composer.json` detection, PHPStan/Psalm typecheck, PHPCS/PHP-CS-Fixer, PHPUnit/Pest, **Infection** for mutation testing, nikic/php-parser for extraction
+
+### Explicit non-goals (no near-term timeline)
+- **Swift** — Apple-ecosystem-dominant, limited server-side relevance
+- **Scala** — JVM, complex toolchain relative to audience size; may piggyback on Wave 1 if a contributor shows up
+- **Elixir** — reserved in `LanguageId`; may move earlier if Stage 4 wants a resilience-concern reference implementation (BEAM's supervision model)
+- **F#, Clojure, Haskell, OCaml, Nim, Zig** — no near-term plans; the `LanguageId` union grows when demand appears
+
+### Sequencing principle
+Waves run in sequence, not parallel, so each wave re-validates the four-integration-point abstraction before we commit to the next, and so the `dev-full` image grows predictably (~200 MB JDK, ~500 MB .NET SDK, ~150 MB Ruby+PHP across the three waves).
 
 ---
 

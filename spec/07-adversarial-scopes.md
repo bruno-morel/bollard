@@ -723,8 +723,11 @@ With adversarial scopes and cross-cutting concerns, the forward-looking roadmap 
 |-------|-------|
 | 2 | Boundary-scope adversarial testing + Docker isolation (no change) |
 | 3 | Contract-scope adversarial testing + mutation testing + semantic review |
+| 3c | **Language expansion wave 1: Java + Kotlin (JVM)** — see §12.1 |
 | 4 | Behavioral-scope adversarial testing + production feedback loop |
+| 4+ | **Language expansion wave 2: C#/.NET** — see §12.1 |
 | 5 | Self-hosting + self-improvement |
+| 5+ | **Language expansion wave 3: Ruby, PHP** — see §12.1 |
 
 ### Rationale
 
@@ -791,6 +794,77 @@ New context builder: `buildBehavioralContext()` — extracts system topology, en
 New agent: `createBehavioralTesterAgent(profile?)` — sees topology + public interfaces + failure mode catalog, generates blackbox tests with fault injection scenarios.
 
 New infrastructure: `FaultInjector` — orchestrates Docker-level fault injection (network delays, connection drops, resource limits) during behavioral test execution.
+
+### 12.1 Language Expansion Roadmap
+
+Stage 3a ships with deterministic support for TypeScript, JavaScript, Python, Go, and Rust. The `LanguageId` union in `@bollard/detect` already reserves slots for `java`, `kotlin`, `ruby`, `csharp`, `elixir`. Filling those slots is scheduled in three waves, sequenced by enterprise leverage and by how cleanly each language's toolchain maps to Bollard's three-layer verification model (detect → boundary/contract extractors → Docker isolation → mutation testing).
+
+Each wave adds four integration points per language:
+
+1. **Detector** — `packages/detect/src/languages/<lang>.ts` (file-exists → tool detected, no network/LLM calls per Principle 10).
+2. **Deterministic `SignatureExtractor`** — `packages/verify/src/extractors/<lang>.ts`, ideally a small compiled helper binary baked into the dev image (same pattern as `bollard-extract-go` / `bollard-extract-rs`).
+3. **Docker verify image** — `docker/Dockerfile.verify-<lang>` for boundary-scope isolation, plus a `dev-full` profile addition for contract-scope runs that need the real toolchain.
+4. **Mutation testing wrapper** — Stage 3c prerequisite; each language has a preferred tool listed below.
+
+#### Wave 1 (Stage 3c) — Java + Kotlin (JVM)
+
+**Why first:** Largest enterprise footprint, cleanest mutation testing story in any language (PIT), and Kotlin rides on 90% of the Java infrastructure.
+
+- **Detection signals:** `pom.xml` (Maven), `build.gradle` / `build.gradle.kts` (Gradle), `settings.gradle*`, `*.java` / `*.kt` source files.
+- **Typecheck:** `javac` (Java) / `kotlinc` (Kotlin) via Gradle/Maven build.
+- **Lint:** SpotBugs + Checkstyle + ErrorProne (Java), ktlint + detekt (Kotlin).
+- **Test:** JUnit 5 standard; TestNG secondary.
+- **Signature extraction:** Small JavaParser-based CLI jar (`bollard-extract-java`) baked into dev image. Kotlin reuses the same helper via `.class` inspection or a kotlinc-based helper.
+- **Docker verify:** `Dockerfile.verify-jvm` (Temurin JDK 21 + Gradle wrapper support, shared by both languages).
+- **Mutation testing:** **PIT** (`pitest`) — the flagship JVM mutation tool, more mature than Stryker-JS. Bollard Stage 3c can use Java/PIT as the reference implementation for per-language mutation integration.
+- **Contract graph:** Gradle/Maven multi-module workspaces map naturally to the existing `ContractContext` shape; module boundaries are explicit in `build.gradle` `project(...)` references.
+
+#### Wave 2 (Stage 4+) — C#/.NET
+
+**Why second:** Second-largest enterprise footprint, arguably the *most* Bollard-friendly language to integrate — `dotnet` is a single cohesive CLI, Roslyn provides a first-class AST API, and Stryker.NET is a healthy mutation tool. Sequenced after Wave 1 because Wave 1 establishes the Bollard mutation-testing integration pattern that C#/.NET then reuses.
+
+- **Detection signals:** `*.csproj`, `*.sln`, `global.json`, `*.fsproj` (F# stretch), `Directory.Build.props`.
+- **Typecheck:** `dotnet build` (Roslyn compiler).
+- **Lint:** `dotnet format` (built-in), Roslyn analyzers, StyleCop.
+- **Test:** `dotnet test` — xUnit, NUnit, MSTest all supported via the same runner.
+- **Signature extraction:** Roslyn-based .NET global tool (`bollard-extract-dotnet`) baked into dev image. Roslyn's semantic model gives us richer type information than any of the current extractors — potential source of deeper contract-scope analysis.
+- **Docker verify:** `Dockerfile.verify-dotnet` (mcr.microsoft.com/dotnet/sdk:9.0).
+- **Mutation testing:** **Stryker.NET** — shares the Stryker family with Stryker-JS but is independently maintained.
+- **Contract graph:** `.sln` file + `ProjectReference` elements in `.csproj` give a deterministic module graph, same pattern as Gradle subprojects.
+
+#### Wave 3 (Stage 5+) — Ruby + PHP
+
+**Why third:** Smaller but cohesive audiences, both underserved by AI tooling. PHP is the dark horse — massive install base (WordPress, Laravel, Symfony) and better static-analysis tooling than most people expect.
+
+- **Ruby detection:** `Gemfile`, `Gemfile.lock`, `*.gemspec`, `.ruby-version`.
+  - Typecheck: **Sorbet** (`srb tc`) or **RBS** (`rbs`) — both optional in the Ruby ecosystem, so detection must tolerate "no type checker" and fall back to runtime-only verification.
+  - Lint: **RuboCop** (near-universal).
+  - Test: **RSpec** primary, Minitest secondary.
+  - Signature extraction: Sorbet's `srb rbi` output is the deterministic path; projects without Sorbet need a lightweight Prism-based helper (`bollard-extract-ruby`).
+  - Mutation testing: **mutant** — excellent but has historically had licensing friction; validate before committing.
+  - Risk: Ruby's dynamic nature makes the contract scope weaker than in Java/C# unless Sorbet/RBS is present. Document as an expected limitation.
+- **PHP detection:** `composer.json`, `composer.lock`, `*.php` source files.
+  - Typecheck: **PHPStan** or **Psalm** (both mature, either-or in most projects).
+  - Lint: **PHP_CodeSniffer** (PHPCS) + PHP-CS-Fixer.
+  - Test: **PHPUnit** standard, Pest secondary.
+  - Signature extraction: `nikic/php-parser` via a small PHP helper CLI (`bollard-extract-php`) baked into the dev image.
+  - Mutation testing: **Infection** — one of the best mutation tools in any language, on par with PIT and Stryker.NET.
+  - Contract graph: Composer package boundaries + PSR-4 autoload roots give a deterministic module graph.
+
+#### Explicit non-goals (no timeline)
+
+- **Swift** — Apple-ecosystem-dominant, limited server-side relevance for Bollard's target audience. Revisit if demand emerges.
+- **Scala** — JVM, would inherit most of Wave 1's infrastructure, but the toolchain (sbt, Mill, Bloop) is complex relative to audience size. Could be added as a Wave 1 stretch if a motivated contributor shows up.
+- **Elixir** — Reserved in `LanguageId` but deferred indefinitely. Interesting note: BEAM's resilience-by-design matches Bollard's behavioral-scope vision well, so Elixir may move earlier if Stage 4 needs a "resilience concern" reference implementation.
+- **F#, Clojure, Haskell, OCaml, Nim, Zig** — No near-term roadmap. The `LanguageId` union can grow when evidence of demand appears; Bollard's design deliberately makes language addition a mechanical four-step process so we aren't forced to pre-commit.
+
+#### Sequencing rationale (why waves, not parallelism)
+
+Adding a language is not just four files — it's four files *plus* a dev-image rebuild, a `dev-full` profile update, a verify image, an integration test matrix, and (eventually) a mutation-testing wrapper. Running waves in sequence means:
+
+1. Each wave re-validates the four-integration-point abstraction against a new ecosystem before we commit to the next.
+2. Wave 1 (Java/PIT) establishes the Bollard mutation-testing integration contract; Waves 2 and 3 plug into it rather than inventing their own.
+3. `dev-full` image size grows predictably — JDK in Wave 1 (~200 MB), .NET SDK in Wave 2 (~500 MB), Ruby + PHP in Wave 3 (~150 MB combined). A parallel "all-at-once" wave would make the `dev-full` image unmaintainable.
 
 ---
 
