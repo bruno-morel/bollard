@@ -18,6 +18,12 @@ import {
 import type { ClaimRecord, EnabledConcerns } from "@bollard/verify/src/contract-grounding.js"
 import { runTests } from "@bollard/verify/src/dynamic.js"
 import { runMutationTesting } from "@bollard/verify/src/mutation.js"
+import {
+  buildReviewCorpus,
+  parseReviewDocument,
+  verifyReviewGrounding,
+} from "@bollard/verify/src/review-grounding.js"
+import type { ReviewDocument, ReviewFinding } from "@bollard/verify/src/review-grounding.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
 import { resolveContractTestOutputRel } from "@bollard/verify/src/test-lifecycle.js"
 import { extractPrivateIdentifiers, getExtractor } from "@bollard/verify/src/type-extractor.js"
@@ -689,8 +695,14 @@ export function createImplementFeatureBlueprint(
             }
           }
 
+          const affectedFiles = getAffectedSourceFiles(ctx)
+
           const startMs = Date.now()
-          const result = await runMutationTesting(workDir, profile)
+          const result = await runMutationTesting(
+            workDir,
+            profile,
+            affectedFiles.length > 0 ? affectedFiles : undefined,
+          )
           ctx.mutationScore = result.score
 
           ctx.log.info("mutation_testing_result", {
@@ -703,6 +715,8 @@ export function createImplementFeatureBlueprint(
             timeout: result.timeout,
             totalMutants: result.totalMutants,
             duration_ms: result.duration_ms,
+            scopedToFiles: affectedFiles.length > 0,
+            affectedFileCount: affectedFiles.length,
           })
 
           const threshold = profile.mutation.threshold
@@ -722,6 +736,109 @@ export function createImplementFeatureBlueprint(
             data: result,
             cost_usd: 0,
             duration_ms: Date.now() - startMs,
+          }
+        },
+      },
+
+      {
+        id: "generate-review-diff",
+        name: "Generate Review Diff",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          try {
+            const { stdout } = await execFileAsync("git", ["diff", "main"], {
+              cwd: workDir,
+              maxBuffer: 4 * 1024 * 1024,
+            })
+            return {
+              status: "ok",
+              data: { diff: stdout, plan: ctx.plan },
+            }
+          } catch (err: unknown) {
+            return {
+              status: "fail",
+              error: {
+                code: "NODE_EXECUTION_FAILED",
+                message: err instanceof Error ? err.message : String(err),
+              },
+            }
+          }
+        },
+      },
+
+      {
+        id: "semantic-review",
+        name: "Semantic Review",
+        type: "agentic",
+        agent: "semantic-reviewer",
+      },
+
+      {
+        id: "verify-review-grounding",
+        name: "Verify Review Grounding",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const gen = ctx.results["semantic-review"]
+          const raw = typeof gen?.data === "string" ? gen.data : ""
+          const diffRes = ctx.results["generate-review-diff"]?.data as { diff?: string } | undefined
+          const diffText = diffRes?.diff ?? ""
+
+          if (!raw.trim()) {
+            ctx.log.info("semantic_review_result", {
+              event: "semantic_review_result",
+              runId: ctx.runId,
+              proposed: 0,
+              kept: 0,
+              dropped: 0,
+              dropRate: 0,
+              severityCounts: { info: 0, warning: 0, error: 0 },
+            })
+            return { status: "ok", data: { findings: [] as ReviewFinding[] } }
+          }
+
+          let doc: ReviewDocument
+          try {
+            doc = parseReviewDocument(raw)
+          } catch (err: unknown) {
+            if (BollardError.is(err)) {
+              ctx.log.warn("semantic_review_parse_failed", {
+                event: "semantic_review_parse_failed",
+                runId: ctx.runId,
+                code: err.code,
+                message: err.message,
+              })
+            }
+            return { status: "ok", data: { findings: [] as ReviewFinding[] } }
+          }
+
+          const corpus = buildReviewCorpus(diffText, ctx.plan)
+          const result = verifyReviewGrounding(doc, corpus)
+
+          const proposed = doc.findings.length
+          const keptCount = result.kept.length
+          const droppedCount = result.dropped.length
+          const dropRate = proposed === 0 ? 0 : Math.round((droppedCount / proposed) * 1000) / 1000
+
+          const severityCounts = { info: 0, warning: 0, error: 0 }
+          for (const f of result.kept) {
+            if (f.severity === "info") severityCounts.info++
+            else if (f.severity === "warning") severityCounts.warning++
+            else if (f.severity === "error") severityCounts.error++
+          }
+
+          ctx.log.info("semantic_review_result", {
+            event: "semantic_review_result",
+            runId: ctx.runId,
+            proposed,
+            kept: keptCount,
+            dropped: droppedCount,
+            dropRate,
+            severityCounts,
+          })
+
+          return {
+            status: "ok",
+            data: { findings: result.kept },
           }
         },
       },

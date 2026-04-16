@@ -193,7 +193,7 @@ describe("run-mutation-testing node", () => {
     expect(ctx.mutationScore).toBe(0)
   })
 
-  it("emits mutation_testing_result log event", async () => {
+  it("emits mutation_testing_result log event with scopedToFiles false when no plan", async () => {
     const execute = getMutationNode()
     const profile = makeProfile({
       enabled: true,
@@ -226,6 +226,104 @@ describe("run-mutation-testing node", () => {
       timeout: 0,
       totalMutants: 10,
       duration_ms: 4000,
+      scopedToFiles: false,
+      affectedFileCount: 0,
     })
+  })
+
+  it("passes affected files to runMutationTesting", async () => {
+    const execute = getMutationNode()
+    const profile = makeProfile({
+      enabled: true,
+      tool: "stryker",
+      threshold: 80,
+      timeoutMs: 300_000,
+      concurrency: 2,
+    })
+    const ctx = makeCtx(profile)
+    ctx.plan = {
+      affected_files: {
+        modify: ["packages/engine/src/cost-tracker.ts"],
+      },
+    }
+
+    mockRunMutationTesting.mockResolvedValue({
+      score: 85,
+      killed: 17,
+      survived: 3,
+      noCoverage: 0,
+      timeout: 0,
+      totalMutants: 20,
+      duration_ms: 5000,
+    })
+
+    await execute(ctx)
+
+    expect(mockRunMutationTesting).toHaveBeenCalledWith("/tmp/test", profile, [
+      "packages/engine/src/cost-tracker.ts",
+    ])
+  })
+
+  it("passes undefined when no affected files", async () => {
+    const execute = getMutationNode()
+    const profile = makeProfile({
+      enabled: true,
+      tool: "stryker",
+      threshold: 80,
+      timeoutMs: 300_000,
+      concurrency: 2,
+    })
+    const ctx = makeCtx(profile)
+
+    mockRunMutationTesting.mockResolvedValue({
+      score: 85,
+      killed: 17,
+      survived: 3,
+      noCoverage: 0,
+      timeout: 0,
+      totalMutants: 20,
+      duration_ms: 5000,
+    })
+
+    await execute(ctx)
+
+    expect(mockRunMutationTesting).toHaveBeenCalledWith("/tmp/test", profile, undefined)
+  })
+
+  it("log event includes scopedToFiles true when files are scoped", async () => {
+    const execute = getMutationNode()
+    const profile = makeProfile({
+      enabled: true,
+      tool: "stryker",
+      threshold: 80,
+      timeoutMs: 300_000,
+      concurrency: 2,
+    })
+    const ctx = makeCtx(profile)
+    ctx.plan = {
+      affected_files: {
+        modify: ["packages/engine/src/cost-tracker.ts"],
+      },
+    }
+
+    mockRunMutationTesting.mockResolvedValue({
+      score: 90,
+      killed: 9,
+      survived: 1,
+      noCoverage: 0,
+      timeout: 0,
+      totalMutants: 10,
+      duration_ms: 4000,
+    })
+
+    await execute(ctx)
+
+    expect(ctx.log.info).toHaveBeenCalledWith(
+      "mutation_testing_result",
+      expect.objectContaining({
+        scopedToFiles: true,
+        affectedFileCount: 1,
+      }),
+    )
   })
 })

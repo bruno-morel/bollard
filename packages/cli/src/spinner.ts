@@ -120,6 +120,14 @@ export function createAgentSpinner(opts?: AgentSpinnerOptions): AgentSpinner {
     handleEvent(event: AgentProgressEvent): void {
       if (finalized) return
 
+      if (event.type === "stream_delta") {
+        if (isTTY) {
+          lastToolLabel = `${event.totalTokensSoFar} tokens`
+          redrawTTY()
+        }
+        return
+      }
+
       if (event.type === "turn_start") {
         clearToolResetTimer()
         role = event.role

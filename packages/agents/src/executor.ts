@@ -5,6 +5,7 @@ import type {
   LLMProvider,
   LLMRequest,
   LLMResponse,
+  LLMStreamEvent,
   LLMTool,
 } from "@bollard/llm/src/types.js"
 import type {
@@ -28,6 +29,33 @@ function emitProgress(ctx: AgentContext, ev: AgentProgressEvent): void {
   } catch {
     // Progress listeners must never break the executor
   }
+}
+
+async function streamToResponse(
+  stream: AsyncIterable<LLMStreamEvent>,
+  ctx: AgentContext,
+  turn: number,
+): Promise<LLMResponse> {
+  let totalChars = 0
+  for await (const ev of stream) {
+    if (ev.type === "text_delta") {
+      const chunk = ev.text.length
+      totalChars += chunk
+      emitProgress(ctx, {
+        type: "stream_delta",
+        turn,
+        tokensThisChunk: chunk,
+        totalTokensSoFar: totalChars,
+      })
+    }
+    if (ev.type === "message_complete") {
+      return ev.response
+    }
+  }
+  throw new BollardError({
+    code: "LLM_INVALID_RESPONSE",
+    message: "LLM stream ended without message_complete event",
+  })
 }
 
 async function chatWithRetry(
@@ -122,18 +150,18 @@ export async function executeAgent(
       role: agent.role,
     })
 
-    const response = await chatWithRetry(
-      provider,
-      {
-        system: agent.systemPrompt,
-        messages,
-        ...(llmTools.length > 0 ? { tools: llmTools } : {}),
-        maxTokens: resolvedMaxTokens,
-        temperature: agent.temperature,
-        model,
-      },
-      agent.role,
-    )
+    const request: LLMRequest = {
+      system: agent.systemPrompt,
+      messages,
+      ...(llmTools.length > 0 ? { tools: llmTools } : {}),
+      maxTokens: resolvedMaxTokens,
+      temperature: agent.temperature,
+      model,
+    }
+
+    const response = provider.chatStream
+      ? await streamToResponse(provider.chatStream(request), ctx, displayTurn)
+      : await chatWithRetry(provider, request, agent.role)
 
     totalCostUsd += response.costUsd
     const toolCallsThisTurn = response.content.filter((b) => b.type === "tool_use").length

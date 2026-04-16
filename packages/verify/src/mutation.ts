@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
+import { BollardError } from "@bollard/engine/src/errors.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -19,7 +20,11 @@ export interface MutationTestResult {
 
 export interface MutationTestingProvider {
   readonly language: LanguageId
-  run(workDir: string, profile: ToolchainProfile): Promise<MutationTestResult>
+  run(
+    workDir: string,
+    profile: ToolchainProfile,
+    mutateFiles?: string[],
+  ): Promise<MutationTestResult>
 }
 
 const ZERO_RESULT: MutationTestResult = {
@@ -144,19 +149,306 @@ function deriveMutatePatterns(profile: ToolchainProfile): string[] {
   return mutate
 }
 
+/** Maps a source glob pattern to a directory path for mutmut --paths-to-mutate. */
+export function patternToDirectoryPath(pattern: string): string {
+  const starIdx = pattern.indexOf("**")
+  if (starIdx === -1) {
+    const base = pattern.replace(/\/[^/]*\*.*$/, "").replace(/\/+$/, "")
+    return base.length > 0 ? base : "."
+  }
+  const prefix = pattern.slice(0, starIdx).replace(/\/+$/, "")
+  return prefix.length > 0 ? prefix : "."
+}
+
+/** Derive comma-separated directory paths from Python source patterns (excludes test globs). */
+export function derivePythonPathsForMutmut(profile: ToolchainProfile): string {
+  const dirs = new Set<string>()
+  for (const pattern of profile.sourcePatterns) {
+    if (TEST_FILE_PATTERN.test(pattern)) continue
+    dirs.add(patternToDirectoryPath(pattern))
+  }
+  if (dirs.size === 0) {
+    return "src"
+  }
+  return [...dirs].sort().join(",")
+}
+
+/** Parse `mutmut results` stdout/stderr for killed/survived counts. */
+export function parseMutmutResultsOutput(text: string): {
+  killed: number
+  survived: number
+  totalMutants: number
+} {
+  const killedMatch = text.match(/Killed mutants\s*\((\d+)\s+of\s+(\d+)\)/i)
+  const survivedMatch = text.match(/Survived mutants\s*\((\d+)\s+of\s+(\d+)\)/i)
+
+  let killed = 0
+  let survived = 0
+  let totalMutants = 0
+
+  if (killedMatch && survivedMatch) {
+    killed = Number.parseInt(killedMatch[1] ?? "0", 10)
+    survived = Number.parseInt(survivedMatch[1] ?? "0", 10)
+    const tk = Number.parseInt(killedMatch[2] ?? "0", 10)
+    const ts = Number.parseInt(survivedMatch[2] ?? "0", 10)
+    totalMutants = tk > 0 ? tk : ts
+    if (totalMutants === 0) {
+      totalMutants = killed + survived
+    }
+    return { killed, survived, totalMutants }
+  }
+
+  if (killedMatch) {
+    killed = Number.parseInt(killedMatch[1] ?? "0", 10)
+    totalMutants = Number.parseInt(killedMatch[2] ?? "0", 10)
+    survived = Math.max(0, totalMutants - killed)
+    return { killed, survived, totalMutants }
+  }
+
+  if (survivedMatch) {
+    survived = Number.parseInt(survivedMatch[1] ?? "0", 10)
+    totalMutants = Number.parseInt(survivedMatch[2] ?? "0", 10)
+    killed = Math.max(0, totalMutants - survived)
+    return { killed, survived, totalMutants }
+  }
+
+  return { killed: 0, survived: 0, totalMutants: 0 }
+}
+
+function isExecNotFound(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as NodeJS.ErrnoException).code === "ENOENT"
+  )
+}
+
+export class MutmutProvider implements MutationTestingProvider {
+  readonly language: LanguageId = "python"
+
+  async run(
+    workDir: string,
+    profile: ToolchainProfile,
+    mutateFiles?: string[],
+  ): Promise<MutationTestResult> {
+    const startMs = Date.now()
+    const pathsArg =
+      mutateFiles && mutateFiles.length > 0
+        ? mutateFiles.join(",")
+        : derivePythonPathsForMutmut(profile)
+    const timeout = profile.mutation?.timeoutMs ?? 300_000
+
+    try {
+      await execFileAsync("mutmut", ["run", "--paths-to-mutate", pathsArg, "--no-progress"], {
+        cwd: workDir,
+        maxBuffer: 10 * 1024 * 1024,
+        timeout,
+      })
+    } catch (err: unknown) {
+      if (isExecNotFound(err)) {
+        throw new BollardError({
+          code: "NODE_EXECUTION_FAILED",
+          message:
+            "mutmut not found on PATH — install with: pip install mutmut (or add to your Python environment)",
+          ...(err instanceof Error ? { cause: err } : {}),
+        })
+      }
+      process.stderr.write(
+        `bollard: mutmut run failed: ${err instanceof Error ? err.message : String(err)}\n`,
+      )
+      return { ...ZERO_RESULT, duration_ms: Date.now() - startMs }
+    }
+
+    let resultsText = ""
+    try {
+      const { stdout, stderr } = await execFileAsync("mutmut", ["results"], {
+        cwd: workDir,
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: 60_000,
+      })
+      resultsText = `${stdout}\n${stderr}`
+    } catch (err: unknown) {
+      if (isExecNotFound(err)) {
+        throw new BollardError({
+          code: "NODE_EXECUTION_FAILED",
+          message:
+            "mutmut not found on PATH — install with: pip install mutmut (or add to your Python environment)",
+          ...(err instanceof Error ? { cause: err } : {}),
+        })
+      }
+      process.stderr.write(
+        `bollard: mutmut results failed: ${err instanceof Error ? err.message : String(err)}\n`,
+      )
+      return { ...ZERO_RESULT, duration_ms: Date.now() - startMs }
+    }
+
+    const { killed, survived, totalMutants } = parseMutmutResultsOutput(resultsText)
+    const score = totalMutants > 0 ? (killed / totalMutants) * 100 : 0
+
+    return {
+      score,
+      killed,
+      survived,
+      noCoverage: 0,
+      timeout: 0,
+      totalMutants,
+      duration_ms: Date.now() - startMs,
+    }
+  }
+}
+
+interface CargoMutantOutcome {
+  scenario?: string
+  summary?: string
+}
+
+/** Parse cargo-mutants `mutants.out/outcomes.json` into mutation counts. */
+export function parseCargoMutantsOutcomes(jsonText: string): {
+  killed: number
+  survived: number
+  timeout: number
+  totalMutants: number
+} {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(jsonText) as unknown
+  } catch {
+    return { killed: 0, survived: 0, timeout: 0, totalMutants: 0 }
+  }
+
+  const rows: CargoMutantOutcome[] = Array.isArray(parsed)
+    ? (parsed as CargoMutantOutcome[])
+    : parsed !== null &&
+        typeof parsed === "object" &&
+        Array.isArray((parsed as Record<string, unknown>)["outcomes"])
+      ? ((parsed as Record<string, unknown>)["outcomes"] as CargoMutantOutcome[])
+      : []
+
+  let killed = 0
+  let survived = 0
+  let timeout = 0
+
+  for (const row of rows) {
+    const s = row.summary ?? ""
+    if (s === "Success" || s === "CaughtMutant") {
+      killed++
+    } else if (s === "MissedMutant") {
+      survived++
+    } else if (s === "Timeout") {
+      timeout++
+    }
+  }
+
+  const totalMutants = killed + survived + timeout
+  return { killed, survived, timeout, totalMutants }
+}
+
+export class CargoMutantsProvider implements MutationTestingProvider {
+  readonly language: LanguageId = "rust"
+
+  async run(
+    workDir: string,
+    profile: ToolchainProfile,
+    mutateFiles?: string[],
+  ): Promise<MutationTestResult> {
+    const startMs = Date.now()
+    const timeout = profile.mutation?.timeoutMs ?? 300_000
+    const outcomesPath = join(workDir, "mutants.out", "outcomes.json")
+
+    const args = ["mutants", "--json", "--no-shuffle"]
+    if (mutateFiles && mutateFiles.length > 0) {
+      for (const f of mutateFiles) {
+        args.push("--file", f)
+      }
+    }
+
+    try {
+      await execFileAsync("cargo", args, {
+        cwd: workDir,
+        maxBuffer: 10 * 1024 * 1024,
+        timeout,
+      })
+    } catch (err: unknown) {
+      if (isExecNotFound(err)) {
+        throw new BollardError({
+          code: "NODE_EXECUTION_FAILED",
+          message: "cargo not found on PATH — Rust toolchain required for cargo-mutants",
+          ...(err instanceof Error ? { cause: err } : {}),
+        })
+      }
+      const stderr =
+        err && typeof err === "object" && "stderr" in err
+          ? String((err as { stderr: string | Buffer }).stderr)
+          : ""
+      const combined = `${err instanceof Error ? err.message : String(err)}\n${stderr}`
+      if (
+        /no such command:\s*`?mutants`?/i.test(combined) ||
+        /unknown command\s+['"]?mutants['"]?/i.test(combined)
+      ) {
+        throw new BollardError({
+          code: "NODE_EXECUTION_FAILED",
+          message: "cargo-mutants not found — install with: cargo install cargo-mutants",
+          ...(err instanceof Error ? { cause: err } : {}),
+        })
+      }
+      process.stderr.write(
+        `bollard: cargo mutants failed: ${err instanceof Error ? err.message : String(err)}\n`,
+      )
+      return { ...ZERO_RESULT, duration_ms: Date.now() - startMs }
+    }
+
+    let jsonText: string
+    try {
+      jsonText = await readFile(outcomesPath, "utf-8")
+    } catch (err: unknown) {
+      process.stderr.write(
+        `bollard: cargo-mutants outcomes not found at ${outcomesPath}: ${err instanceof Error ? err.message : String(err)}\n`,
+      )
+      return { ...ZERO_RESULT, duration_ms: Date.now() - startMs }
+    }
+
+    const {
+      killed,
+      survived,
+      timeout: timeoutCount,
+      totalMutants,
+    } = parseCargoMutantsOutcomes(jsonText)
+    const score = totalMutants > 0 ? ((killed + timeoutCount) / totalMutants) * 100 : 0
+
+    return {
+      score,
+      killed,
+      survived,
+      noCoverage: 0,
+      timeout: timeoutCount,
+      totalMutants,
+      duration_ms: Date.now() - startMs,
+      reportPath: outcomesPath,
+    }
+  }
+}
+
 export class StrykerProvider implements MutationTestingProvider {
   readonly language: LanguageId = "typescript"
 
-  async run(workDir: string, profile: ToolchainProfile): Promise<MutationTestResult> {
+  async run(
+    workDir: string,
+    profile: ToolchainProfile,
+    mutateFiles?: string[],
+  ): Promise<MutationTestResult> {
     const startMs = Date.now()
     const reportPath = join(workDir, "reports", "mutation", "mutation.json")
+
+    const mutatePatterns =
+      mutateFiles && mutateFiles.length > 0 ? mutateFiles : deriveMutatePatterns(profile)
 
     const config = {
       testRunner: "vitest",
       vitest: {
         configFile: deriveVitestConfigFile(profile),
       },
-      mutate: deriveMutatePatterns(profile),
+      mutate: mutatePatterns,
       reporters: ["json", "clear-text"],
       jsonReporter: { fileName: "reports/mutation/mutation.json" },
       thresholds: { high: profile.mutation?.threshold ?? 80, low: 60, break: null },
@@ -209,24 +501,38 @@ export class StrykerProvider implements MutationTestingProvider {
   }
 }
 
-const PROVIDERS: Record<string, MutationTestingProvider> = {
-  typescript: new StrykerProvider(),
-  javascript: new StrykerProvider(),
+const strykerSingleton = new StrykerProvider()
+const mutmutSingleton = new MutmutProvider()
+const cargoMutantsSingleton = new CargoMutantsProvider()
+
+export function getMutationProvider(language: LanguageId): MutationTestingProvider | undefined {
+  switch (language) {
+    case "typescript":
+    case "javascript":
+      return strykerSingleton
+    case "python":
+      return mutmutSingleton
+    case "rust":
+      return cargoMutantsSingleton
+    default:
+      return undefined
+  }
 }
 
 export async function runMutationTesting(
   workDir: string,
   profile: ToolchainProfile,
+  mutateFiles?: string[],
 ): Promise<MutationTestResult> {
   if (!profile.mutation?.enabled) {
     return { ...ZERO_RESULT }
   }
 
-  const provider = PROVIDERS[profile.language]
+  const provider = getMutationProvider(profile.language)
   if (!provider) {
     process.stderr.write(`bollard: mutation testing not available for ${profile.language}\n`)
     return { ...ZERO_RESULT }
   }
 
-  return provider.run(workDir, profile)
+  return provider.run(workDir, profile, mutateFiles)
 }

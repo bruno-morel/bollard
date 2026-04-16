@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
+import type { ReviewFinding } from "@bollard/verify/src/review-grounding.js"
 
 function waitForApproval(prompt: string): Promise<boolean> {
   const rl = createInterface({ input: process.stdin, output: process.stderr })
@@ -25,6 +26,21 @@ export async function humanGateHandler(
   }
 
   if (node.id === "approve-pr") {
+    const reviewData = ctx.results["verify-review-grounding"]?.data as
+      | { findings?: ReviewFinding[] }
+      | undefined
+    const findings = reviewData?.findings ?? []
+    if (findings.length > 0) {
+      process.stderr.write(`\n--- Semantic review (${findings.length} finding(s)) ---\n`)
+      for (const f of findings) {
+        process.stderr.write(`[${f.severity}] ${f.id} (${f.category}): ${f.finding}\n`)
+        if (f.suggestion) {
+          process.stderr.write(`  Suggestion: ${f.suggestion}\n`)
+        }
+      }
+      process.stderr.write("--- End semantic review ---\n")
+    }
+
     const diffResult = ctx.results["generate-diff"]
     if (diffResult?.data && typeof diffResult.data === "object" && "diff" in diffResult.data) {
       const diff = String((diffResult.data as { diff: string }).diff)

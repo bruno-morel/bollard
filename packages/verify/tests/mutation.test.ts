@@ -20,9 +20,16 @@ vi.mock("node:fs/promises", () => ({
   readFile: mockReadFile,
 }))
 
-const { parseStrykerReport, StrykerProvider, runMutationTesting } = await import(
-  "../src/mutation.js"
-)
+const {
+  parseStrykerReport,
+  parseMutmutResultsOutput,
+  parseCargoMutantsOutcomes,
+  StrykerProvider,
+  MutmutProvider,
+  CargoMutantsProvider,
+  getMutationProvider,
+  runMutationTesting,
+} = await import("../src/mutation.js")
 
 function makeProfile(overrides?: Partial<MutationConfig>): ToolchainProfile {
   const scopeConfig = (enabled: boolean) => ({
@@ -216,6 +223,50 @@ describe("StrykerProvider.run config generation", () => {
     expect(writtenJson.vitest.configFile).toBe("vitest.config.ts")
   })
 
+  it("uses mutateFiles when provided", async () => {
+    mockWriteFile.mockResolvedValue(undefined)
+    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
+    mockReadFile.mockResolvedValue(makeSampleReport([{ status: "Killed" }]))
+
+    const profile = makeProfile()
+    const provider = new StrykerProvider()
+    await provider.run("/tmp/test", profile, ["src/foo.ts"])
+
+    expect(mockWriteFile).toHaveBeenCalledOnce()
+    const writtenJson = JSON.parse(mockWriteFile.mock.calls[0][1] as string)
+    expect(writtenJson.mutate).toEqual(["src/foo.ts"])
+  })
+
+  it("falls back to sourcePatterns when mutateFiles is empty", async () => {
+    mockWriteFile.mockResolvedValue(undefined)
+    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
+    mockReadFile.mockResolvedValue(makeSampleReport([{ status: "Killed" }]))
+
+    const profile = makeProfile()
+    const provider = new StrykerProvider()
+    await provider.run("/tmp/test", profile, [])
+
+    expect(mockWriteFile).toHaveBeenCalledOnce()
+    const writtenJson = JSON.parse(mockWriteFile.mock.calls[0][1] as string)
+    expect(writtenJson.mutate).toContain("packages/*/src/**/*.ts")
+    expect(writtenJson.mutate.some((p: string) => p.startsWith("!"))).toBe(true)
+  })
+
+  it("falls back to sourcePatterns when mutateFiles is undefined", async () => {
+    mockWriteFile.mockResolvedValue(undefined)
+    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
+    mockReadFile.mockResolvedValue(makeSampleReport([{ status: "Killed" }]))
+
+    const profile = makeProfile()
+    const provider = new StrykerProvider()
+    await provider.run("/tmp/test", profile, undefined)
+
+    expect(mockWriteFile).toHaveBeenCalledOnce()
+    const writtenJson = JSON.parse(mockWriteFile.mock.calls[0][1] as string)
+    expect(writtenJson.mutate).toContain("packages/*/src/**/*.ts")
+    expect(writtenJson.mutate.some((p: string) => p.startsWith("!"))).toBe(true)
+  })
+
   it("uses threshold and concurrency from MutationConfig", async () => {
     mockWriteFile.mockResolvedValue(undefined)
     mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
@@ -281,6 +332,19 @@ describe("runMutationTesting", () => {
     expect(result.totalMutants).toBe(0)
   })
 
+  it("threads mutateFiles to provider", async () => {
+    mockWriteFile.mockResolvedValue(undefined)
+    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
+    mockReadFile.mockResolvedValue(makeSampleReport([{ status: "Killed" }]))
+
+    const profile = makeProfile()
+    await runMutationTesting("/tmp/test", profile, ["a.ts"])
+
+    expect(mockWriteFile).toHaveBeenCalledOnce()
+    const writtenJson = JSON.parse(mockWriteFile.mock.calls[0][1] as string)
+    expect(writtenJson.mutate).toEqual(["a.ts"])
+  })
+
   it("returns parsed result on successful run", async () => {
     mockWriteFile.mockResolvedValue(undefined)
     mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
@@ -301,5 +365,122 @@ describe("runMutationTesting", () => {
     expect(result.survived).toBe(1)
     expect(result.totalMutants).toBe(4)
     expect(result.reportPath).toContain("mutation.json")
+  })
+})
+
+function makeProfileForLanguage(
+  language: ToolchainProfile["language"],
+  overrides?: Partial<MutationConfig>,
+): ToolchainProfile {
+  const base = makeProfile(overrides)
+  if (language === "python") {
+    return {
+      ...base,
+      language: "python",
+      packageManager: "pip",
+      sourcePatterns: ["src/**/*.py"],
+      testPatterns: ["tests/**/*.py"],
+    }
+  }
+  if (language === "rust") {
+    return {
+      ...base,
+      language: "rust",
+      packageManager: "cargo",
+      sourcePatterns: ["src/**/*.rs"],
+      testPatterns: ["tests/**/*.rs"],
+    }
+  }
+  return { ...base, language }
+}
+
+describe("MutmutProvider", () => {
+  it("uses mutateFiles when provided", async () => {
+    mockExecFileAsync.mockResolvedValueOnce({ stdout: "", stderr: "" }).mockResolvedValueOnce({
+      stdout: "Killed mutants (7 of 10)\nSurvived mutants (3 of 10)\n",
+      stderr: "",
+    })
+
+    const profile = makeProfileForLanguage("python")
+    const provider = new MutmutProvider()
+    await provider.run("/tmp/py", profile, ["pkg/a.py", "pkg/b.py"])
+
+    expect(mockExecFileAsync.mock.calls[0]?.[0]).toBe("mutmut")
+    expect(mockExecFileAsync.mock.calls[0]?.[1]).toEqual([
+      "run",
+      "--paths-to-mutate",
+      "pkg/a.py,pkg/b.py",
+      "--no-progress",
+    ])
+  })
+
+  it("falls back to sourcePatterns when no mutateFiles", async () => {
+    mockExecFileAsync.mockResolvedValueOnce({ stdout: "", stderr: "" }).mockResolvedValueOnce({
+      stdout: "Killed mutants (4 of 4)\n",
+      stderr: "",
+    })
+
+    const profile = makeProfileForLanguage("python")
+    const provider = new MutmutProvider()
+    await provider.run("/tmp/py", profile, undefined)
+
+    expect(mockExecFileAsync.mock.calls[0]?.[1]).toContain("--paths-to-mutate")
+    expect(mockExecFileAsync.mock.calls[0]?.[1]).toContain("src")
+  })
+
+  it("parses mutmut results output", () => {
+    const text = `
+Survived mutants (3 of 10):
+
+Killed mutants (7 of 10):
+`
+    const result = parseMutmutResultsOutput(text)
+    expect(result.killed).toBe(7)
+    expect(result.survived).toBe(3)
+    expect(result.totalMutants).toBe(10)
+  })
+})
+
+describe("CargoMutantsProvider", () => {
+  it("uses --file flags when mutateFiles provided", async () => {
+    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
+    mockReadFile.mockResolvedValue("[]")
+
+    const profile = makeProfileForLanguage("rust")
+    const provider = new CargoMutantsProvider()
+    await provider.run("/tmp/rs", profile, ["src/lib.rs", "src/bin.rs"])
+
+    const cargoCall = mockExecFileAsync.mock.calls.find((c) => c[0] === "cargo")
+    expect(cargoCall?.[1]).toEqual([
+      "mutants",
+      "--json",
+      "--no-shuffle",
+      "--file",
+      "src/lib.rs",
+      "--file",
+      "src/bin.rs",
+    ])
+  })
+
+  it("parses outcomes.json", () => {
+    const json = JSON.stringify([
+      { scenario: "a", summary: "CaughtMutant" },
+      { scenario: "b", summary: "MissedMutant" },
+      { scenario: "c", summary: "Timeout" },
+      { scenario: "d", summary: "Unviable" },
+    ])
+    const result = parseCargoMutantsOutcomes(json)
+    expect(result.killed).toBe(1)
+    expect(result.survived).toBe(1)
+    expect(result.timeout).toBe(1)
+    expect(result.totalMutants).toBe(3)
+  })
+})
+
+describe("getMutationProvider", () => {
+  it("routes to correct provider by language", () => {
+    expect(getMutationProvider("python")).toBeInstanceOf(MutmutProvider)
+    expect(getMutationProvider("rust")).toBeInstanceOf(CargoMutantsProvider)
+    expect(getMutationProvider("go")).toBeUndefined()
   })
 })

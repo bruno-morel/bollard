@@ -7,6 +7,7 @@ import { createCoderAgent } from "@bollard/agents/src/coder.js"
 import { createContractTesterAgent } from "@bollard/agents/src/contract-tester.js"
 import { executeAgent } from "@bollard/agents/src/executor.js"
 import { createPlannerAgent } from "@bollard/agents/src/planner.js"
+import { createSemanticReviewerAgent } from "@bollard/agents/src/semantic-reviewer.js"
 import type { AgentContext, AgentResult, ExecutorOptions } from "@bollard/agents/src/types.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
@@ -267,6 +268,25 @@ function buildTesterMessage(ctx: PipelineContext): string {
   return sections.join("\n")
 }
 
+function buildSemanticReviewerMessage(ctx: PipelineContext): string {
+  const diffRes = ctx.results["generate-review-diff"]?.data as { diff?: string } | undefined
+  const diff = diffRes?.diff ?? ""
+  const plan = ctx.plan
+  return `## Git Diff
+
+<diff>
+${diff}
+</diff>
+
+## Plan
+
+<plan>
+${JSON.stringify(plan ?? {}, null, 2)}
+</plan>
+
+Review the diff against the plan. Output a JSON ReviewDocument.`
+}
+
 function buildContractTesterMessage(ctx: PipelineContext): string {
   const raw = ctx.results["extract-contracts"]?.data as { contract?: ContractContext } | undefined
   const contract = raw?.contract
@@ -309,6 +329,7 @@ export async function createAgenticHandler(
     coder: await createCoderAgent(profile),
     "boundary-tester": await createBoundaryTesterAgent(profile),
     "contract-tester": await createContractTesterAgent(profile),
+    "semantic-reviewer": await createSemanticReviewerAgent(profile),
   }
 
   const extractionLlm = llmClient.forAgent("boundary-tester")
@@ -392,6 +413,10 @@ export async function createAgenticHandler(
 
     if (agentRole === "contract-tester") {
       userMessage = buildContractTesterMessage(ctx)
+    }
+
+    if (agentRole === "semantic-reviewer") {
+      userMessage = buildSemanticReviewerMessage(ctx)
     }
 
     const startMs = Date.now()

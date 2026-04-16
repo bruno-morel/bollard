@@ -6,10 +6,9 @@
 
 Bollard is an **artifact integrity framework** for AI-assisted software development. It ensures every artifact (code, tests, docs, infra) is produced, adversarially verified, and mechanically proven sound before shipping. The core innovation: separate the producer from the verifier, then prove the verification itself is meaningful (via mutation testing).
 
-Bollard has completed **Stage 2** (adversarial verification infrastructure), **Stage 3a** (contract-scope adversarial testing — **validated GREEN on 2026-04-08**), and **Stage 3b** (multi-language contract graph + dev ergonomics — **validated GREEN on 2026-04-09** — see [spec/stage3b-validation-results.md](../spec/stage3b-validation-results.md) and the "Stage 3b Validation" section below). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, boundary tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 (first half) fixed critical agent infrastructure issues: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. Stage 2 (second half) added Docker-isolated verification containers, LLM fallback signature extraction for edge languages, in-language adversarial test generation, adversarial test lifecycle (ephemeral + persistent-native), MCP server (`@bollard/mcp`), and OpenAI + Google LLM providers. **Stage 3a** adds per-scope `AdversarialConfig` with concern weights, `boundary-tester` + `contract-tester` agents, deterministic extractors for Python/Go/Rust, TypeScript contract graph (`buildContractContext`), four contract blueprint nodes, and `bollard contract` / MCP `bollard_contract`. **Stage 3b** adds polyglot dev image with pre-built Go/Rust extractor helpers, `dev-full` image with full Go/Rust/Python toolchains, `ContractGraphProvider` interface with Python/Go/Rust providers, polyglot risk gate (`scanDiffForExportChanges`), polyglot test summary parsers, and ADR-0002 for the syn-based Rust extractor helper.
+Bollard has completed **Stage 2** (adversarial verification infrastructure), **Stage 3a** (contract-scope adversarial testing — **validated GREEN on 2026-04-08**), **Stage 3b** (multi-language contract graph + dev ergonomics — **validated GREEN on 2026-04-09** — see [spec/stage3b-validation-results.md](../spec/stage3b-validation-results.md)), and the **Stage 3c remainder** (polyglot mutation providers, semantic review + grounding, Anthropic response streaming, `go.work`-only Go detection — see the Remainder section in [spec/stage3c-validation-results.md](../spec/stage3c-validation-results.md)). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, boundary tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 (first half) fixed critical agent infrastructure issues: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. Stage 2 (second half) added Docker-isolated verification containers, LLM fallback signature extraction for edge languages, in-language adversarial test generation, adversarial test lifecycle (ephemeral + persistent-native), MCP server (`@bollard/mcp`), and OpenAI + Google LLM providers. **Stage 3a** adds per-scope `AdversarialConfig` with concern weights, `boundary-tester` + `contract-tester` agents, deterministic extractors for Python/Go/Rust, TypeScript contract graph (`buildContractContext`), four contract blueprint nodes, and `bollard contract` / MCP `bollard_contract`. **Stage 3b** adds polyglot dev image with pre-built Go/Rust extractor helpers, `dev-full` image with full Go/Rust/Python toolchains, `ContractGraphProvider` interface with Python/Go/Rust providers, polyglot risk gate (`scanDiffForExportChanges`), polyglot test summary parsers, and ADR-0002 for the syn-based Rust extractor helper.
 
-The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md) and the [Stage 3b → 3c follow-ups](#stage-3b--stage-3c-follow-ups) section below):
-- **Stage 3c:** Per-language mutation testing (Stryker / mutmut / cargo-mutants); semantic review agent; streaming LLM responses (deferred from 3a progress UX); `detectToolchain` for `go.work`-only layouts.
+The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md) and the [Stage 3b → Stage 3c follow-ups](#stage-3b--stage-3c-follow-ups) section below):
 - **Stage 4:** Behavioral-scope adversarial testing + production feedback loop.
 - **Stage 5:** Self-hosting + self-improvement.
 
@@ -34,17 +33,16 @@ docker compose run --rm dev --filter @bollard/cli run start -- eval planner
 docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan plan.json]
 ```
 
-### Known limitations (post Stage 3a)
+### Known limitations (post Stage 3c remainder)
 
 - Docker-isolated verification requires Docker-in-Docker (`docker.sock` mount) — degrades gracefully when unavailable.
 - Behavioral-scope adversarial testing and extractor — Stage 4.
 - Contract graph (`buildContractContext`) supports **TypeScript, Python, Go, and Rust** workspaces; other languages return an empty graph with a warning.
-- Per-language mutation testing not yet implemented — Stage 3 remainder.
 - Test output parsing supports Vitest, pytest, `go test`, and `cargo test` summary formats. Non-standard runners fall back to zero/error detection.
 - Unknown languages still need an LLM provider for signature extraction (`getExtractor` throws `PROVIDER_NOT_FOUND` without one).
+- **LLM streaming:** Anthropic implements `chatStream`; OpenAI and Google providers expose stubs that throw `PROVIDER_NOT_FOUND` until wired to each vendor’s streaming API.
 - No behavioral extractor (topology, endpoints, failure modes) — Stage 4.
 - No rollback on coder max-turns failure — partially-written files remain on disk.
-- No semantic review agent — Stage 3c.
 - No production feedback loop (probes, drift detection) — Stage 4.
 - **Stage 3a GREEN:** Layer 1 grounding (`verifyClaimGrounding`) validated via `CostTracker.subtract()` regression — all 17 nodes passed, 5 grounded claims, 0 drops.
 - **`runBlueprint` signature:** takes an optional trailing `toolchainProfile` — omitting it silently disables contract nodes. Any new entry point that constructs a blueprint run must thread the profile through (see CLI `implement-feature` for the pattern).
@@ -61,7 +59,7 @@ docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan 
 - **Property-based testing:** fast-check (used by adversarial test agent later, but available now).
 - **Runtime validation:** Zod at all boundaries.
 - **Dev runner:** tsx (esbuild-based, runs TS directly — no build step during development).
-- **Mutation testing:** Per-language (Stryker for JS/TS, mutmut for Python, cargo-mutants for Rust, etc.) — Stage 3, not yet.
+- **Mutation testing:** Per-language — Stryker (TS/JS), mutmut (Python), cargo-mutants (Rust); opt-in via `.bollard.yml`.
 - **Secret scanning:** gitleaks (checked by `@bollard/verify` when installed).
 
 ### Explicitly NOT used
@@ -158,13 +156,13 @@ bollard/
 │   │   │   └── languages/
 │   │   │       ├── typescript.ts # Detect tsconfig, pnpm/yarn/npm, biome/eslint, vitest/jest
 │   │   │       ├── python.ts     # Detect pyproject.toml, poetry/pipenv/uv, ruff/mypy, pytest
-│   │   │       ├── go.ts         # Detect go.mod, golangci-lint, go vet/test
+│   │   │       ├── go.ts         # Detect go.mod or go.work, golangci-lint, go vet/test
 │   │   │       ├── rust.ts       # Detect Cargo.toml, clippy, cargo test/audit
 │   │   │       ├── javascript.ts # Detect package.json w/o tsconfig, ESLint/Biome, Jest/Vitest/Mocha
 │   │   │       └── fallback.ts   # Returns null; buildManualProfile for interactive init
 │   │   └── tests/
-│   │       ├── detect.test.ts    # 26 tests — all detectors + orchestrator
-│   │       └── fixtures/         # ts-project/, js-project/, py-project/, go-project/, rust-project/, empty-project/
+│   │       ├── detect.test.ts    # 31 tests — all detectors + orchestrator
+│   │       └── fixtures/         # ts-project/, …, go-workspace/ (go.work-only), empty-project/
 │   │
 │   ├── engine/                   ← THE KERNEL (Stage 0)
 │   │   ├── src/
@@ -184,10 +182,10 @@ bollard/
 │   │
 │   ├── llm/                      ← LLM ABSTRACTION (Stage 0 + Stage 2)
 │   │   ├── src/
-│   │   │   ├── types.ts          # LLMProvider, LLMRequest, LLMResponse, LLMMessage, etc.
+│   │   │   ├── types.ts          # LLMProvider, LLMRequest, LLMResponse, LLMStreamEvent, optional chatStream, etc.
 │   │   │   ├── client.ts         # LLMClient — resolves provider per-agent from config
 │   │   │   ├── providers/
-│   │   │   │   ├── anthropic.ts  # AnthropicProvider (~80 LOC)
+│   │   │   │   ├── anthropic.ts  # AnthropicProvider + chatStream (Messages streaming API)
 │   │   │   │   ├── openai.ts     # OpenAIProvider — maps to Chat Completions API
 │   │   │   │   └── google.ts     # GoogleProvider — maps to Generative AI API
 │   │   │   └── mock.ts           # MockProvider — deterministic mock for testing
@@ -205,6 +203,7 @@ bollard/
 │   │   │   ├── coder.ts          # createCoderAgent(profile?) — all tools, implements plans
 │   │   │   ├── boundary-tester.ts # createBoundaryTesterAgent(profile?) — boundary-scope adversarial tests
 │   │   │   ├── contract-tester.ts # createContractTesterAgent(profile?) — contract-scope adversarial tests
+│   │   │   ├── semantic-reviewer.ts # createSemanticReviewerAgent(profile?) — post-mutation diff review (no tools)
 │   │   │   ├── eval-loader.ts    # loadEvalCases, availableAgents
 │   │   │   ├── tools/
 │   │   │   │   ├── index.ts      # ALL_TOOLS, READ_ONLY_TOOLS
@@ -223,7 +222,8 @@ bollard/
 │   │   │   ├── planner.md        # System prompt with {{language}}, {{packageManager}}, etc. placeholders
 │   │   │   ├── coder.md          # System prompt with {{testFramework}}, {{typecheck}}, {{linter}} placeholders
 │   │   │   ├── boundary-tester.md # Boundary scope + {{#concern}} concern lenses
-│   │   │   └── contract-tester.md
+│   │   │   ├── contract-tester.md
+│   │   │   └── semantic-reviewer.md
 │   │   └── tests/
 │   │       ├── executor.test.ts  # 19 tests — multi-turn, max turns, errors, cost, verification
 │   │       ├── tools.test.ts     # 17 tests — all 6 tools + path traversal guards
@@ -247,6 +247,8 @@ bollard/
 │   │   │   │   └── rust.ts           # RustContractProvider + Cargo workspace helpers
 │   │   │   ├── extractors/       # python.ts, go.ts, rust.ts — deterministic SignatureExtractor
 │   │   │   ├── compose-generator.ts  # generateVerifyCompose — dynamic compose.verify.yml from ToolchainProfile
+│   │   │   ├── mutation.ts       # runMutationTesting — Stryker / mutmut / cargo-mutants by language
+│   │   │   ├── review-grounding.ts # parseReviewDocument, verifyReviewGrounding (semantic review Layer 1)
 │   │   │   └── test-lifecycle.ts # resolveTestOutputDir, resolveContractTestOutputRel, writeTestMetadata, …
 │   │   └── tests/
 │   │       ├── static.test.ts    # 4 tests — structure + live integration
@@ -259,7 +261,7 @@ bollard/
 │   │
 │   ├── blueprints/               ← BLUEPRINT DEFINITIONS (Stage 1 + 1.5 + 2)
 │   │   ├── src/
-│   │   │   ├── implement-feature.ts  # 18-node pipeline: boundary + contract (with risk gate + grounding verifier) + docker-verify
+│   │   │   ├── implement-feature.ts  # 22-node pipeline: boundary + contract + mutation + semantic review + docker-verify
 │   │   │   └── write-tests-helpers.ts  # deriveAdversarialTestPath (scope: boundary | contract), stripMarkdownFences
 │   │   └── tests/
 │   │       ├── implement-feature.test.ts  # node order, types, structure
@@ -293,23 +295,25 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** ~8 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`
-- **Latest count (authoritative, 2026-04-09, post Stage 3b validation GREEN):** `523` passed, `2` skipped (525 total). Skips: 2 LLM live smoke tests (no key). The two former Go/Rust `it.skipIf` blocks are replaced by 3 unconditional helper tests in `extractor-helpers.test.ts`. Workstream 2 added 4 `GoAstExtractor` integration tests. Workstream 3 added 4 `RustSynExtractor` integration tests. Workstream 5 added 5 `PythonContractProvider` tests. Workstream 6 added 5 `GoContractProvider` tests. Workstream 7 added 5 `RustContractProvider` tests. Workstream 8 added 14 `scanDiffForExportChanges` polyglot tests and 8 `parseSummary` polyglot tests. Stage 3b validation (Check 9) confirmed 18/18 pipeline nodes with 6/6 grounded claims.
+- **Latest count (authoritative, 2026-04-16, post Stage 3c remainder):** `584` passed, `2` skipped (586 total). Skips: 2 LLM live smoke tests (no key). Stage 3c remainder added semantic review + review grounding, streaming executor tests, mutmut/cargo-mutants routing tests, `go.work` detection tests, and related blueprint/CLI wiring.
 
 ### Mutation Testing (Stage 3c)
 
-- **Tool:** Stryker 9.6.0 + `@stryker-mutator/vitest-runner`
+- **TypeScript / JavaScript:** Stryker 9.6.0 + `@stryker-mutator/vitest-runner`
+- **Python:** mutmut (via `runMutationTesting` → `MutmutProvider`)
+- **Rust:** cargo-mutants JSON (via `CargoMutantsProvider`)
 - **Baseline score (engine):** 70.74% (79.09% on covered code)
 - **Baseline score (engine + detect + verify + blueprints):** 45.32% (63.02% on covered code)
 - **Default threshold:** 60% (configurable via `.bollard.yml` `mutation:` section)
-- **Run command:** `docker compose run --rm dev exec stryker run`
+- **Run command (Stryker):** `docker compose run --rm dev exec stryker run`
 - **Config:** `stryker.config.json` (root); `vitest.stryker.config.ts` excludes integration tests that break on instrumented code
-- **Pipeline node:** `run-mutation-testing` (node 16 of 19), opt-in via `mutation.enabled: true` in `.bollard.yml`
+- **Pipeline node:** `run-mutation-testing` (after `run-contract-tests`), opt-in via `mutation.enabled: true` in `.bollard.yml`
 - **Dockerfile:** `procps` required in dev image for Stryker's worker process management
 - **Full results:** [spec/stage3c-validation-results.md](spec/stage3c-validation-results.md)
 
 ### Stage 3a follow-ups (agent UX)
 
-Long LLM waits no longer look frozen: `executeAgent` emits optional `AgentProgressEvent`s (`turn_start` / `turn_end` / `tool_call_start` / `tool_call_end`) via `AgentContext.progress`. The CLI wires them to `createAgentSpinner()` — TTY sessions get an in-place braille spinner with elapsed time and per-tool hints; non-TTY (CI, pipes) gets one line per milestone with no ANSI escapes. See `packages/cli/src/spinner.ts` and `packages/agents/tests/executor.progress.test.ts`.
+Long LLM waits no longer look frozen: `executeAgent` emits optional `AgentProgressEvent`s (`turn_start` / `turn_end` / `tool_call_start` / `tool_call_end`, and `stream_delta` when the provider implements `chatStream`) via `AgentContext.progress`. The CLI wires them to `createAgentSpinner()` — TTY sessions get an in-place braille spinner with elapsed time and per-tool hints; non-TTY (CI, pipes) gets one line per milestone with no ANSI escapes. See `packages/cli/src/spinner.ts`, `packages/agents/tests/executor.progress.test.ts`, and `packages/agents/tests/executor.stream.test.ts`.
 
 ### Stage 3a validation (maintainers)
 
@@ -422,10 +426,10 @@ Tracked here so they land in the next stage prompt without hunting through the v
 2. ~~**Go / Rust in the dev image**~~ — **Done (Stage 3b workstream 1).** Multi-stage Dockerfile builds `bollard-extract-go` and `bollard-extract-rs` helper binaries into the `dev` image. `dev-full` adds full Go + Rust toolchains behind the `full` compose profile.
 3. ~~**Contract graph beyond TypeScript**~~ — **Done (Stage 3b workstreams 4-7).** `ContractGraphProvider` interface + Python / Go / Rust providers. JavaScript remains Stage 4.
 4. ~~**Risk gate per-language refinement**~~ — **Done (Stage 3b workstream 8).** `scanDiffForExportChanges` now accepts `LanguageId`; Python, Go, and Rust patterns implemented.
-5. **Per-language mutation testing** — Stage 3c (Stryker / mutmut / cargo-mutants). Unblocked now that extractors are deterministic.
-6. **Semantic review agent** — Stage 3c.
-7. **Streaming LLM responses** — deferred to Stage 3c per `spec/archive/stage3a-progress-ux-prompt.md` §1 Option B; Option A (spinner + telemetry) already shipped.
-8. **`detectToolchain` for `go.work`-only layouts** — Stage 3c. Go detection requires root `go.mod`; `go.work` without root `go.mod` not detected. Provider works correctly once detected.
+5. ~~**Per-language mutation testing**~~ — **Done (Stage 3c remainder).** Stryker (TS/JS), `MutmutProvider` (Python), `CargoMutantsProvider` (Rust); `runMutationTesting` routes by `LanguageId`.
+6. ~~**Semantic review agent**~~ — **Done (Stage 3c remainder).** `semantic-reviewer` agent, `verify-review-grounding` node, `review-grounding.ts` corpus + verifier.
+7. ~~**Streaming LLM responses**~~ — **Partial (Stage 3c remainder).** Anthropic `chatStream` + executor path + `stream_delta` progress events; OpenAI/Google stubs throw `PROVIDER_NOT_FOUND` until implemented. Option A (spinner + telemetry) unchanged.
+8. ~~**`detectToolchain` for `go.work`-only layouts**~~ — **Done (Stage 3c remainder).** `go.ts` detects `go.work` without root `go.mod` via `parseGoWorkUses`; root `go.mod` still wins when both exist.
 9. **Verification summary batching** — Stage 4. Single consolidated feedback message instead of per-check retries.
 10. **Git rollback on coder max-turns failure** — Stage 4. Partially-written files remain on disk today.
 
@@ -433,7 +437,7 @@ Tracked here so they land in the next stage prompt without hunting through the v
 
 ### BollardErrorCode + BollardError (packages/engine/src/errors.ts)
 
-- `BollardErrorCode` is a string union of all error codes (LLM_TIMEOUT, LLM_RATE_LIMIT, LLM_AUTH, LLM_PROVIDER_ERROR, LLM_INVALID_RESPONSE, COST_LIMIT_EXCEEDED, TIME_LIMIT_EXCEEDED, NODE_EXECUTION_FAILED, POSTCONDITION_FAILED, STATIC_CHECK_FAILED, TEST_FAILED, MUTATION_THRESHOLD_NOT_MET, CONTRACT_VIOLATION, HUMAN_REJECTED, RISK_GATE_BLOCKED, CONFIG_INVALID, DETECTION_FAILED, PROFILE_INVALID, PROVIDER_NOT_FOUND, MODEL_NOT_AVAILABLE, CONCERN_CONFIG_INVALID, CONTRACT_TESTER_OUTPUT_INVALID, CONTRACT_TESTER_NO_GROUNDED_CLAIMS).
+- `BollardErrorCode` is a string union of all error codes (LLM_TIMEOUT, LLM_RATE_LIMIT, LLM_AUTH, LLM_PROVIDER_ERROR, LLM_INVALID_RESPONSE, COST_LIMIT_EXCEEDED, TIME_LIMIT_EXCEEDED, NODE_EXECUTION_FAILED, POSTCONDITION_FAILED, STATIC_CHECK_FAILED, TEST_FAILED, MUTATION_THRESHOLD_NOT_MET, CONTRACT_VIOLATION, HUMAN_REJECTED, RISK_GATE_BLOCKED, CONFIG_INVALID, DETECTION_FAILED, PROFILE_INVALID, PROVIDER_NOT_FOUND, MODEL_NOT_AVAILABLE, CONCERN_CONFIG_INVALID, CONTRACT_TESTER_OUTPUT_INVALID, CONTRACT_TESTER_NO_GROUNDED_CLAIMS, REVIEW_OUTPUT_INVALID).
 - `BollardError extends Error` with `code`, `context`, `retryable` (getter — true for LLM_TIMEOUT, LLM_RATE_LIMIT, LLM_PROVIDER_ERROR).
 - Static methods: `BollardError.is(err)` type guard, `BollardError.hasCode(err, code)`.
 
@@ -484,7 +488,7 @@ Tracked here so they land in the next stage prompt without hunting through the v
 `executeAgent(agent, userMessage, provider, model, ctx) → Promise<AgentResult>`
 
 The core Stage 1 upgrade. Runs a tool-use loop:
-1. Send messages to LLM with tools
+1. Send messages to LLM with tools (uses `chatStream` when the provider implements it, otherwise `chat`)
 2. If `stopReason === "tool_use"`, execute each tool, collect results
 3. Append assistant message + tool results, loop back to step 1
 4. If `stopReason !== "tool_use"`, extract text response and return
@@ -526,7 +530,7 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 
 ### implement-feature blueprint (packages/blueprints/src/implement-feature.ts)
 
-18-node pipeline:
+22-node pipeline:
 
 1. **create-branch** (deterministic) — `git checkout -b bollard/{runId}`
 2. **generate-plan** (agentic/planner) — planner agent explores codebase, produces JSON plan
@@ -543,9 +547,13 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 13. **verify-claim-grounding** (deterministic) — `parseClaimDocument` + `verifyClaimGrounding` against `ContractCorpus`; drops ungrounded claims, fails on zero survivors (`CONTRACT_TESTER_NO_GROUNDED_CLAIMS`) or malformed JSON (`CONTRACT_TESTER_OUTPUT_INVALID`)
 14. **write-contract-tests** (deterministic) — assembles surviving claim `.test` fields into a test file, `resolveContractTestOutputRel` + contract path basename, TS leak scan
 15. **run-contract-tests** (deterministic) — `runTests` with only the new contract test file path
-16. **docker-verify** (deterministic) — Docker-isolated adversarial test execution (gracefully degrades without Docker)
-17. **generate-diff** (deterministic) — `git diff --stat main`
-18. **approve-pr** (human_gate) — shows diff summary, waits for human approval
+16. **run-mutation-testing** (deterministic) — profile-driven mutation run (Stryker / mutmut / cargo-mutants); skipped when mutation disabled or not applicable
+17. **generate-review-diff** (deterministic) — unified diff for semantic review input
+18. **semantic-review** (agentic/semantic-reviewer) — structured JSON review findings (no tools)
+19. **verify-review-grounding** (deterministic) — `parseReviewDocument` + `verifyReviewGrounding`; drops ungrounded findings
+20. **docker-verify** (deterministic) — Docker-isolated adversarial test execution (gracefully degrades without Docker)
+21. **generate-diff** (deterministic) — `git diff --stat main`
+22. **approve-pr** (human_gate) — shows diff summary and review findings, waits for human approval
 
 ### CLI commands
 
@@ -670,7 +678,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - `LLMClient` resolves `"openai"` and `"google"` providers via env vars
 - `promote-test` CLI command — copy adversarial tests to project test directory
 - `bollard init` generates `.bollard.yml` and `.bollard/mcp.json`
-- Blueprint now has **18 nodes** (risk gate + contract nodes + grounding verifier between `run-tests` and `docker-verify`)
+- Blueprint now has **22 nodes** (risk gate + contract nodes + mutation + semantic review + review grounding before `docker-verify`)
 
 ### Stage 3a (DONE) — Contract scope bundle
 - `AdversarialConfig` per scope + `concerns.ts` defaults and YAML merge (`CONCERN_CONFIG_INVALID` on bad config)
@@ -682,10 +690,8 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 
 ### DO NOT build yet:
 - **New languages outside the current five (TS/JS/Python/Go/Rust)** — Java, Kotlin, C#/.NET, Ruby, PHP are sequenced into three waves (Stage 3c → 4+ → 5+). Full design in [spec/07-adversarial-scopes.md §12.1](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md). Do not add language detectors, extractors, or verify images for any of these languages ad-hoc — each wave is coordinated so the dev image, `dev-full` image, mutation testing pattern, and contract graph all land together. Swift, Scala, Elixir, F#, Clojure, Haskell, OCaml, Nim, and Zig are explicit non-goals with no near-term timeline.
-- **Streaming LLM responses (Stage 3c / 4 follow-up)** — `LLMProvider.chat_stream`, incremental delta events from `executeAgent`, CLI rendering of model output as it arrives (Option B in `spec/archive/stage3a-progress-ux-prompt.md` §1). Deferred because it requires provider-specific streaming implementations (Anthropic, OpenAI, Google) and partial-response error handling; Option A (spinner + turn/tool telemetry without streaming) covers basic “feels alive” UX.
-- Per-language mutation testing (Stryker, mutmut, cargo-mutants, etc.) — Stage 3 remainder
-- Semantic review agent — Stage 3 remainder
-- Contract graph for Python/Go/Rust workspaces — Stage 3b+
+- **OpenAI / Google streaming parity** — implement `chatStream` on those providers (Anthropic already streams); keep error semantics aligned with `LLM_INVALID_RESPONSE` when streams end without `message_complete`.
+- **JavaScript contract graph** — `buildContractContext` does not yet treat plain JS workspaces like TypeScript (Stage 4).
 - Behavioral-scope adversarial tester (behavioral-tester.ts, behavioral extractor) — Stage 4
 - Behavioral context builder (topology, endpoints, config schema, failure modes) — Stage 4
 - Fault injector (Docker-level network delays, connection drops, resource limits) — Stage 4

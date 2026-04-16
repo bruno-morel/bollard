@@ -22,6 +22,7 @@ export type BollardErrorCode =
   | "MODEL_NOT_AVAILABLE"
   | "CONTRACT_TESTER_OUTPUT_INVALID"
   | "CONTRACT_TESTER_NO_GROUNDED_CLAIMS"
+  | "REVIEW_OUTPUT_INVALID"
 
 const RETRYABLE_CODES: ReadonlySet<BollardErrorCode> = new Set([
   "LLM_TIMEOUT",

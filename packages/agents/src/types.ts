@@ -23,6 +23,12 @@ export type AgentProgressEvent =
       ok: boolean
       error?: string
     }
+  | {
+      type: "stream_delta"
+      turn: number
+      tokensThisChunk: number
+      totalTokensSoFar: number
+    }
 
 export type AgentProgressCallback = (event: AgentProgressEvent) => void
 

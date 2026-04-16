@@ -6,7 +6,13 @@ import type {
   FunctionDeclarationSchema,
   Part,
 } from "@google/generative-ai"
-import type { LLMContentBlock, LLMProvider, LLMRequest, LLMResponse } from "../types.js"
+import type {
+  LLMContentBlock,
+  LLMProvider,
+  LLMRequest,
+  LLMResponse,
+  LLMStreamEvent,
+} from "../types.js"
 
 // Pricing per 1M tokens (USD) — update periodically as pricing changes
 const PRICING: Record<string, { input: number; output: number }> = {
@@ -170,6 +176,22 @@ export class GoogleProvider implements LLMProvider {
         code: "LLM_PROVIDER_ERROR",
         message: `Google error: ${String(err)}`,
       })
+    }
+  }
+
+  chatStream(_request: LLMRequest): AsyncIterable<LLMStreamEvent> {
+    return {
+      [Symbol.asyncIterator](): AsyncIterator<LLMStreamEvent> {
+        return {
+          next: async () => {
+            throw new BollardError({
+              code: "PROVIDER_NOT_FOUND",
+              message:
+                "Google streaming not yet implemented — use chat() or switch to Anthropic provider",
+            })
+          },
+        }
+      },
     }
   }
 }

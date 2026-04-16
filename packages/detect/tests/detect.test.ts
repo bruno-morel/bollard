@@ -1,10 +1,11 @@
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
+import { deriveSourcePatterns } from "../src/derive.js"
 import { detectToolchain } from "../src/detect.js"
 import { detect as detectFallback } from "../src/languages/fallback.js"
 import { buildManualProfile } from "../src/languages/fallback.js"
-import { detect as detectGo } from "../src/languages/go.js"
+import { detect as detectGo, parseGoWorkUses } from "../src/languages/go.js"
 import { detect as detectJavascript } from "../src/languages/javascript.js"
 import { detect as detectPython } from "../src/languages/python.js"
 import { detect as detectRust } from "../src/languages/rust.js"
@@ -15,6 +16,7 @@ const TS_PROJECT = resolve(FIXTURES, "ts-project")
 const JS_PROJECT = resolve(FIXTURES, "js-project")
 const PY_PROJECT = resolve(FIXTURES, "py-project")
 const GO_PROJECT = resolve(FIXTURES, "go-project")
+const GO_WORKSPACE = resolve(FIXTURES, "go-workspace")
 const RUST_PROJECT = resolve(FIXTURES, "rust-project")
 const EMPTY_PROJECT = resolve(FIXTURES, "empty-project")
 
@@ -166,6 +168,33 @@ describe("Go detector", () => {
     expect(await detectGo(PY_PROJECT)).toBeNull()
     expect(await detectGo(RUST_PROJECT)).toBeNull()
     expect(await detectGo(EMPTY_PROJECT)).toBeNull()
+  })
+
+  it("detects Go from go.work without root go.mod", async () => {
+    const result = await detectGo(GO_WORKSPACE)
+    expect(result).not.toBeNull()
+    expect(result?.language).toBe("go")
+    expect(result?.sourcePatterns).toContain("cmd/**/*.go")
+    expect(result?.sourcePatterns).toContain("pkg/**/*.go")
+  })
+
+  it("uses standard go source patterns when root go.mod exists even if go.work is present", async () => {
+    const result = await detectGo(GO_PROJECT)
+    expect(result).not.toBeNull()
+    expect(result?.sourcePatterns).toEqual(deriveSourcePatterns("go"))
+  })
+
+  it("parseGoWorkUses reads block and single-line use directives", () => {
+    expect(
+      parseGoWorkUses(`go 1.22
+
+use (
+	./cmd
+	./pkg
+)
+`),
+    ).toEqual(["cmd", "pkg"])
+    expect(parseGoWorkUses("go 1.22\nuse ./solo\n")).toEqual(["solo"])
   })
 })
 

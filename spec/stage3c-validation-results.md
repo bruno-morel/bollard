@@ -178,3 +178,24 @@ Full pipeline integration test deferred — requires `BOLLARD_AUTO_APPROVE=1` an
 | Commit | Summary |
 |--------|---------|
 | (this commit) | Stage 3c: self-host Stryker validation — `stryker.config.json`, `vitest.stryker.config.ts`, `procps` in Dockerfile, Biome ignore, baseline scores, validation doc, CLAUDE.md update |
+
+## Remainder (2026-04-16)
+
+**Status:** GREEN on fast suite (`dev` image).
+
+| Check | Result |
+|-------|--------|
+| `pnpm run typecheck` | Clean |
+| `pnpm run lint` | Clean |
+| `pnpm run test` | 584 passed, 2 skipped (586 total) |
+
+### Shipped
+
+- **Polyglot mutation:** `MutmutProvider` (Python / mutmut), `CargoMutantsProvider` (Rust / cargo-mutants), routing from `runMutationTesting` by `LanguageId`; extended tests in `packages/verify/tests/mutation.test.ts`.
+- **Semantic review:** `packages/verify/src/review-grounding.ts` (parse + corpus + grounding), `semantic-reviewer` agent + blueprint nodes `generate-review-diff`, `semantic-review`, `verify-review-grounding`; `approve-pr` shows grounded findings.
+- **Streaming:** Anthropic `chatStream` + `executeAgent` consumption + `stream_delta` progress events; OpenAI and Google `chatStream` implementations throw `PROVIDER_NOT_FOUND` until wired to vendor streaming APIs.
+- **`go.work` detection:** `parseGoWorkUses` in `packages/detect/src/languages/go.ts`; detects workspaces with `go.work` but no root `go.mod`; root `go.mod` still takes precedence when both exist; fixture `packages/detect/tests/fixtures/go-workspace/`.
+
+### Pipeline shape
+
+The `implement-feature` blueprint is **22 nodes** (contract block, then `run-mutation-testing`, review block, then `docker-verify`, then diff / approve). Older references elsewhere in this file to “19 nodes” or “node 16 of 19” describe the pre-remainder ordering.
