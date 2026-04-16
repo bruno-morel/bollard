@@ -2,6 +2,7 @@ import { execFile } from "node:child_process"
 import { readFile, readdir } from "node:fs/promises"
 import { resolve } from "node:path"
 import { promisify } from "node:util"
+import { createBehavioralTesterAgent } from "@bollard/agents/src/behavioral-tester.js"
 import { createBoundaryTesterAgent } from "@bollard/agents/src/boundary-tester.js"
 import { createCoderAgent } from "@bollard/agents/src/coder.js"
 import { createContractTesterAgent } from "@bollard/agents/src/contract-tester.js"
@@ -13,6 +14,7 @@ import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
+import type { BehavioralContext } from "@bollard/verify/src/behavioral-extractor.js"
 import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
 import type {
   ExtractedSignature,
@@ -313,6 +315,38 @@ function buildContractTesterMessage(ctx: PipelineContext): string {
   return lines.join("\n")
 }
 
+function buildBehavioralTesterMessage(ctx: PipelineContext): string {
+  const raw = ctx.results["extract-behavioral-context"]?.data as
+    | { context?: BehavioralContext; skipBehavioral?: boolean }
+    | undefined
+  const behavioral = raw?.context
+  const plan = ctx.plan as Record<string, unknown> | undefined
+  const lines: string[] = [
+    "# Task",
+    ctx.task,
+    "",
+    "# BehavioralContext",
+    JSON.stringify(
+      behavioral ?? { endpoints: [], config: [], dependencies: [], failureModes: [] },
+      null,
+      2,
+    ),
+  ]
+  if (typeof plan?.["summary"] === "string") {
+    lines.push("", "# Plan summary", plan["summary"])
+  }
+  const ac = plan?.["acceptance_criteria"]
+  if (Array.isArray(ac)) {
+    lines.push("", "# Acceptance criteria", ...ac.map((c, i) => `${i + 1}. ${String(c)}`))
+  }
+  lines.push(
+    "",
+    "# Instructions",
+    "Emit a JSON claims document for behavioral/system-level adversarial tests. Output ONLY the JSON document wrapped in a ```json fence, no other prose.",
+  )
+  return lines.join("\n")
+}
+
 export interface AgenticHandlerResult {
   handler: (node: BlueprintNode, ctx: PipelineContext) => Promise<NodeResult>
   llmConfig: { provider: import("@bollard/llm/src/types.js").LLMProvider; model: string }
@@ -329,6 +363,7 @@ export async function createAgenticHandler(
     coder: await createCoderAgent(profile),
     "boundary-tester": await createBoundaryTesterAgent(profile),
     "contract-tester": await createContractTesterAgent(profile),
+    "behavioral-tester": await createBehavioralTesterAgent(profile),
     "semantic-reviewer": await createSemanticReviewerAgent(profile),
   }
 
@@ -345,6 +380,18 @@ export async function createAgenticHandler(
         | { skipContract?: boolean }
         | undefined
       if (riskGate?.skipContract) {
+        return { status: "ok", data: "", cost_usd: 0, duration_ms: 0 }
+      }
+    }
+
+    if (agentRole === "behavioral-tester") {
+      if (!profile?.adversarial.behavioral.enabled) {
+        return { status: "ok", data: "", cost_usd: 0, duration_ms: 0 }
+      }
+      const beh = ctx.results["extract-behavioral-context"]?.data as
+        | { skipBehavioral?: boolean; skipped?: boolean }
+        | undefined
+      if (beh?.skipped || beh?.skipBehavioral) {
         return { status: "ok", data: "", cost_usd: 0, duration_ms: 0 }
       }
     }
@@ -413,6 +460,10 @@ export async function createAgenticHandler(
 
     if (agentRole === "contract-tester") {
       userMessage = buildContractTesterMessage(ctx)
+    }
+
+    if (agentRole === "behavioral-tester") {
+      userMessage = buildBehavioralTesterMessage(ctx)
     }
 
     if (agentRole === "semantic-reviewer") {

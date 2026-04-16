@@ -105,6 +105,19 @@ async function handleContract(input: Record<string, unknown>, workDir: string): 
   return buildContractContext(affected, profile, dir)
 }
 
+const behavioralInputSchema = z.object({
+  workDir: z.string().optional(),
+})
+
+async function handleBehavioral(input: Record<string, unknown>, workDir: string): Promise<unknown> {
+  const parsed = behavioralInputSchema.parse(input)
+  const dir = parsed.workDir ?? workDir
+  const { resolveConfig } = await import("@bollard/cli/src/config.js")
+  const { buildBehavioralContext } = await import("@bollard/verify/src/behavioral-extractor.js")
+  const { profile } = await resolveConfig(undefined, dir)
+  return buildBehavioralContext(profile, dir)
+}
+
 function zodToJsonSchema(schema: z.ZodObject<z.ZodRawShape>): Record<string, unknown> {
   const shape = schema.shape
   const properties: Record<string, unknown> = {}
@@ -179,5 +192,12 @@ export const tools: McpToolDefinition[] = [
     description: "Build contract-scope context (module graph + edges) as JSON",
     inputSchema: zodToJsonSchema(contractInputSchema),
     handler: handleContract,
+  },
+  {
+    name: "bollard_behavioral",
+    description:
+      "Build behavioral-scope context (endpoints, config, dependencies, failure modes) as JSON",
+    inputSchema: zodToJsonSchema(behavioralInputSchema),
+    handler: handleBehavioral,
   },
 ]

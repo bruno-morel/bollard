@@ -70,12 +70,62 @@ function deriveRustContractPath(sourceFile: string): string {
   return join(targetDir, `${base}_contract.rs`)
 }
 
+function deriveTypescriptBehavioralPath(sourceFile: string): string {
+  const ext = extname(sourceFile)
+  const base = basename(sourceFile, ext)
+  const hasSrcDir = sourceFile.includes("/src/") || sourceFile.startsWith("src/")
+  if (hasSrcDir) {
+    return sourceFile
+      .replace(/(^|\/)src\//, "$1tests/behavioral/")
+      .replace(new RegExp(`\\${ext}$`), `.behavioral.test${ext}`)
+  }
+  return join(dirname(sourceFile), "tests/behavioral", `${base}.behavioral.test${ext}`)
+}
+
+function derivePythonBehavioralPath(sourceFile: string): string {
+  const dir = dirname(sourceFile)
+  const base = basename(sourceFile, ".py")
+  const hasSrcDir = sourceFile.includes("/src/") || sourceFile.startsWith("src/")
+  const targetDir = hasSrcDir
+    ? dir.replace(/(^|\/)src(\/|$)/, "$1tests/behavioral$2")
+    : join(dir, "tests/behavioral")
+  return join(targetDir, `test_behavioral_${base}.py`)
+}
+
+function deriveGoBehavioralPath(sourceFile: string): string {
+  const ext = extname(sourceFile)
+  return sourceFile.replace(new RegExp(`\\${ext}$`), `_behavioral_test${ext}`)
+}
+
+function deriveRustBehavioralPath(sourceFile: string): string {
+  const dir = dirname(sourceFile)
+  const base = basename(sourceFile, ".rs")
+  const hasSrcDir = sourceFile.includes("/src/") || sourceFile.startsWith("src/")
+  const targetDir = hasSrcDir
+    ? dir.replace(/(^|\/)src(\/|$)/, "$1tests/behavioral$2")
+    : join(dir, "tests/behavioral")
+  return join(targetDir, `${base}_behavioral.rs`)
+}
+
 export function deriveAdversarialTestPath(
   sourceFile: string,
   profile?: ToolchainProfile,
   scope: AdversarialScope = "boundary",
 ): string {
   const lang = profile?.language ?? "typescript"
+
+  if (scope === "behavioral") {
+    switch (lang) {
+      case "python":
+        return derivePythonBehavioralPath(sourceFile)
+      case "go":
+        return deriveGoBehavioralPath(sourceFile)
+      case "rust":
+        return deriveRustBehavioralPath(sourceFile)
+      default:
+        return deriveTypescriptBehavioralPath(sourceFile)
+    }
+  }
 
   if (scope === "contract") {
     switch (lang) {

@@ -721,17 +721,16 @@ With adversarial scopes and cross-cutting concerns, the forward-looking roadmap 
 
 | Stage | Focus |
 |-------|-------|
-| 2 | Boundary-scope adversarial testing + Docker isolation (no change) |
-| 3 | Contract-scope adversarial testing + mutation testing + semantic review |
-| 3c | **Language expansion wave 1: Java + Kotlin (JVM)** — see §12.1 |
-| 4 | Behavioral-scope adversarial testing + production feedback loop |
+| 2 | Boundary-scope adversarial testing + Docker isolation |
+| 3 | Contract-scope adversarial testing + mutation testing (TS/Python/Rust) + semantic review + Anthropic streaming + `go.work` detection |
+| 4 | Behavioral-scope adversarial testing + production feedback loop + **language expansion wave 1: Java + Kotlin (JVM)** — see §12.1 |
 | 4+ | **Language expansion wave 2: C#/.NET** — see §12.1 |
 | 5 | Self-hosting + self-improvement |
 | 5+ | **Language expansion wave 3: Ruby, PHP** — see §12.1 |
 
 ### Rationale
 
-**Stage 3 pairs contract scope with mutation testing and semantic review** because they share infrastructure: deeper type extraction (Python `ast`, Go `go doc`), cross-module analysis, and dependency graph context. Contract-scope adversarial testing is a natural extension of the signature extraction work, not a separate effort.
+**Stage 3 pairs contract scope with mutation testing and semantic review** because they share infrastructure: deeper type extraction (Python `ast`, Go `go doc`), cross-module analysis, and dependency graph context. Contract-scope adversarial testing is a natural extension of the signature extraction work, not a separate effort. Java/Kotlin (Wave 1 language expansion) was originally slated for Stage 3c but was moved to Stage 4 after validating that the mutation-testing integration pattern needed to stabilize on TS/Python/Rust first — Wave 1 now shares Stage 4 with the behavioral scope.
 
 **Stage 4 pairs behavioral scope with the production feedback loop** because they share conceptual and technical foundations: Docker-level fault injection, system topology awareness, production-like execution environments, and the question "does the system behave correctly under realistic conditions?"
 
@@ -806,9 +805,9 @@ Each wave adds four integration points per language:
 3. **Docker verify image** — `docker/Dockerfile.verify-<lang>` for boundary-scope isolation, plus a `dev-full` profile addition for contract-scope runs that need the real toolchain.
 4. **Mutation testing wrapper** — Stage 3c prerequisite; each language has a preferred tool listed below.
 
-#### Wave 1 (Stage 3c) — Java + Kotlin (JVM)
+#### Wave 1 (Stage 4) — Java + Kotlin (JVM)
 
-**Why first:** Largest enterprise footprint, cleanest mutation testing story in any language (PIT), and Kotlin rides on 90% of the Java infrastructure.
+**Why first:** Largest enterprise footprint, cleanest mutation testing story in any language (PIT), and Kotlin rides on 90% of the Java infrastructure. Originally slated for Stage 3c; moved to Stage 4 because the mutation-testing integration pattern (provider interface, scope-aware targeting, blueprint wiring) needed to stabilize on TS/Python/Rust first.
 
 - **Detection signals:** `pom.xml` (Maven), `build.gradle` / `build.gradle.kts` (Gradle), `settings.gradle*`, `*.java` / `*.kt` source files.
 - **Typecheck:** `javac` (Java) / `kotlinc` (Kotlin) via Gradle/Maven build.
@@ -816,7 +815,7 @@ Each wave adds four integration points per language:
 - **Test:** JUnit 5 standard; TestNG secondary.
 - **Signature extraction:** Small JavaParser-based CLI jar (`bollard-extract-java`) baked into dev image. Kotlin reuses the same helper via `.class` inspection or a kotlinc-based helper.
 - **Docker verify:** `Dockerfile.verify-jvm` (Temurin JDK 21 + Gradle wrapper support, shared by both languages).
-- **Mutation testing:** **PIT** (`pitest`) — the flagship JVM mutation tool, more mature than Stryker-JS. Bollard Stage 3c can use Java/PIT as the reference implementation for per-language mutation integration.
+- **Mutation testing:** **PIT** (`pitest`) — the flagship JVM mutation tool, more mature than Stryker-JS. Java/PIT serves as the reference implementation for per-language mutation integration.
 - **Contract graph:** Gradle/Maven multi-module workspaces map naturally to the existing `ContractContext` shape; module boundaries are explicit in `build.gradle` `project(...)` references.
 
 #### Wave 2 (Stage 4+) — C#/.NET
@@ -974,6 +973,12 @@ Adversarial verification plan:
 **Landed in codebase:** per-scope `AdversarialConfig` with concern weights; root + legacy `.bollard.yml` adversarial merge; `boundary-tester` agent (renamed from tester) with `{{#concern}}` templating; deterministic `SignatureExtractor` routing for TypeScript, Python, Go, and Rust; TypeScript contract graph (`buildContractContext`) plus `contract-tester` agent; `implement-feature` blueprint nodes `extract-contracts`, `generate-contract-tests`, `write-contract-tests`, `run-contract-tests`; CLI `bollard contract` and MCP `bollard_contract`; contract test output paths via `resolveContractTestOutputRel` (persistent vs ephemeral).
 
 **Not in Stage 3a:** behavioral scope, mutation testing, semantic review, multi-language contract graphs beyond TypeScript, `promote-test` for contract outputs.
+
+**Landed in Stage 3b:** Polyglot contract extraction (Python/Go/Rust `ContractGraphProvider`), polyglot dev image with `bollard-extract-go`/`bollard-extract-rs` helper binaries, `dev-full` image (Go+Rust+Python toolchains), polyglot risk gate and test summary parsers, ADR-0002.
+
+**Landed in Stage 3c:** Per-language mutation testing (Stryker TS/JS, `MutmutProvider` Python, `CargoMutantsProvider` Rust), scope-aware mutation targeting (`mutateFiles`), semantic review agent with claims+grounding (advisory), Anthropic `chatStream` streaming (OpenAI/Google stubs), `go.work`-only workspace detection. 22-node `implement-feature` blueprint.
+
+**Moved from Stage 3 to Stage 4:** Java/Kotlin language expansion (Wave 1), OpenAI/Google streaming parity, verification summary batching, git rollback on coder max-turns failure.
 
 ---
 

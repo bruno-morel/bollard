@@ -2,31 +2,31 @@
 
 Features deferred from v0.1 spec to keep scope tight. These are all good ideas — they just don't belong in the first build.
 
-**Stage 3a (contract adversarial scope)** — Contract graph extraction (TypeScript monorepo), `contract-tester` agent, blueprint nodes, and `bollard contract` / MCP `bollard_contract` are implemented in the main tree. Validated **YELLOW** on 2026-04-07 — see [stage3a-validation-results.md](./stage3a-validation-results.md) and `spec/07-adversarial-scopes.md` implementation status.
+## Stage 3 — COMPLETE (validated GREEN)
 
-## Stage 3a — flip YELLOW → GREEN
+**Stage 3a** (contract-scope adversarial testing) — validated GREEN on 2026-04-08. See [stage3a-validation-results.md](./stage3a-validation-results.md).
 
-One-off remaining work before Stage 3a can be called done:
+**Stage 3b** (polyglot contract graphs + dev ergonomics) — validated GREEN on 2026-04-09. See [stage3b-validation-results.md](./stage3b-validation-results.md).
 
-- **Full 16-node `implement-feature` re-run** after commit `f14bd66` (`vitest.contract.config.ts` + `runTests` branch for `.bollard/` paths). Cheap (~$0.37, ~100s based on earlier runs), high signal. Run with `BOLLARD_AUTO_APPROVE=1` and the `sh -c` workaround for pnpm's `--filter` inside `docker compose run`.
-- Watch specifically for **LLM-generated contract test quality** on `run-contract-tests`. An earlier generated file had incorrect `CostTracker` expectations; the information-barrier fix limited the *input* surface, but the *prompt* may still need tuning — see Stage 3b.
+**Stage 3c** (mutation testing, semantic review, streaming, `go.work` detection) — validated GREEN on 2026-04-16. See [stage3c-validation-results.md](./stage3c-validation-results.md).
 
-## Stage 3b — multi-language contract graph + dev ergonomics
+**Stage 4a** (behavioral-scope adversarial testing — deterministic context extraction, `behavioral-tester` agent, grounding, coarse fault injection, behavioral compose) — validated GREEN on 2026-04-16. See [stage4a-validation-results.md](./stage4a-validation-results.md).
 
-Contract-scope coverage beyond TypeScript monorepos, plus the infrastructure debts surfaced during Stage 3a validation:
+## Stage 3c — shipped (validated GREEN 2026-04-16)
 
-- **Contract graph for Python / Go / Rust workspaces** — `buildContractContext` currently returns an empty graph with a warning for non-TS repos. Needs language-specific module/import edge extractors plus a common `ContractContext` shape.
-- **Go + Rust in the dev image** — `packages/verify/tests/type-extractor.test.ts` has two `it.skipIf` integration tests marked `TODO(stage-3b)` because `go` and `rustc` are not on the dev image PATH. Likely a `Dockerfile.dev-full` variant, or a split multi-stage image, so CI can exercise the extractors unconditionally.
-- **Contract-tester prompt tuning** — teach the agent to prefer behavioral assertions over identity assertions when given only a type signature + entry-export closure. Cross-reference: the `CostTracker` false expectation from Stage 3a validation.
-- **Deterministic test output parsers** for pytest, `go test`, and `cargo test` — Vitest is the only parser today; others fall back to zero/error detection via profile-driven execution.
+- ~~**Per-language mutation testing**~~ — Stryker (JS/TS), `MutmutProvider` (Python), `CargoMutantsProvider` (Rust). Go mutation testing deferred (no maintained upstream tool). Scope-aware targeting via `mutateFiles` reduces pipeline runs from full-repo to coder-changed files only.
+- ~~**Semantic review agent**~~ — `semantic-reviewer` agent sees diff + plan, produces structured `ReviewFinding`s with grounding. Deterministic verifier filters hallucinations. Advisory only (never blocks pipeline). Findings shown at `approve-pr`.
+- ~~**Streaming LLM responses**~~ — Anthropic `chatStream` + executor integration + `stream_delta` progress events. OpenAI/Google stubs throw `PROVIDER_NOT_FOUND` — moved to Stage 4 for full parity.
+- ~~**`go.work`-only detection**~~ — `parseGoWorkUses` in Go detector; root `go.mod` takes precedence when both exist.
 
-## Stage 3c follow-ups
+### Moved from Stage 3 to Stage 4
 
-- **Per-language mutation testing** — Stryker (JS/TS), mutmut (Python), cargo-mutants (Rust), go-mutesting (Go). Unblocked now that extractors are deterministic. Mutation testing against both Layer 1 (project tests) and Layer 2 (adversarial tests) is the Stage 3c exit criterion.
-- **Semantic review agent** — separate agent that sees diff + plan (but not implementation internals) and flags misalignments. Information barrier enforced by prompt construction + postcondition scan, same pattern as contract-tester.
-- **Streaming LLM responses** — `LLMProvider.chat_stream`, partial/streaming tool-call assembly, and CLI rendering of tokens as they arrive. Design notes and rationale for deferring vs. spinner-based progress: [archive/stage3a-progress-ux-prompt.md](./archive/stage3a-progress-ux-prompt.md) (§1 Option B, §6). Option A (spinner + turn/tool telemetry) already shipped in Stage 3a.
-- **Verification summary batching** — replace per-check retry loops with a single consolidated feedback message when the turn budget is close to exhaustion. Related to the `deferPostCompletionVerifyFromTurn` tradeoff that caused Stage 2 validation's TS static-check failure.
-- **Git rollback on coder max-turns failure** — partially-written files remain on disk today. Needs a worktree/branch strategy that can be reset atomically when the coder agent exhausts its turn budget.
+These items were originally tracked under Stage 3c but have been rescheduled:
+
+- **Java/Kotlin language expansion (Wave 1)** — originally Stage 3c per [07-adversarial-scopes.md §12.1](07-adversarial-scopes.md). Moved to Stage 4 because the mutation-testing integration pattern needed to stabilize on TS/Python/Rust first. Now shares Stage 4 with the behavioral scope.
+- **OpenAI / Google streaming parity** — Anthropic streaming shipped; the other two providers remain stubs. Moved to Stage 4.
+- **Verification summary batching** — replace per-check retry loops with a single consolidated feedback message. Moved to Stage 4.
+- **Git rollback on coder max-turns failure** — partially-written files remain on disk today. Needs a worktree/branch strategy. Moved to Stage 4.
 
 ---
 
@@ -103,20 +103,20 @@ Now a core concern across multiple stages. See [06-toolchain-profiles.md](06-too
 
 - **Stage 1.5:** Toolchain detection (`@bollard/detect`), profile-driven verification, templatized agent prompts, interactive `bollard init`. All existing TypeScript behavior preserved, plus Python/Go/Rust/Ruby/Java detection.
 - **Stage 2:** Docker-isolated adversarial test containers, black-box testing in Bollard's own runtime (language-independent), in-language test generation for supported frameworks, `SignatureExtractor` interface with TS implementation + LLM fallback.
-- **Stage 3:** Per-language mutation testing (Stryker, mutmut, go-mutesting, cargo-mutants), deterministic type extractors for Python/Go/Rust, mutation testing against both Layer 1 and Layer 2 test suites.
+- **Stage 3:** Per-language mutation testing (Stryker for TS/JS, mutmut for Python, cargo-mutants for Rust), deterministic type extractors for Python/Go/Rust, semantic review agent, Anthropic LLM streaming. *Note: go-mutesting (Go) was deferred — no maintained upstream tool. Go mutation will be revisited when a viable tool emerges.*
 
 The persistent-native adversarial test mode (tests written in the project's language, integrated with the project's test runner) is a Stage 2 deliverable. See [06-toolchain-profiles.md](06-toolchain-profiles.md) Section 13 for the ephemeral vs. persistent-native lifecycle model.
 
 ---
 
-## Stage 3c → 5+: Language Coverage Expansion
+## Stage 4 → 5+: Language Coverage Expansion
 
-Stage 3a ships with deterministic support for TypeScript, JavaScript, Python, Go, and Rust. Additional major languages are sequenced into three waves. **Full design and rationale in [07-adversarial-scopes.md §12.1](07-adversarial-scopes.md#121-language-expansion-roadmap).**
+Stage 3 ships with deterministic support for TypeScript, JavaScript, Python, Go, and Rust. Additional major languages are sequenced into three waves. **Full design and rationale in [07-adversarial-scopes.md §12.1](07-adversarial-scopes.md#121-language-expansion-roadmap).**
 
 Each new language is a four-step integration: detector (`packages/detect/src/languages/<lang>.ts`), deterministic `SignatureExtractor` (ideally a compiled helper binary, same pattern as `bollard-extract-go` / `bollard-extract-rs`), Docker verify image (`docker/Dockerfile.verify-<lang>`), and mutation-testing wrapper.
 
-### Wave 1 — Stage 3c: Java + Kotlin (JVM)
-- **Why first:** largest enterprise footprint; **PIT** is the flagship mutation tool in any language, so Java becomes Bollard's reference mutation-testing integration
+### Wave 1 — Stage 4: Java + Kotlin (JVM)
+- **Why first:** largest enterprise footprint; **PIT** is the flagship mutation tool in any language, so Java becomes Bollard's reference mutation-testing integration. Originally slated for Stage 3c; moved to Stage 4 because the mutation-testing integration pattern needed to stabilize on TS/Python/Rust first.
 - Detection: `pom.xml` / `build.gradle*` / `settings.gradle*`
 - Toolchain: javac + kotlinc, SpotBugs/Checkstyle/ErrorProne/ktlint/detekt, JUnit 5 / TestNG, Temurin JDK 21
 - Extractor: JavaParser-based CLI jar (`bollard-extract-java`) in dev image; Kotlin shares the helper

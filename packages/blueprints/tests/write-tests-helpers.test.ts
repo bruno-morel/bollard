@@ -95,6 +95,28 @@ describe("deriveAdversarialTestPath", () => {
       "pkg/handler_contract_test.go",
     )
   })
+
+  it("behavioral scope TypeScript: maps src/ to tests/behavioral/", () => {
+    expect(
+      deriveAdversarialTestPath(
+        "packages/cli/src/index.ts",
+        makeProfile("typescript"),
+        "behavioral",
+      ),
+    ).toBe("packages/cli/tests/behavioral/index.behavioral.test.ts")
+  })
+
+  it("behavioral scope Python: tests/behavioral/test_behavioral_*.py", () => {
+    expect(deriveAdversarialTestPath("src/auth.py", makeProfile("python"), "behavioral")).toBe(
+      "tests/behavioral/test_behavioral_auth.py",
+    )
+  })
+
+  it("behavioral scope Go: _behavioral_test suffix", () => {
+    expect(deriveAdversarialTestPath("pkg/handler.go", makeProfile("go"), "behavioral")).toBe(
+      "pkg/handler_behavioral_test.go",
+    )
+  })
 })
 
 describe("stripMarkdownFences", () => {

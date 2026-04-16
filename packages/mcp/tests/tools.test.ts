@@ -6,8 +6,8 @@ import { tools } from "../src/tools.js"
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 
 describe("MCP tool definitions", () => {
-  it("registers exactly 7 tools", () => {
-    expect(tools).toHaveLength(7)
+  it("registers exactly 8 tools", () => {
+    expect(tools).toHaveLength(8)
   })
 
   it("all tools have name, description, inputSchema, and handler", () => {
@@ -59,6 +59,12 @@ describe("MCP tool definitions", () => {
     const tool = tools.find((t) => t.name === "bollard_contract")
     expect(tool).toBeDefined()
     expect(tool?.description).toContain("contract")
+  })
+
+  it("includes bollard_behavioral tool", () => {
+    const tool = tools.find((t) => t.name === "bollard_behavioral")
+    expect(tool).toBeDefined()
+    expect(tool?.description).toContain("behavioral")
   })
 
   it("bollard_plan requires task parameter", () => {

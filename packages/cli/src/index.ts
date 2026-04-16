@@ -274,6 +274,22 @@ async function runContractCommand(args: string[]): Promise<void> {
   log("")
 }
 
+async function runBehavioralCommand(args: string[]): Promise<void> {
+  const workDir = resolveWorkspaceDirFromArgs(args)
+
+  header("behavioral")
+  log(`${DIM}Work dir:${RESET} ${workDir}`)
+
+  const { profile } = await resolveConfig(undefined, workDir)
+  const { buildBehavioralContext } = await import("@bollard/verify/src/behavioral-extractor.js")
+  const behavioral = await buildBehavioralContext(profile, workDir, (m) =>
+    log(`${DIM}${m}${RESET}`),
+  )
+
+  process.stdout.write(`${JSON.stringify(behavioral, null, 2)}\n`)
+  log("")
+}
+
 async function runVerifyCommand(args: string[]): Promise<void> {
   const workDir = resolveWorkspaceDirFromArgs(args)
 
@@ -551,6 +567,11 @@ async function main(): Promise<void> {
     return
   }
 
+  if (command === "behavioral") {
+    await runBehavioralCommand(rest)
+    return
+  }
+
   if (command === "diff") {
     await runDiffCommand(rest)
     return
@@ -705,6 +726,7 @@ async function main(): Promise<void> {
   log(
     `  ${BOLD}contract${RESET} [--plan <file>]         Print ContractContext JSON (optional planner plan)`,
   )
+  log(`  ${BOLD}behavioral${RESET} [--work-dir <path>]   Print BehavioralContext JSON`)
   log(`  ${BOLD}diff${RESET}                            Compare profile vs hardcoded defaults`)
   log(`  ${BOLD}eval${RESET} [agent]                    Run agent eval sets`)
   log(`  ${BOLD}config show${RESET} [--sources]         Show resolved configuration`)

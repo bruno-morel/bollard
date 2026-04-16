@@ -1,5 +1,14 @@
 import { BollardError } from "@bollard/engine/src/errors.js"
+import type { BollardErrorCode } from "@bollard/engine/src/errors.js"
 import type { ContractContext } from "./contract-extractor.js"
+
+export interface ClaimDocumentParseOptions {
+  invalidCode?: BollardErrorCode
+}
+
+export interface ClaimGroundingVerifyOptions {
+  noGroundedClaimsCode?: BollardErrorCode
+}
 
 export type ClaimConcern = "correctness" | "security" | "performance" | "resilience"
 
@@ -136,7 +145,11 @@ function isClaimRecord(val: ClaimRecord | DroppedClaim): val is ClaimRecord {
   return "test" in val
 }
 
-export function parseClaimDocument(raw: string): ClaimDocument {
+export function parseClaimDocument(
+  raw: string,
+  options?: ClaimDocumentParseOptions,
+): ClaimDocument {
+  const invalidCode = options?.invalidCode ?? "CONTRACT_TESTER_OUTPUT_INVALID"
   const stripped = stripOptionalFences(raw)
 
   let parsed: unknown
@@ -144,14 +157,14 @@ export function parseClaimDocument(raw: string): ClaimDocument {
     parsed = JSON.parse(stripped)
   } catch (err: unknown) {
     throw new BollardError({
-      code: "CONTRACT_TESTER_OUTPUT_INVALID",
+      code: invalidCode,
       message: `Failed to parse claim document as JSON: ${err instanceof Error ? err.message : String(err)}`,
     })
   }
 
   if (!isPlainObject(parsed)) {
     throw new BollardError({
-      code: "CONTRACT_TESTER_OUTPUT_INVALID",
+      code: invalidCode,
       message: "Claim document must be a JSON object with a claims array",
     })
   }
@@ -159,7 +172,7 @@ export function parseClaimDocument(raw: string): ClaimDocument {
   const obj = parsed as Record<string, unknown>
   if (!Array.isArray(obj["claims"])) {
     throw new BollardError({
-      code: "CONTRACT_TESTER_OUTPUT_INVALID",
+      code: invalidCode,
       message: "Claim document must have a top-level claims array",
     })
   }
@@ -178,7 +191,7 @@ export function parseClaimDocument(raw: string): ClaimDocument {
 
   if (claims.length === 0 && schemaDrops.length > 0) {
     throw new BollardError({
-      code: "CONTRACT_TESTER_OUTPUT_INVALID",
+      code: invalidCode,
       message: `All ${schemaDrops.length} claims failed schema validation`,
       context: { drops: schemaDrops },
     })
@@ -191,7 +204,9 @@ export function verifyClaimGrounding(
   doc: ClaimDocument,
   corpus: ContractCorpus,
   enabledConcerns: EnabledConcerns,
+  options?: ClaimGroundingVerifyOptions,
 ): VerificationResult {
+  const noGroundedClaimsCode = options?.noGroundedClaimsCode ?? "CONTRACT_TESTER_NO_GROUNDED_CLAIMS"
   const kept: ClaimRecord[] = []
   const dropped: DroppedClaim[] = []
   const seenIds = new Set<string>()
@@ -247,7 +262,7 @@ export function verifyClaimGrounding(
 
   if (kept.length === 0) {
     throw new BollardError({
-      code: "CONTRACT_TESTER_NO_GROUNDED_CLAIMS",
+      code: noGroundedClaimsCode,
       message: `All ${doc.claims.length} claims were dropped during grounding verification`,
       context: { dropped },
     })

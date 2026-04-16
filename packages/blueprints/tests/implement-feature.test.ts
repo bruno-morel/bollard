@@ -7,8 +7,8 @@ import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
 describe("createImplementFeatureBlueprint", () => {
   const bp = createImplementFeatureBlueprint("/tmp/test")
 
-  it("has 22 nodes in the correct order", () => {
-    expect(bp.nodes).toHaveLength(22)
+  it("has 27 nodes in the correct order", () => {
+    expect(bp.nodes).toHaveLength(27)
     const ids = bp.nodes.map((n) => n.id)
     expect(ids).toEqual([
       "create-branch",
@@ -26,6 +26,11 @@ describe("createImplementFeatureBlueprint", () => {
       "verify-claim-grounding",
       "write-contract-tests",
       "run-contract-tests",
+      "extract-behavioral-context",
+      "generate-behavioral-tests",
+      "verify-behavioral-grounding",
+      "write-behavioral-tests",
+      "run-behavioral-tests",
       "run-mutation-testing",
       "generate-review-diff",
       "semantic-review",
@@ -54,6 +59,11 @@ describe("createImplementFeatureBlueprint", () => {
       { id: "verify-claim-grounding", type: "deterministic" },
       { id: "write-contract-tests", type: "deterministic" },
       { id: "run-contract-tests", type: "deterministic" },
+      { id: "extract-behavioral-context", type: "deterministic" },
+      { id: "generate-behavioral-tests", type: "agentic" },
+      { id: "verify-behavioral-grounding", type: "deterministic" },
+      { id: "write-behavioral-tests", type: "deterministic" },
+      { id: "run-behavioral-tests", type: "deterministic" },
       { id: "run-mutation-testing", type: "deterministic" },
       { id: "generate-review-diff", type: "deterministic" },
       { id: "semantic-review", type: "agentic" },
@@ -86,6 +96,9 @@ describe("createImplementFeatureBlueprint", () => {
     expect(bp.nodes.find((n) => n.id === "implement")?.agent).toBe("coder")
     expect(bp.nodes.find((n) => n.id === "generate-tests")?.agent).toBe("boundary-tester")
     expect(bp.nodes.find((n) => n.id === "generate-contract-tests")?.agent).toBe("contract-tester")
+    expect(bp.nodes.find((n) => n.id === "generate-behavioral-tests")?.agent).toBe(
+      "behavioral-tester",
+    )
     expect(bp.nodes.find((n) => n.id === "semantic-review")?.agent).toBe("semantic-reviewer")
   })
 
@@ -120,16 +133,28 @@ describe("createImplementFeatureBlueprint", () => {
     }
   })
 
-  it("has 5 agentic nodes including semantic-reviewer", () => {
+  it("has 6 agentic nodes including behavioral-tester and semantic-reviewer", () => {
     const agenticNodes = bp.nodes.filter((n) => n.type === "agentic")
-    expect(agenticNodes).toHaveLength(5)
+    expect(agenticNodes).toHaveLength(6)
     expect(agenticNodes.map((n) => n.agent)).toEqual([
       "planner",
       "coder",
       "boundary-tester",
       "contract-tester",
+      "behavioral-tester",
       "semantic-reviewer",
     ])
+  })
+
+  it("behavioral nodes sit between run-contract-tests and run-mutation-testing", () => {
+    const ids = bp.nodes.map((n) => n.id)
+    const iContract = ids.indexOf("run-contract-tests")
+    expect(ids[iContract + 1]).toBe("extract-behavioral-context")
+    expect(ids[iContract + 2]).toBe("generate-behavioral-tests")
+    expect(ids[iContract + 3]).toBe("verify-behavioral-grounding")
+    expect(ids[iContract + 4]).toBe("write-behavioral-tests")
+    expect(ids[iContract + 5]).toBe("run-behavioral-tests")
+    expect(ids[iContract + 6]).toBe("run-mutation-testing")
   })
 
   it("semantic review nodes sit between run-mutation-testing and docker-verify", () => {

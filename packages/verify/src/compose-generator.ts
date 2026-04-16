@@ -1,4 +1,7 @@
+import { readFile } from "node:fs/promises"
+import { join } from "node:path"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
+import type { BehavioralContext } from "./behavioral-extractor.js"
 
 export interface VerifyComposeConfig {
   workDir: string
@@ -107,4 +110,79 @@ export function generateVerifyCompose(config: VerifyComposeConfig): GeneratedCom
   const yaml = ["services:", servicesYaml, ""].join("\n")
 
   return { yaml, services }
+}
+
+export interface BehavioralComposeConfig {
+  workDir: string
+  profile: ToolchainProfile
+  behavioralContext: BehavioralContext
+  /** Relative path from workDir to the generated behavioral test file */
+  behavioralTestRelPath: string
+  bollardImageTag?: string
+}
+
+/**
+ * Two-service compose: `project` (app under test) and `verify-behavioral` (runs the test command).
+ * Uses `${WORK_DIR}` volume placeholder (same pattern as verify compose).
+ */
+export async function generateBehavioralCompose(
+  config: BehavioralComposeConfig,
+): Promise<GeneratedCompose> {
+  void config.behavioralContext
+  const runtimeImage = resolveRuntimeImage(config.profile)
+  let startCmd = "sleep 3600"
+  try {
+    const pkgPath = join(config.workDir, "package.json")
+    const raw = await readFile(pkgPath, "utf-8")
+    const pkg = JSON.parse(raw) as { scripts?: Record<string, string> }
+    const pm =
+      config.profile.packageManager === "pnpm"
+        ? "pnpm"
+        : config.profile.packageManager === "yarn"
+          ? "yarn"
+          : "npm"
+    const scripts = pkg.scripts
+    if (scripts?.["start"]) {
+      startCmd = `${pm} run start`
+    } else if (scripts?.["dev"]) {
+      startCmd = `${pm} run dev`
+    }
+  } catch {
+    /* keep placeholder when no package.json */
+  }
+
+  const testRel = config.behavioralTestRelPath.replace(/\\/g, "/")
+  const testCmd =
+    config.profile.checks.test !== undefined
+      ? `${config.profile.checks.test.cmd} ${[...config.profile.checks.test.args, testRel].join(" ")}`.trim()
+      : `pnpm exec vitest run ${testRel}`
+
+  const projectBlock = [
+    "project:",
+    `  image: ${runtimeImage}`,
+    "  working_dir: /workspace",
+    "  volumes:",
+    "    - ${WORK_DIR}:/workspace",
+    "  ports:",
+    '    - "3000:3000"',
+    `  command: ["sh", "-c", ${JSON.stringify(startCmd)}]`,
+  ].join("\n")
+
+  const verifyBlock = [
+    "verify-behavioral:",
+    `  image: ${runtimeImage}`,
+    "  working_dir: /workspace",
+    "  volumes:",
+    "    - ${WORK_DIR}:/workspace",
+    "  environment:",
+    "    - BASE_URL=http://project:3000",
+    "  depends_on:",
+    "    - project",
+    `  command: ["sh", "-c", ${JSON.stringify(testCmd)}]`,
+  ].join("\n")
+
+  const servicesYaml = [projectBlock, verifyBlock].map((block) => indent(block, 4)).join("\n\n")
+  const yaml = ["services:", servicesYaml, ""].join("\n")
+
+  return { yaml, services: ["project", "verify-behavioral"] }
 }

@@ -7,7 +7,13 @@ import type { Blueprint, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import type { LLMProvider } from "@bollard/llm/src/types.js"
-import { generateVerifyCompose } from "@bollard/verify/src/compose-generator.js"
+import type { BehavioralContext } from "@bollard/verify/src/behavioral-extractor.js"
+import { buildBehavioralContext } from "@bollard/verify/src/behavioral-extractor.js"
+import { behavioralContextToCorpus } from "@bollard/verify/src/behavioral-grounding.js"
+import {
+  generateBehavioralCompose,
+  generateVerifyCompose,
+} from "@bollard/verify/src/compose-generator.js"
 import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
 import { buildContractContext } from "@bollard/verify/src/contract-extractor.js"
 import {
@@ -25,7 +31,10 @@ import {
 } from "@bollard/verify/src/review-grounding.js"
 import type { ReviewDocument, ReviewFinding } from "@bollard/verify/src/review-grounding.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
-import { resolveContractTestOutputRel } from "@bollard/verify/src/test-lifecycle.js"
+import {
+  resolveBehavioralTestOutputRel,
+  resolveContractTestOutputRel,
+} from "@bollard/verify/src/test-lifecycle.js"
 import { extractPrivateIdentifiers, getExtractor } from "@bollard/verify/src/type-extractor.js"
 import { deriveAdversarialTestPath, stripMarkdownFences } from "./write-tests-helpers.js"
 
@@ -675,6 +684,298 @@ export function createImplementFeatureBlueprint(
               error: {
                 code: "TEST_FAILED",
                 message: `Contract tests failed: ${result.failedTests.join(", ") || "see output"}`,
+              },
+            }
+          }
+          return { status: "ok", data: result }
+        },
+      },
+
+      {
+        id: "extract-behavioral-context",
+        name: "Extract Behavioral Context",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const profile = ctx.toolchainProfile
+          if (!profile?.adversarial.behavioral.enabled) {
+            return { status: "ok", data: { skipped: true, reason: "behavioral scope disabled" } }
+          }
+          const behavioral = await buildBehavioralContext(profile, workDir, (m) =>
+            ctx.log.warn(m, { nodeId: "extract-behavioral-context" }),
+          )
+          const empty = behavioral.endpoints.length === 0 && behavioral.dependencies.length === 0
+          ctx.log.info("behavioral_context_result", {
+            event: "behavioral_context_result",
+            runId: ctx.runId,
+            endpointCount: behavioral.endpoints.length,
+            dependencyCount: behavioral.dependencies.length,
+            empty,
+          })
+          if (empty) {
+            return {
+              status: "ok",
+              data: {
+                context: behavioral,
+                skipBehavioral: true,
+                reason: "BEHAVIORAL_CONTEXT_EMPTY",
+              },
+            }
+          }
+          return { status: "ok", data: { context: behavioral, skipBehavioral: false } }
+        },
+      },
+
+      {
+        id: "generate-behavioral-tests",
+        name: "Generate Behavioral Tests",
+        type: "agentic",
+        agent: "behavioral-tester",
+      },
+
+      {
+        id: "verify-behavioral-grounding",
+        name: "Verify Behavioral Grounding",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const profile = ctx.toolchainProfile
+          if (!profile?.adversarial.behavioral.enabled) {
+            return { status: "ok", data: { skipped: true, reason: "behavioral scope disabled" } }
+          }
+          const behRes = ctx.results["extract-behavioral-context"]?.data as
+            | {
+                skipped?: boolean
+                skipBehavioral?: boolean
+                context?: BehavioralContext
+                reason?: string
+              }
+            | undefined
+          if (behRes?.skipped || behRes?.skipBehavioral) {
+            return {
+              status: "ok",
+              data: { skipped: true, reason: behRes?.reason ?? "behavioral skip" },
+            }
+          }
+
+          const gen = ctx.results["generate-behavioral-tests"]
+          const raw = typeof gen?.data === "string" ? gen.data : ""
+          if (!raw.trim()) {
+            return { status: "ok", data: { skipped: true, reason: "no behavioral test output" } }
+          }
+
+          const behavioralCtx = behRes?.context ?? {
+            endpoints: [],
+            config: [],
+            dependencies: [],
+            failureModes: [],
+          }
+          const corpus = behavioralContextToCorpus(behavioralCtx)
+          const concerns = profile.adversarial.behavioral.concerns
+          const enabled: EnabledConcerns = {
+            correctness: concerns.correctness !== "off",
+            security: concerns.security !== "off",
+            performance: concerns.performance !== "off",
+            resilience: concerns.resilience !== "off",
+          }
+
+          try {
+            const doc = parseClaimDocument(raw, { invalidCode: "BEHAVIORAL_TESTER_OUTPUT_INVALID" })
+            const result = verifyClaimGrounding(doc, corpus, enabled, {
+              noGroundedClaimsCode: "BEHAVIORAL_NO_GROUNDED_CLAIMS",
+            })
+            return {
+              status: "ok",
+              data: { claims: result.kept, dropped: result.dropped },
+            }
+          } catch (err: unknown) {
+            if (BollardError.is(err)) {
+              return {
+                status: "fail",
+                error: { code: err.code, message: err.message },
+              }
+            }
+            return {
+              status: "fail",
+              error: {
+                code: "NODE_EXECUTION_FAILED",
+                message: err instanceof Error ? err.message : String(err),
+              },
+            }
+          }
+        },
+      },
+
+      {
+        id: "write-behavioral-tests",
+        name: "Write Behavioral Test Files",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const profile = ctx.toolchainProfile
+          if (!profile?.adversarial.behavioral.enabled) {
+            return { status: "ok", data: { skipped: true, reason: "behavioral scope disabled" } }
+          }
+          const behRes = ctx.results["extract-behavioral-context"]?.data as
+            | { skipBehavioral?: boolean; skipped?: boolean }
+            | undefined
+          if (behRes?.skipped || behRes?.skipBehavioral) {
+            return { status: "ok", data: { skipped: true, reason: "behavioral skip" } }
+          }
+
+          const verifyRes = ctx.results["verify-behavioral-grounding"]?.data as
+            | { skipped?: boolean; claims?: ClaimRecord[] }
+            | undefined
+          if (verifyRes?.skipped || !verifyRes?.claims || verifyRes.claims.length === 0) {
+            return {
+              status: "ok",
+              data: { skipped: true, reason: "no grounded behavioral claims" },
+            }
+          }
+
+          const claims = verifyRes.claims
+          const lang = profile.language ?? "typescript"
+
+          const hoistedImports = new Set<string>()
+          const strippedBodies: string[] = []
+          for (const c of claims) {
+            const lines = c.test.split("\n")
+            const bodyLines: string[] = []
+            for (const line of lines) {
+              if (line.trimStart().startsWith("import ")) {
+                hoistedImports.add(line.trim())
+              } else {
+                bodyLines.push(line)
+              }
+            }
+            const body = bodyLines.join("\n").trim()
+            if (body.length > 0) strippedBodies.push(body)
+          }
+
+          let preamble: string
+          let wrapStart: string
+          let wrapEnd: string
+          if (lang === "python") {
+            preamble = "import pytest\n"
+            wrapStart = ""
+            wrapEnd = ""
+          } else {
+            const vitestImport = 'import { describe, it, expect, vi } from "vitest"'
+            const allImports = [vitestImport, ...hoistedImports].join("\n")
+            preamble = `${allImports}\n`
+            wrapStart = '\ndescribe("behavioral tests", () => {\n'
+            wrapEnd = "\n})\n"
+          }
+
+          const testBodies = strippedBodies.join("\n\n")
+          const fileContent = `${preamble}${wrapStart}${testBodies}${wrapEnd}`
+
+          const files = getAffectedSourceFiles(ctx)
+          const leakedTokens: string[] = []
+          for (const filePath of files) {
+            try {
+              const source = await readFile(resolve(workDir, filePath), "utf-8")
+              if (!filePath.endsWith(".ts") && !filePath.endsWith(".tsx")) continue
+              const privateIds = extractPrivateIdentifiers(filePath, source)
+              for (const id of privateIds) {
+                if (fileContent.includes(id)) leakedTokens.push(id)
+              }
+            } catch {
+              /* skip */
+            }
+          }
+          if (leakedTokens.length > 0) {
+            const unique = [...new Set(leakedTokens)]
+            throw new BollardError({
+              code: "POSTCONDITION_FAILED",
+              message: `Information leak in behavioral tests: [${unique.join(", ")}]`,
+              context: { leakedTokens: unique },
+            })
+          }
+
+          const firstFile = files[0]
+          if (!firstFile) {
+            return {
+              status: "fail",
+              error: {
+                code: "NODE_EXECUTION_FAILED",
+                message: "No affected files for behavioral tests",
+              },
+            }
+          }
+
+          const derivedRel = deriveAdversarialTestPath(firstFile, profile, "behavioral")
+          const testPath = resolveBehavioralTestOutputRel({
+            runId: ctx.runId,
+            task: ctx.task,
+            derivedRelativePath: derivedRel,
+            lifecycle: profile.adversarial.behavioral.lifecycle,
+          })
+          const fullPath = resolve(workDir, testPath)
+          await mkdir(dirname(fullPath), { recursive: true })
+          await writeFile(fullPath, fileContent, "utf-8")
+
+          return {
+            status: "ok",
+            data: {
+              testFile: testPath,
+              bytesWritten: fileContent.length,
+              claimCount: claims.length,
+            },
+          }
+        },
+      },
+
+      {
+        id: "run-behavioral-tests",
+        name: "Run Behavioral Tests",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const profile = ctx.toolchainProfile
+          if (!profile?.adversarial.behavioral.enabled) {
+            return { status: "ok", data: { skipped: true, reason: "behavioral scope disabled" } }
+          }
+          const behRes = ctx.results["extract-behavioral-context"]?.data as
+            | { skipBehavioral?: boolean; skipped?: boolean; context?: BehavioralContext }
+            | undefined
+          if (behRes?.skipped || behRes?.skipBehavioral) {
+            return { status: "ok", data: { skipped: true, reason: "behavioral skip" } }
+          }
+
+          const writeRes = ctx.results["write-behavioral-tests"]?.data as
+            | { skipped?: boolean; testFile?: string }
+            | undefined
+          if (writeRes?.skipped || !writeRes?.testFile) {
+            return { status: "ok", data: { skipped: true, reason: "no behavioral tests written" } }
+          }
+
+          const composePath = resolve(workDir, ".bollard", "compose.behavioral.yml")
+          try {
+            const behavioralCtx = behRes?.context ?? {
+              endpoints: [],
+              config: [],
+              dependencies: [],
+              failureModes: [],
+            }
+            const compose = await generateBehavioralCompose({
+              workDir,
+              profile,
+              behavioralContext: behavioralCtx,
+              behavioralTestRelPath: writeRes.testFile,
+            })
+            await mkdir(dirname(composePath), { recursive: true })
+            await writeFile(composePath, compose.yaml, "utf-8")
+          } catch (err: unknown) {
+            ctx.log.warn("behavioral_compose_write_failed", {
+              message: err instanceof Error ? err.message : String(err),
+            })
+          }
+
+          const result = await runTests(workDir, [writeRes.testFile], profile)
+          if (result.failed > 0) {
+            return {
+              status: "fail",
+              data: result,
+              error: {
+                code: "TEST_FAILED",
+                message: `Behavioral tests failed: ${result.failedTests.join(", ") || "see output"}`,
               },
             }
           }

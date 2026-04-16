@@ -45,7 +45,7 @@ The key guarantee: **Bollard runs all enabled scopes regardless of the project's
 
 > "Are both Layer 1 and Layer 2 actually catching bugs, or are they just passing by coincidence?"
 
-Mutate the source, run both test suites, check that mutations get caught. This is the mechanical proof that the tests are meaningful. Language-specific mutators exist for every major language (Stryker for JS/TS/C#, mutmut for Python, go-mutesting for Go, cargo-mutants for Rust).
+Mutate the source, run both test suites, check that mutations get caught. This is the mechanical proof that the tests are meaningful. Language-specific mutators exist for every major language (Stryker for JS/TS/C#, mutmut for Python, cargo-mutants for Rust). *Note: go-mutesting (Go) was originally planned but is deferred — the project is unmaintained. The `MutationToolId` type reserves the slot.*
 
 ### Why Three Layers?
 
@@ -153,7 +153,7 @@ Multiple markers can coexist (e.g., a Python project with a TypeScript frontend)
 |-----------|------|---------|
 | JS/TS | Stryker | `stryker run --mutate '{changed_files}'` |
 | Python | mutmut | `mutmut run --paths-to-mutate={changed_files}` |
-| Go | go-mutesting | `go-mutesting ./...` |
+| Go | go-mutesting *(deferred — unmaintained)* | `go-mutesting ./...` |
 | Rust | cargo-mutants | `cargo mutants --file {changed_files}` |
 | Ruby | mutant | `bundle exec mutant run` |
 
@@ -563,7 +563,7 @@ See [02-bootstrap.md](02-bootstrap.md) for the full stage-by-stage breakdown. Su
 
 ### Stage 3: Full Three-Layer Pipeline
 
-- Per-language mutation testing: Stryker (JS/TS), mutmut (Python), go-mutesting (Go), cargo-mutants (Rust)
+- Per-language mutation testing: Stryker (JS/TS), mutmut (Python), cargo-mutants (Rust). *Go mutation deferred (go-mutesting unmaintained).*
 - Mutation testing runs against both Layer 1 and Layer 2 test suites
 - Deterministic type extractors for Python (`ast`), Go (`go doc`), Rust (`cargo doc`)
 - Mutation tool detection added to `@bollard/detect` language modules

@@ -62,6 +62,21 @@ export function resolveContractTestOutputRel(params: {
   return join(".bollard", "runs", params.runId, "adversarial", "contract", fileName)
 }
 
+/** Relative path (from workDir) for a generated behavioral-scope adversarial test file. */
+export function resolveBehavioralTestOutputRel(params: {
+  runId: string
+  task: string
+  derivedRelativePath: string
+  lifecycle: "ephemeral" | "persistent"
+}): string {
+  const slug = _slugify(params.task)
+  const fileName = basename(params.derivedRelativePath)
+  if (params.lifecycle === "persistent") {
+    return join(".bollard", "tests", "behavioral", slug, fileName)
+  }
+  return join(".bollard", "runs", params.runId, "adversarial", "behavioral", fileName)
+}
+
 export async function writeTestMetadata(outputDir: string, metadata: TestMetadata): Promise<void> {
   const metaPath = join(outputDir, "_bollard.json")
   await writeFile(metaPath, JSON.stringify(metadata, null, 2), "utf-8")

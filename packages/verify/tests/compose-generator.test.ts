@@ -1,7 +1,11 @@
+import { mkdtemp, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { withBoundaryOverrides } from "@bollard/detect/src/concerns.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
-import { describe, expect, it } from "vitest"
-import { generateVerifyCompose } from "../src/compose-generator.js"
+import { afterEach, describe, expect, it } from "vitest"
+import type { BehavioralContext } from "../src/behavioral-extractor.js"
+import { generateBehavioralCompose, generateVerifyCompose } from "../src/compose-generator.js"
 
 const TS_PROFILE: ToolchainProfile = {
   language: "typescript",
@@ -155,5 +159,71 @@ describe("generateVerifyCompose", () => {
       profile: PY_PROFILE,
     })
     expect(result.yaml).toContain("poetry run pytest -v")
+  })
+})
+
+const EMPTY_BEHAVIORAL: BehavioralContext = {
+  endpoints: [],
+  config: [],
+  dependencies: [],
+  failureModes: [],
+}
+
+describe("generateBehavioralCompose", () => {
+  let tempDir: string | undefined
+  afterEach(async () => {
+    tempDir = undefined
+  })
+
+  it("generates two services project and verify-behavioral", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "bollard-beh-compose-"))
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({ scripts: { start: "node index.js" } }),
+      "utf-8",
+    )
+    const result = await generateBehavioralCompose({
+      workDir: tempDir,
+      profile: TS_PROFILE,
+      behavioralContext: EMPTY_BEHAVIORAL,
+      behavioralTestRelPath: ".bollard/runs/x/adversarial/behavioral/t.behavioral.test.ts",
+    })
+    expect(result.services).toEqual(["project", "verify-behavioral"])
+    expect(result.yaml).toContain("project:")
+    expect(result.yaml).toContain("verify-behavioral:")
+    expect(result.yaml).toContain("BASE_URL=http://project:3000")
+    expect(result.yaml).toContain("3000:3000")
+  })
+
+  it("embeds vitest fallback when profile has no test command", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "bollard-beh-compose-"))
+    await writeFile(join(tempDir, "package.json"), JSON.stringify({}), "utf-8")
+    const minimalProfile: ToolchainProfile = {
+      ...TS_PROFILE,
+      checks: {},
+    }
+    const result = await generateBehavioralCompose({
+      workDir: tempDir,
+      profile: minimalProfile,
+      behavioralContext: EMPTY_BEHAVIORAL,
+      behavioralTestRelPath: "tests/x.test.ts",
+    })
+    expect(result.yaml).toContain("vitest run")
+  })
+
+  it("uses pnpm run start when package.json defines start", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "bollard-beh-compose-"))
+    await writeFile(
+      join(tempDir, "package.json"),
+      JSON.stringify({ scripts: { start: "node server.js" } }),
+      "utf-8",
+    )
+    const result = await generateBehavioralCompose({
+      workDir: tempDir,
+      profile: TS_PROFILE,
+      behavioralContext: EMPTY_BEHAVIORAL,
+      behavioralTestRelPath: "t.test.ts",
+    })
+    expect(result.yaml).toContain("pnpm run start")
   })
 })

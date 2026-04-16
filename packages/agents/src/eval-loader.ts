@@ -1,4 +1,5 @@
 import type { EvalCase } from "@bollard/engine/src/eval-runner.js"
+import { behavioralTesterEvalCases } from "./evals/behavioral-tester/cases.js"
 import { boundaryTesterEvalCases } from "./evals/boundary-tester/cases.js"
 import { coderEvalCases } from "./evals/coder/cases.js"
 import { contractTesterEvalCases } from "./evals/contract-tester/cases.js"
@@ -9,6 +10,7 @@ const EVAL_SETS: Record<string, EvalCase[]> = {
   coder: coderEvalCases,
   "boundary-tester": boundaryTesterEvalCases,
   "contract-tester": contractTesterEvalCases,
+  "behavioral-tester": behavioralTesterEvalCases,
 }
 
 const ALL_CASES_UNIQUE: EvalCase[] = (() => {
@@ -19,6 +21,7 @@ const ALL_CASES_UNIQUE: EvalCase[] = (() => {
     coderEvalCases,
     boundaryTesterEvalCases,
     contractTesterEvalCases,
+    behavioralTesterEvalCases,
   ]) {
     for (const c of list) {
       if (!seen.has(c.id)) {
@@ -44,5 +47,12 @@ export function loadEvalCases(agentFilter?: string): EvalCase[] {
 }
 
 export function availableAgents(): string[] {
-  return ["planner", "coder", "boundary-tester", "contract-tester", "tester"].sort()
+  return [
+    "planner",
+    "coder",
+    "boundary-tester",
+    "contract-tester",
+    "behavioral-tester",
+    "tester",
+  ].sort()
 }
