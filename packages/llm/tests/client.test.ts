@@ -198,7 +198,7 @@ describe.skipIf(!process.env["ANTHROPIC_API_KEY"])("AnthropicProvider (live)", (
         messages: [{ role: "user", content: "Reply now." }],
         maxTokens: 50,
         temperature: 0,
-        model: "claude-haiku-3-5-20241022",
+        model: "claude-haiku-4-5-20251001",
       })
 
       expect(response.content.length).toBeGreaterThan(0)

@@ -10,7 +10,7 @@ import type {
 
 const PRICING: Record<string, { input: number; output: number }> = {
   "claude-sonnet-4-20250514": { input: 3, output: 15 },
-  "claude-haiku-3-5-20241022": { input: 1, output: 5 },
+  "claude-haiku-4-5-20251001": { input: 1, output: 5 },
   "claude-opus-4-20250514": { input: 15, output: 75 },
 }
 
@@ -166,10 +166,12 @@ export class AnthropicProvider implements LLMProvider {
           : {}),
       })
 
+      let currentToolUseId = ""
       for await (const event of stream) {
         if (event.type === "content_block_start") {
           const block = event.content_block
           if (block.type === "tool_use") {
+            currentToolUseId = block.id
             yield {
               type: "tool_use_start",
               toolName: block.name,
@@ -183,7 +185,7 @@ export class AnthropicProvider implements LLMProvider {
           } else if (delta.type === "input_json_delta") {
             yield {
               type: "tool_input_delta",
-              toolUseId: "",
+              toolUseId: currentToolUseId,
               partialJson: delta.partial_json,
             }
           }
