@@ -7,6 +7,7 @@ import type { Blueprint, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import type { LLMProvider } from "@bollard/llm/src/types.js"
+import { extractProbes } from "@bollard/observe/src/probe-extractor.js"
 import type { BehavioralContext } from "@bollard/verify/src/behavioral-extractor.js"
 import { buildBehavioralContext } from "@bollard/verify/src/behavioral-extractor.js"
 import { behavioralContextToCorpus } from "@bollard/verify/src/behavioral-grounding.js"
@@ -39,6 +40,22 @@ import { extractPrivateIdentifiers, getExtractor } from "@bollard/verify/src/typ
 import { deriveAdversarialTestPath, stripMarkdownFences } from "./write-tests-helpers.js"
 
 const execFileAsync = promisify(execFile)
+
+async function formatGeneratedAdversarialTestFile(
+  ctx: PipelineContext,
+  workDir: string,
+  fullPath: string,
+): Promise<void> {
+  try {
+    await execFileAsync("biome", ["check", "--write", "--unsafe", fullPath], {
+      cwd: workDir,
+      timeout: 15_000,
+    })
+    ctx.log.debug?.(`Formatted ${fullPath}`)
+  } catch {
+    ctx.log.debug?.(`Biome format skipped for ${fullPath}`)
+  }
+}
 
 function getAffectedSourceFiles(ctx: PipelineContext): string[] {
   const plan = ctx.plan
@@ -307,6 +324,7 @@ export function createImplementFeatureBlueprint(
           const fullPath = resolve(workDir, testPath)
           await mkdir(dirname(fullPath), { recursive: true })
           await writeFile(fullPath, cleanOutput, "utf-8")
+          await formatGeneratedAdversarialTestFile(ctx, workDir, fullPath)
 
           return {
             status: "ok",
@@ -641,6 +659,7 @@ export function createImplementFeatureBlueprint(
           const fullPath = resolve(workDir, testPath)
           await mkdir(dirname(fullPath), { recursive: true })
           await writeFile(fullPath, fileContent, "utf-8")
+          await formatGeneratedAdversarialTestFile(ctx, workDir, fullPath)
 
           return {
             status: "ok",
@@ -911,6 +930,7 @@ export function createImplementFeatureBlueprint(
           const fullPath = resolve(workDir, testPath)
           await mkdir(dirname(fullPath), { recursive: true })
           await writeFile(fullPath, fileContent, "utf-8")
+          await formatGeneratedAdversarialTestFile(ctx, workDir, fullPath)
 
           return {
             status: "ok",
@@ -980,6 +1000,68 @@ export function createImplementFeatureBlueprint(
             }
           }
           return { status: "ok", data: result }
+        },
+      },
+
+      {
+        id: "extract-probes",
+        name: "Extract Production Probes",
+        type: "deterministic",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const profile = ctx.toolchainProfile
+          if (!profile?.adversarial.behavioral.enabled) {
+            return { status: "ok", data: { skipped: true, reason: "behavioral scope disabled" } }
+          }
+          const behRes = ctx.results["extract-behavioral-context"]?.data as
+            | { skipped?: boolean; skipBehavioral?: boolean; context?: BehavioralContext }
+            | undefined
+          if (behRes?.skipped || behRes?.skipBehavioral) {
+            return { status: "ok", data: { skipped: true, reason: "behavioral skip" } }
+          }
+
+          const verifyRes = ctx.results["verify-behavioral-grounding"]?.data as
+            | { skipped?: boolean; claims?: ClaimRecord[] }
+            | undefined
+          if (verifyRes?.skipped || !verifyRes?.claims || verifyRes.claims.length === 0) {
+            return { status: "ok", data: { skipped: true, reason: "no behavioral claims" } }
+          }
+
+          const behavioralCtx = behRes?.context ?? {
+            endpoints: [],
+            config: [],
+            dependencies: [],
+            failureModes: [],
+          }
+
+          const probes = extractProbes(verifyRes.claims, behavioralCtx, ctx.runId)
+          ctx.log.info("probe_extraction_result", {
+            event: "probe_extraction_result",
+            runId: ctx.runId,
+            claimCount: verifyRes.claims.length,
+            probeCount: probes.length,
+          })
+
+          if (probes.length === 0) {
+            return {
+              status: "ok",
+              data: { skipped: true, reason: "no probe-eligible claims", eligibleCount: 0 },
+            }
+          }
+
+          const probesDir = resolve(workDir, ".bollard", "probes")
+          await mkdir(probesDir, { recursive: true })
+          for (const p of probes) {
+            const dest = resolve(probesDir, `${p.id}.json`)
+            await writeFile(dest, `${JSON.stringify(p, null, 2)}\n`, "utf-8")
+          }
+
+          ctx.generatedProbes = probes
+
+          return {
+            status: "ok",
+            data: { probeCount: probes.length, probeIds: probes.map((x) => x.id) },
+            probes,
+          }
         },
       },
 
