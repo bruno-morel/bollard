@@ -12,47 +12,61 @@ Features deferred from v0.1 spec to keep scope tight. These are all good ideas �
 
 **Stage 4a** (behavioral-scope adversarial testing — deterministic context extraction, `behavioral-tester` agent, grounding, coarse fault injection, behavioral compose) — validated GREEN on 2026-04-16. See [stage4a-validation-results.md](./stage4a-validation-results.md).
 
+**Stage 4b** (production feedback loop — `@bollard/observe` package: probe extraction from behavioral claims, HTTP probe runner, metrics store, deployment tracker, drift detector, flag manager, progressive rollout, probe scheduler; `extract-probes` blueprint node; CLI `probe`/`deploy`/`flag`/`drift` commands; 4 MCP tools; built-in providers only, zero external deps) — validated GREEN on 2026-04-16. See [stage4b-validation-results.md](./stage4b-validation-results.md).
+
+**Stage 4c Part 1** (OpenAI + Google `chatStream` parity with Anthropic) — validated GREEN on 2026-04-16. See [stage4c-streaming-parity.md](./stage4c-streaming-parity.md).
+
+**Stage 4c Part 1 hardening** (auto-format write nodes, grep→ripgrep, `rm` allowlist, model ID update) — 705 pass / 4 skip. Bollard-on-bollard self-test: 28/28 nodes, $0.63.
+
+**Stage 4c Part 2** — Java/Kotlin Wave 1 — automated suite and integration checks **validated 2026-04-17** (744 pass / 4 skip; adversarial 331 pass). Full Java `implement-feature` E2E deferred; see [stage4c-validation-results.md](./stage4c-validation-results.md). Design: [stage4c-java-kotlin-wave1.md](./stage4c-java-kotlin-wave1.md).
+
+**Stage 4d** — DX & Agent Integrations: planned. See [stage4d-dx-agent-integrations.md](./stage4d-dx-agent-integrations.md).
+
 ## Stage 3c — shipped (validated GREEN 2026-04-16)
 
 - ~~**Per-language mutation testing**~~ — Stryker (JS/TS), `MutmutProvider` (Python), `CargoMutantsProvider` (Rust). Go mutation testing deferred (no maintained upstream tool). Scope-aware targeting via `mutateFiles` reduces pipeline runs from full-repo to coder-changed files only.
 - ~~**Semantic review agent**~~ — `semantic-reviewer` agent sees diff + plan, produces structured `ReviewFinding`s with grounding. Deterministic verifier filters hallucinations. Advisory only (never blocks pipeline). Findings shown at `approve-pr`.
-- ~~**Streaming LLM responses**~~ — Anthropic `chatStream` + executor integration + `stream_delta` progress events. OpenAI/Google stubs throw `PROVIDER_NOT_FOUND` — moved to Stage 4 for full parity.
+- ~~**Streaming LLM responses**~~ — Anthropic `chatStream` + executor integration + `stream_delta` progress events. OpenAI + Google `chatStream` shipped in **Stage 4c Part 1** (see [stage4c-streaming-parity.md](./stage4c-streaming-parity.md)).
 - ~~**`go.work`-only detection**~~ — `parseGoWorkUses` in Go detector; root `go.mod` takes precedence when both exist.
 
-### Moved from Stage 3 to Stage 4
+### Moved to Stage 4c
 
-These items were originally tracked under Stage 3c but have been rescheduled:
+These items were originally tracked under Stage 3c but have been rescheduled through 4a/4b to 4c:
 
-- **Java/Kotlin language expansion (Wave 1)** — originally Stage 3c per [07-adversarial-scopes.md §12.1](07-adversarial-scopes.md). Moved to Stage 4 because the mutation-testing integration pattern needed to stabilize on TS/Python/Rust first. Now shares Stage 4 with the behavioral scope.
-- **OpenAI / Google streaming parity** — Anthropic streaming shipped; the other two providers remain stubs. Moved to Stage 4.
-- **Verification summary batching** — replace per-check retry loops with a single consolidated feedback message. Moved to Stage 4.
-- **Git rollback on coder max-turns failure** — partially-written files remain on disk today. Needs a worktree/branch strategy. Moved to Stage 4.
+- **Java/Kotlin language expansion (Wave 1)** — originally Stage 3c per [07-adversarial-scopes.md §12.1](07-adversarial-scopes.md). Moved to Stage 4c because the mutation-testing integration pattern needed to stabilize on TS/Python/Rust first.
+- ~~**OpenAI / Google streaming parity**~~ — **Done (Stage 4c Part 1, 2026-04-16).** See [stage4c-streaming-parity.md](./stage4c-streaming-parity.md).
+- **Verification summary batching** — replace per-check retry loops with a single consolidated feedback message. Stage 4c.
+- **Git rollback on coder max-turns failure** — partially-written files remain on disk today. Needs a worktree/branch strategy. Stage 4c.
 
 ---
 
-## Stage 3+: Production Feedback Loop Enhancements
+## Stage 4b+: Production Feedback Loop Enhancements
 
-These extend the core probe → measure → correct loop once it's running and proven.
+These extend the core probe → measure → correct loop shipped in Stage 4b.
 
-### Bollard-Owned Feature Flags
-- Flag definitions as artifacts (FlagDefinition, RolloutStrategy, RolloutState types)
+### ~~Bollard-Owned Feature Flags~~ — SHIPPED (Stage 4b)
+- `FileFlagProvider` (built-in) + `FlagProvider` interface for external providers (Flagsmith, LaunchDarkly)
 - Progressive rollout state machine: OFF → canary (5%) → partial (25%) → full (100%)
-- Zero-dep flag system: JSON files + provider storage, built-in HTTP flag endpoint
-- Flags follow Universal Artifact Pattern (produce → verify → proof → drift)
 - Risk-gated rollout advancement (auto for low/medium, human-gated for high/critical)
-- Optimistic concurrency control for concurrent rollout state updates
-- **Why deferred:** Most teams already have flag systems (LaunchDarkly, Unleash, env vars). Bollard should integrate first, own later — once we know what the probes actually tell us.
+- CLI: `bollard flag set/list/kill`
 
-### SLO Tracking and Error Budgets
+### ~~Drift Detection~~ — SHIPPED (Stage 4b)
+- `GitDriftDetector` (built-in) + `DriftDetector` interface for external providers (ArgoCD, Flux)
+- Severity classification: test-only = low, source = medium, config/infra = high
+- CLI: `bollard drift check/watch`
+
+### External Provider Implementations (4b+)
+- Datadog Synthetic for probes, Prometheus pushgateway for metrics
+- Flagsmith / LaunchDarkly for flags
+- Cloud Run / ArgoCD / Flux for deployment tracking and drift detection
+- **When:** When teams need them; interfaces are ready.
+
+### SLO Tracking and Error Budgets (4b+)
 - Rolling-window error budget math on probe results
 - Risk-tier-derived SLO targets (availability, latency P95/P99)
 - Budget consumption notifications (25%, 50%, 75%)
 - Auto-task creation when budget exhausted
 - **Why deferred:** Requires stable probe data over weeks. Specifying thresholds before running a single probe is premature.
-
-### Drift Detection — MOVED TO SPEC
-- Now a Stage 3 core concern in [01-architecture.md](01-architecture.md) Section 11
-- Essential for system convergence: unverified changes in production must be detected and corrected
 
 ---
 
@@ -109,14 +123,14 @@ The persistent-native adversarial test mode (tests written in the project's lang
 
 ---
 
-## Stage 4 → 5+: Language Coverage Expansion
+## Stage 4c → 5+: Language Coverage Expansion
 
-Stage 3 ships with deterministic support for TypeScript, JavaScript, Python, Go, and Rust. Additional major languages are sequenced into three waves. **Full design and rationale in [07-adversarial-scopes.md §12.1](07-adversarial-scopes.md#121-language-expansion-roadmap).**
+Stages 3–4b ship with deterministic support for TypeScript, JavaScript, Python, Go, and Rust. Additional major languages are sequenced into three waves. **Full design and rationale in [07-adversarial-scopes.md §12.1](07-adversarial-scopes.md#121-language-expansion-roadmap).**
 
 Each new language is a four-step integration: detector (`packages/detect/src/languages/<lang>.ts`), deterministic `SignatureExtractor` (ideally a compiled helper binary, same pattern as `bollard-extract-go` / `bollard-extract-rs`), Docker verify image (`docker/Dockerfile.verify-<lang>`), and mutation-testing wrapper.
 
-### Wave 1 — Stage 4: Java + Kotlin (JVM)
-- **Why first:** largest enterprise footprint; **PIT** is the flagship mutation tool in any language, so Java becomes Bollard's reference mutation-testing integration. Originally slated for Stage 3c; moved to Stage 4 because the mutation-testing integration pattern needed to stabilize on TS/Python/Rust first.
+### Wave 1 — Stage 4c: Java + Kotlin (JVM)
+- **Why first:** largest enterprise footprint; **PIT** is the flagship mutation tool in any language, so Java becomes Bollard's reference mutation-testing integration. Originally slated for Stage 3c; moved to Stage 4c because the mutation-testing integration pattern needed to stabilize on TS/Python/Rust first.
 - Detection: `pom.xml` / `build.gradle*` / `settings.gradle*`
 - Toolchain: javac + kotlinc, SpotBugs/Checkstyle/ErrorProne/ktlint/detekt, JUnit 5 / TestNG, Temurin JDK 21
 - Extractor: JavaParser-based CLI jar (`bollard-extract-java`) in dev image; Kotlin shares the helper
@@ -139,7 +153,7 @@ Each new language is a four-step integration: detector (`packages/detect/src/lan
 ### Explicit non-goals (no near-term timeline)
 - **Swift** — Apple-ecosystem-dominant, limited server-side relevance
 - **Scala** — JVM, complex toolchain relative to audience size; may piggyback on Wave 1 if a contributor shows up
-- **Elixir** — reserved in `LanguageId`; may move earlier if Stage 4 wants a resilience-concern reference implementation (BEAM's supervision model)
+- **Elixir** — reserved in `LanguageId`; may move earlier if Stage 4c wants a resilience-concern reference implementation (BEAM's supervision model)
 - **F#, Clojure, Haskell, OCaml, Nim, Zig** — no near-term plans; the `LanguageId` union grows when demand appears
 
 ### Sequencing principle

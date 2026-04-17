@@ -761,6 +761,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 
 ### Stage 4c (Part 2) (DONE) — Java/Kotlin Wave 1
 - `detectToolchain` JVM detector (Maven/Gradle), `MutationToolId` `"pitest"`, `scripts/extract_java` + Graal `bollard-extract-java`, `JavaParserExtractor`, `JavaContractProvider`, `PitestProvider`, Surefire/Gradle `parseSummary`, `docker/Dockerfile.verify-jvm`, `DEFAULT_IMAGES` Temurin 21 for java/kotlin, behavioral compose JVM start commands.
+- **Validation (2026-04-17):** 744 pass / 4 skip; adversarial 331 pass. Integration audits GREEN; full Java `implement-feature` E2E not run — see [spec/stage4c-validation-results.md](../spec/stage4c-validation-results.md).
 
 ### DO NOT build yet:
 - **New languages outside the current seven (TS/JS/Python/Go/Rust/Java/Kotlin)** — C#/.NET, Ruby, PHP, and further waves are sequenced (Stage 4c+ → 5+). Full design in [spec/07-adversarial-scopes.md §12.1](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md). Do not add language detectors, extractors, or verify images for any of these languages ad-hoc — each wave is coordinated so the dev image, `dev-full` image, mutation testing pattern, and contract graph all land together. Swift, Scala, Elixir, F#, Clojure, Haskell, OCaml, Nim, and Zig are explicit non-goals with no near-term timeline.

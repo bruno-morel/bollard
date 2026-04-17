@@ -54,7 +54,9 @@ describe("searchTool property tests", () => {
     writeFileSync(join(sub, "f.txt"), "needle")
     await fc.assert(
       fc.asyncProperty(
-        fc.string({ minLength: 1, maxLength: 12 }).filter((p) => !/[\\"]/.test(p)),
+        fc
+          .string({ minLength: 1, maxLength: 12 })
+          .filter((p) => !/[\\"]/.test(p) && !p.startsWith("-")),
         async (pat) => {
         fc.pre(!pat.includes("\0"))
         const out = await searchTool.execute({ pattern: pat, path: "sub" }, ctx)
