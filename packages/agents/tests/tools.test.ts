@@ -110,10 +110,29 @@ describe("run_command", () => {
     expect(result).toMatch(/v\d+/)
   })
 
-  it("rejects a disallowed command", async () => {
+  it("rejects recursive rm", async () => {
     await expect(runCommandTool.execute({ command: "rm -rf /" }, ctx)).rejects.toThrow(
-      "not allowed",
+      "Recursive rm is not allowed",
     )
+  })
+
+  it("rejects rm -r", async () => {
+    await expect(runCommandTool.execute({ command: "rm -r sub" }, ctx)).rejects.toThrow(
+      "Recursive rm is not allowed",
+    )
+  })
+
+  it("allows rm of a file inside workDir", async () => {
+    writeFileSync(join(tempDir, "to-delete.txt"), "x")
+    await runCommandTool.execute({ command: "rm to-delete.txt" }, ctx)
+    const { existsSync } = await import("node:fs")
+    expect(existsSync(join(tempDir, "to-delete.txt"))).toBe(false)
+  })
+
+  it("rejects rm of a path outside workDir", async () => {
+    await expect(
+      runCommandTool.execute({ command: "rm ../../../etc/passwd" }, ctx),
+    ).rejects.toThrow('rm target "../../../etc/passwd" is outside the work directory')
   })
 
   it("rejects cwd path traversal", async () => {

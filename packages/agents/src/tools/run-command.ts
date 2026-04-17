@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { resolve } from "node:path"
+import { resolve, sep } from "node:path"
 import { promisify } from "node:util"
 import type { AgentTool } from "../types.js"
 
@@ -17,6 +17,7 @@ const DEFAULT_ALLOWED_COMMANDS = [
   "tail",
   "wc",
   "diff",
+  "rm",
 ]
 
 export const runCommandTool: AgentTool = {
@@ -47,6 +48,21 @@ export const runCommandTool: AgentTool = {
     const cwd = resolve(ctx.workDir, String(input["cwd"] ?? "."))
     if (!cwd.startsWith(resolve(ctx.workDir))) {
       throw new Error("Path traversal detected")
+    }
+
+    if (executable === "rm") {
+      if (parts.includes("-rf") || parts.includes("-r")) {
+        throw new Error("Recursive rm is not allowed. Delete files individually.")
+      }
+      const workRoot = resolve(ctx.workDir)
+      const rmTargets = parts.slice(1).filter((arg) => !arg.startsWith("-"))
+      for (const target of rmTargets) {
+        const resolvedTarget = resolve(cwd, target)
+        const inside = resolvedTarget === workRoot || resolvedTarget.startsWith(workRoot + sep)
+        if (!inside) {
+          throw new Error(`rm target "${target}" is outside the work directory`)
+        }
+      }
     }
 
     try {
