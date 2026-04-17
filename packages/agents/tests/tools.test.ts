@@ -89,6 +89,18 @@ describe("search", () => {
     const result = await searchTool.execute({ pattern: "zzz_nonexistent" }, ctx)
     expect(result).toBe("No matches found.")
   })
+
+  it("treats regex metacharacters as literal by default (fixed-string mode)", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "const foo(bar) = 1\n")
+    const result = await searchTool.execute({ pattern: "foo(bar)" }, ctx)
+    expect(result).toContain("foo(bar)")
+  })
+
+  it("matches regex patterns when regex is true", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "const foo123 = 1\n")
+    const result = await searchTool.execute({ pattern: "foo\\d+", regex: true }, ctx)
+    expect(result).toContain("foo123")
+  })
 })
 
 describe("run_command", () => {

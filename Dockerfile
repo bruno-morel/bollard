@@ -38,7 +38,7 @@ RUN mkdir -p /out \
 FROM node:22-slim AS dev
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        git ca-certificates python3 procps \
+        git ca-certificates python3 procps ripgrep \
     && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@latest --activate
 COPY --from=go-helper-builder   /out/bollard-extract-go /usr/local/bin/bollard-extract-go

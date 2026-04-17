@@ -8,16 +8,23 @@ const execFileAsync = promisify(execFile)
 export const searchTool: AgentTool = {
   name: "search",
   description:
-    "Search for a pattern in files using grep. Returns matching lines with file paths and line numbers.",
+    "Search for a pattern in files using ripgrep. By default searches for literal strings. Set regex: true for regex patterns. Returns matching lines with file paths and line numbers.",
   inputSchema: {
     type: "object",
     properties: {
-      pattern: { type: "string", description: "The regex pattern to search for" },
+      pattern: {
+        type: "string",
+        description: "The pattern to search for (literal string by default)",
+      },
       path: {
         type: "string",
         description: "Directory or file to search in (default: project root)",
       },
       glob: { type: "string", description: "File glob pattern to filter (e.g. '*.ts')" },
+      regex: {
+        type: "boolean",
+        description: "Treat pattern as regex instead of fixed string (default: false)",
+      },
     },
     required: ["pattern"],
   },
@@ -26,19 +33,25 @@ export const searchTool: AgentTool = {
     if (!searchPath.startsWith(resolve(ctx.workDir))) {
       throw new Error("Path traversal detected")
     }
+    const isRegex = input["regex"] === true
     const args = [
-      "-rn",
-      "--exclude-dir=node_modules",
-      "--exclude-dir=dist",
-      "--exclude-dir=.git",
-      "--include",
-      String(input["glob"] ?? "*"),
-      "-e",
+      "-n",
+      "--no-heading",
+      ...(isRegex ? [] : ["--fixed-strings"]),
+      "--glob",
+      "!node_modules",
+      "--glob",
+      "!dist",
+      "--glob",
+      "!.git",
+      ...(input["glob"] ? ["--glob", String(input["glob"])] : []),
+      "--max-count",
+      "100",
       String(input["pattern"]),
       searchPath,
     ]
     try {
-      const { stdout } = await execFileAsync("grep", args, {
+      const { stdout } = await execFileAsync("rg", args, {
         maxBuffer: 1024 * 1024,
         timeout: 10_000,
       })
