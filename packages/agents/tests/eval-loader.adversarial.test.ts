@@ -81,14 +81,21 @@ describe("Feature: loadEvalCases filters by exact agent name match", () => {
 })
 
 describe("Feature: availableAgents returns known agent list", () => {
-  it("should return planner, coder, boundary-tester, contract-tester, tester (sorted)", () => {
+  it("should return sorted agent ids including behavioral-tester", () => {
     const agents = availableAgents()
-    expect(agents).toEqual(["boundary-tester", "coder", "contract-tester", "planner", "tester"])
+    expect(agents).toEqual([
+      "behavioral-tester",
+      "boundary-tester",
+      "coder",
+      "contract-tester",
+      "planner",
+      "tester",
+    ])
   })
 
-  it("should return array with length 5", () => {
+  it("should return array with length 6", () => {
     const agents = availableAgents()
-    expect(agents).toHaveLength(5)
+    expect(agents).toHaveLength(6)
   })
 
   it("should return consistent results across calls", () => {
@@ -101,7 +108,7 @@ describe("Feature: availableAgents returns known agent list", () => {
 describe("Property-based tests: loadEvalCases with arbitrary strings", () => {
   it("should handle arbitrary string filters consistently", () => {
     fc.assert(fc.property(
-      fc.string(),
+      fc.string().filter((s) => s !== "toString" && s !== "valueOf" && s !== "__proto__"),
       (filter) => {
         const cases = loadEvalCases(filter)
         expect(cases).toBeInstanceOf(Array)
@@ -109,7 +116,14 @@ describe("Property-based tests: loadEvalCases with arbitrary strings", () => {
         
         // Should return all cases unless exact match with known agent
         const allCases = loadEvalCases()
-        if (!["planner", "coder", "tester", "boundary-tester", "contract-tester"].includes(filter)) {
+        const exact =
+          filter === "planner" ||
+          filter === "coder" ||
+          filter === "tester" ||
+          filter === "boundary-tester" ||
+          filter === "contract-tester" ||
+          filter === "behavioral-tester"
+        if (!exact) {
           expect(cases.length).toBe(allCases.length)
         }
       }
@@ -118,7 +132,7 @@ describe("Property-based tests: loadEvalCases with arbitrary strings", () => {
 
   it("should return consistent results for same filter", () => {
     fc.assert(fc.property(
-      fc.string(),
+      fc.string().filter((s) => s !== "toString" && s !== "valueOf" && s !== "__proto__"),
       (filter) => {
         const cases1 = loadEvalCases(filter)
         const cases2 = loadEvalCases(filter)

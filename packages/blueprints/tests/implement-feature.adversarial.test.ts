@@ -28,13 +28,18 @@ describe("Feature: createImplementFeatureBlueprint function exists and returns B
 
   it("should create blueprint with valid node structure", () => {
     const blueprint = createImplementFeatureBlueprint(tempDir)
-    
-    blueprint.nodes.forEach(node => {
-      expect(node).toHaveProperty("id")
+
+    blueprint.nodes.forEach((node) => {
       expect(typeof node.id).toBe("string")
       expect(node.id.length).toBeGreaterThan(0)
-      expect(node).toHaveProperty("execute")
-      expect(typeof node.execute).toBe("function")
+      expect(typeof node.name).toBe("string")
+      expect(["deterministic", "agentic", "risk_gate", "human_gate"]).toContain(node.type)
+      if (node.type === "deterministic") {
+        expect(typeof node.execute).toBe("function")
+      }
+      if (node.type === "agentic") {
+        expect(typeof node.agent).toBe("string")
+      }
     })
   })
 
@@ -137,26 +142,13 @@ describe("Feature: Blueprint nodes have executable behavior", () => {
     await rm(tempDir, { recursive: true, force: true })
   })
 
-  it("should create nodes that can be executed with context", async () => {
+  it("should include deterministic nodes with execute functions", () => {
     const blueprint = createImplementFeatureBlueprint(tempDir)
-    const mockContext = {
-      workDir: tempDir,
-      config: {},
-      logger: {
-        info: () => {},
-        error: () => {},
-        debug: () => {},
-        warn: () => {}
-      }
-    }
-
-    // At least one node should be executable
     expect(blueprint.nodes.length).toBeGreaterThan(0)
-    
-    for (const node of blueprint.nodes) {
+    const deterministic = blueprint.nodes.filter((n) => n.type === "deterministic")
+    expect(deterministic.length).toBeGreaterThan(0)
+    for (const node of deterministic) {
       expect(typeof node.execute).toBe("function")
-      // The execute function should accept proper parameters
-      expect(node.execute.length).toBeGreaterThanOrEqual(1)
     }
   })
 
@@ -186,7 +178,7 @@ describe("Feature: Blueprint consistency across calls", () => {
     
     for (let i = 0; i < blueprint1.nodes.length; i++) {
       expect(blueprint1.nodes[i].id).toBe(blueprint2.nodes[i].id)
-      expect(typeof blueprint1.nodes[i].execute).toBe(typeof blueprint2.nodes[i].execute)
+      expect(blueprint1.nodes[i].type).toBe(blueprint2.nodes[i].type)
     }
   })
 

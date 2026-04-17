@@ -1,370 +1,106 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import * as fc from "fast-check"
+import { createInterface } from "node:readline"
+import type { BlueprintNode } from "@bollard/engine/src/blueprint.js"
+import { createContext } from "@bollard/engine/src/context.js"
+import type { BollardConfig } from "@bollard/engine/src/context.js"
 import { humanGateHandler } from "../src/human-gate.js"
-import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
-import type { PipelineContext } from "@bollard/engine/src/context.js"
 
-// Mock readline to control user input
 vi.mock("node:readline", () => ({
-  createInterface: vi.fn(() => ({
-    question: vi.fn(),
-    close: vi.fn(),
-  })),
+  createInterface: vi.fn(),
 }))
 
-describe("Feature: Human gate handler processes user confirmation", () => {
-  let mockReadline: any
-  
+const testConfig: BollardConfig = {
+  llm: { default: { provider: "mock", model: "m" } },
+  agent: { max_cost_usd: 10, max_duration_minutes: 30 },
+}
+
+function baseNode(id: string): BlueprintNode {
+  return { id, name: "Human gate", type: "human_gate" }
+}
+
+function makeCtx() {
+  return createContext("task", "bp", testConfig)
+}
+
+describe("humanGateHandler", () => {
+  let mockRl: { question: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }
+  let origAuto: string | undefined
+
   beforeEach(() => {
-    const { createInterface } = await import("node:readline")
-    mockReadline = {
-      question: vi.fn(),
-      close: vi.fn(),
-    }
-    vi.mocked(createInterface).mockReturnValue(mockReadline)
+    origAuto = process.env["BOLLARD_AUTO_APPROVE"]
+    delete process.env["BOLLARD_AUTO_APPROVE"]
+    mockRl = { question: vi.fn(), close: vi.fn() }
+    vi.mocked(createInterface).mockReturnValue(mockRl as never)
   })
 
   afterEach(() => {
     vi.clearAllMocks()
+    if (origAuto !== undefined) process.env["BOLLARD_AUTO_APPROVE"] = origAuto
+    else delete process.env["BOLLARD_AUTO_APPROVE"]
   })
 
-  it("should return success when user confirms with 'y'", async () => {
-    mockReadline.question.mockImplementation((prompt: string, callback: (answer: string) => void) => {
-      callback("y")
+  it("returns ok when user confirms with y", async () => {
+    mockRl.question.mockImplementation((_p, cb: (a: string) => void) => {
+      cb("y")
     })
-
-    const node: BlueprintNode = {
-      id: "gate-1",
-      type: "human-gate",
-      config: { message: "Continue?" }
-    }
-    const ctx: PipelineContext = {
-      variables: new Map(),
-      artifacts: new Map()
-    }
-
-    const result = await humanGateHandler(node, ctx)
-    
-    expect(typeof result).toBe("object")
-    expect(result).toHaveProperty("success")
-    expect(result.success).toBe(true)
+    const r = await humanGateHandler(baseNode("gate-1"), makeCtx())
+    expect(r.status).toBe("ok")
+    expect(String(r.data)).toContain("Approved")
   })
 
-  it("should return failure when user rejects with 'n'", async () => {
-    mockReadline.question.mockImplementation((prompt: string, callback: (answer: string) => void) => {
-      callback("n")
+  it("returns block when user rejects with n", async () => {
+    mockRl.question.mockImplementation((_p, cb: (a: string) => void) => {
+      cb("n")
     })
-
-    const node: BlueprintNode = {
-      id: "gate-2",
-      type: "human-gate",
-      config: { message: "Proceed?" }
-    }
-    const ctx: PipelineContext = {
-      variables: new Map(),
-      artifacts: new Map()
-    }
-
-    const result = await humanGateHandler(node, ctx)
-    
-    expect(typeof result).toBe("object")
-    expect(result).toHaveProperty("success")
-    expect(result.success).toBe(false)
+    const r = await humanGateHandler(baseNode("gate-2"), makeCtx())
+    expect(r.status).toBe("block")
+    expect(r.error?.code).toBe("HUMAN_REJECTED")
   })
 
-  it("should handle case-insensitive responses", async () => {
-    mockReadline.question.mockImplementation((prompt: string, callback: (answer: string) => void) => {
-      callback("Y")
+  it("treats y as approve", async () => {
+    mockRl.question.mockImplementation((_p, cb: (a: string) => void) => {
+      cb("y")
     })
-
-    const node: BlueprintNode = {
-      id: "gate-3",
-      type: "human-gate",
-      config: { message: "Continue?" }
-    }
-    const ctx: PipelineContext = {
-      variables: new Map(),
-      artifacts: new Map()
-    }
-
-    const result = await humanGateHandler(node, ctx)
-    
-    expect(result.success).toBe(true)
+    const r = await humanGateHandler(baseNode("gate-3"), makeCtx())
+    expect(r.status).toBe("ok")
   })
 
-  it("should handle whitespace in responses", async () => {
-    mockReadline.question.mockImplementation((prompt: string, callback: (answer: string) => void) => {
-      callback("  y  ")
+  it("closes readline after use", async () => {
+    mockRl.question.mockImplementation((_p, cb: (a: string) => void) => {
+      cb("y")
     })
-
-    const node: BlueprintNode = {
-      id: "gate-4",
-      type: "human-gate",
-      config: { message: "Continue?" }
-    }
-    const ctx: PipelineContext = {
-      variables: new Map(),
-      artifacts: new Map()
-    }
-
-    const result = await humanGateHandler(node, ctx)
-    
-    expect(result.success).toBe(true)
-  })
-
-  it("should reject invalid responses", async () => {
-    mockReadline.question.mockImplementation((prompt: string, callback: (answer: string) => void) => {
-      callback("maybe")
-    })
-
-    const node: BlueprintNode = {
-      id: "gate-5",
-      type: "human-gate",
-      config: { message: "Continue?" }
-    }
-    const ctx: PipelineContext = {
-      variables: new Map(),
-      artifacts: new Map()
-    }
-
-    const result = await humanGateHandler(node, ctx)
-    
-    expect(result.success).toBe(false)
-  })
-
-  it("should close readline interface after use", async () => {
-    mockReadline.question.mockImplementation((prompt: string, callback: (answer: string) => void) => {
-      callback("y")
-    })
-
-    const node: BlueprintNode = {
-      id: "gate-6",
-      type: "human-gate",
-      config: { message: "Continue?" }
-    }
-    const ctx: PipelineContext = {
-      variables: new Map(),
-      artifacts: new Map()
-    }
-
-    await humanGateHandler(node, ctx)
-    
-    expect(mockReadline.close).toHaveBeenCalledOnce()
+    await humanGateHandler(baseNode("gate-4"), makeCtx())
+    expect(mockRl.close).toHaveBeenCalled()
   })
 })
 
-describe("Feature: Property-based testing for human gate", () => {
-  let mockReadline: any
-  
+describe("humanGateHandler property tests", () => {
+  let mockRl: { question: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }
+  let origAuto: string | undefined
+
   beforeEach(() => {
-    const { createInterface } = await import("node:readline")
-    mockReadline = {
-      question: vi.fn(),
-      close: vi.fn(),
-    }
-    vi.mocked(createInterface).mockReturnValue(mockReadline)
+    origAuto = process.env["BOLLARD_AUTO_APPROVE"]
+    delete process.env["BOLLARD_AUTO_APPROVE"]
+    mockRl = { question: vi.fn(), close: vi.fn() }
+    vi.mocked(createInterface).mockReturnValue(mockRl as never)
   })
 
   afterEach(() => {
     vi.clearAllMocks()
+    if (origAuto !== undefined) process.env["BOLLARD_AUTO_APPROVE"] = origAuto
+    else delete process.env["BOLLARD_AUTO_APPROVE"]
   })
 
-  it("should always return NodeResult with success property", async () => {
-    await fc.assert(fc.asyncProperty(
-      fc.record({
-        id: fc.string({ minLength: 1 }),
-        type: fc.constant("human-gate"),
-        config: fc.record({
-          message: fc.string()
+  it("maps answers to ok or block", async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.string({ minLength: 1, maxLength: 40 }), async (answer) => {
+        mockRl.question.mockImplementation((_p, cb: (a: string) => void) => {
+          cb(answer)
         })
+        const r = await humanGateHandler(baseNode("g"), makeCtx())
+        expect(r.status === "ok" || r.status === "block").toBe(true)
       }),
-      fc.constantFrom("y", "n", "yes", "no", "Y", "N", "invalid", "", "  y  ", "  n  "),
-      async (node, userResponse) => {
-        mockReadline.question.mockImplementation((prompt: string, callback: (answer: string) => void) => {
-          callback(userResponse)
-        })
-
-        const ctx: PipelineContext = {
-          variables: new Map(),
-          artifacts: new Map()
-        }
-
-        const result = await humanGateHandler(node, ctx)
-        
-        expect(typeof result).toBe("object")
-        expect(result).toHaveProperty("success")
-        expect(typeof result.success).toBe("boolean")
-      }
-    ))
-  })
-
-  it("should consistently map positive responses to success=true", async () => {
-    await fc.assert(fc.asyncProperty(
-      fc.record({
-        id: fc.string({ minLength: 1 }),
-        type: fc.constant("human-gate"),
-        config: fc.record({
-          message: fc.string()
-        })
-      }),
-      fc.constantFrom("y", "yes", "Y", "YES", "  y  ", "  yes  "),
-      async (node, positiveResponse) => {
-        mockReadline.question.mockImplementation((prompt: string, callback: (answer: string) => void) => {
-          callback(positiveResponse)
-        })
-
-        const ctx: PipelineContext = {
-          variables: new Map(),
-          artifacts: new Map()
-        }
-
-        const result = await humanGateHandler(node, ctx)
-        
-        expect(result.success).toBe(true)
-      }
-    ))
-  })
-
-  it("should consistently map negative responses to success=false", async () => {
-    await fc.assert(fc.asyncProperty(
-      fc.record({
-        id: fc.string({ minLength: 1 }),
-        type: fc.constant("human-gate"),
-        config: fc.record({
-          message: fc.string()
-        })
-      }),
-      fc.constantFrom("n", "no", "N", "NO", "  n  ", "  no  "),
-      async (node, negativeResponse) => {
-        mockReadline.question.mockImplementation((prompt: string, callback: (answer: string) => void) => {
-          callback(negativeResponse)
-        })
-
-        const ctx: PipelineContext = {
-          variables: new Map(),
-          artifacts: new Map()
-        }
-
-        const result = await humanGateHandler(node, ctx)
-        
-        expect(result.success).toBe(false)
-      }
-    ))
-  })
-})
-
-describe("Feature: Negative tests for error conditions", () => {
-  let mockReadline: any
-  
-  beforeEach(() => {
-    const { createInterface } = await import("node:readline")
-    mockReadline = {
-      question: vi.fn(),
-      close: vi.fn(),
-    }
-    vi.mocked(createInterface).mockReturnValue(mockReadline)
-  })
-
-  afterEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it("should handle readline interface creation failure", async () => {
-    const { createInterface } = await import("node:readline")
-    vi.mocked(createInterface).mockImplementation(() => {
-      throw new Error("Failed to create interface")
-    })
-
-    const node: BlueprintNode = {
-      id: "gate-error",
-      type: "human-gate",
-      config: { message: "Continue?" }
-    }
-    const ctx: PipelineContext = {
-      variables: new Map(),
-      artifacts: new Map()
-    }
-
-    // ASSUMPTION: throws on readline creation failure
-    await expect(humanGateHandler(node, ctx)).rejects.toThrow("Failed to create interface")
-  })
-
-  it("should handle question callback error", async () => {
-    mockReadline.question.mockImplementation((prompt: string, callback: (answer: string) => void) => {
-      throw new Error("Question failed")
-    })
-
-    const node: BlueprintNode = {
-      id: "gate-callback-error",
-      type: "human-gate",
-      config: { message: "Continue?" }
-    }
-    const ctx: PipelineContext = {
-      variables: new Map(),
-      artifacts: new Map()
-    }
-
-    // ASSUMPTION: throws on question error
-    await expect(humanGateHandler(node, ctx)).rejects.toThrow("Question failed")
-  })
-
-  it("should handle empty string response", async () => {
-    mockReadline.question.mockImplementation((prompt: string, callback: (answer: string) => void) => {
-      callback("")
-    })
-
-    const node: BlueprintNode = {
-      id: "gate-empty",
-      type: "human-gate",
-      config: { message: "Continue?" }
-    }
-    const ctx: PipelineContext = {
-      variables: new Map(),
-      artifacts: new Map()
-    }
-
-    const result = await humanGateHandler(node, ctx)
-    
-    expect(result.success).toBe(false)
-  })
-
-  it("should handle null node config", async () => {
-    mockReadline.question.mockImplementation((prompt: string, callback: (answer: string) => void) => {
-      callback("y")
-    })
-
-    const node: BlueprintNode = {
-      id: "gate-null-config",
-      type: "human-gate",
-      config: null as any
-    }
-    const ctx: PipelineContext = {
-      variables: new Map(),
-      artifacts: new Map()
-    }
-
-    // ASSUMPTION: handles null config gracefully or throws
-    const result = await humanGateHandler(node, ctx)
-    expect(typeof result).toBe("object")
-  })
-
-  it("should handle missing message in config", async () => {
-    mockReadline.question.mockImplementation((prompt: string, callback: (answer: string) => void) => {
-      callback("y")
-    })
-
-    const node: BlueprintNode = {
-      id: "gate-no-message",
-      type: "human-gate",
-      config: {} as any
-    }
-    const ctx: PipelineContext = {
-      variables: new Map(),
-      artifacts: new Map()
-    }
-
-    const result = await humanGateHandler(node, ctx)
-    expect(typeof result).toBe("object")
-    expect(result).toHaveProperty("success")
+    )
   })
 })

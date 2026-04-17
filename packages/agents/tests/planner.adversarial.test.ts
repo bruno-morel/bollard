@@ -1,246 +1,170 @@
-import { describe, it, expect } from "vitest"
+import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
+import type { ToolchainProfile } from "@bollard/detect/src/types.js"
+import { describe, expect, it } from "vitest"
 import * as fc from "fast-check"
 import { createPlannerAgent } from "../src/planner.js"
-import type { ToolchainProfile } from "@bollard/detect/src/types.js"
+import { READ_ONLY_TOOLS } from "../src/tools/index.js"
+
+function makeProfile(
+  language: ToolchainProfile["language"],
+  packageManager: NonNullable<ToolchainProfile["packageManager"]>,
+  extra?: Partial<ToolchainProfile>,
+): ToolchainProfile {
+  return {
+    language,
+    packageManager,
+    checks: {
+      test: { label: "test", cmd: "npm", args: ["test"], source: "auto-detected" },
+    },
+    sourcePatterns: ["**/*.ts"],
+    testPatterns: ["**/*.test.ts"],
+    ignorePatterns: [],
+    allowedCommands: ["npm", "npx"],
+    adversarial: defaultAdversarialConfig({ language }),
+    ...extra,
+  }
+}
 
 describe("Feature: createPlannerAgent returns valid AgentDefinition", () => {
   it("should return an agent with required properties when called without profile", async () => {
     const agent = await createPlannerAgent()
-    
-    expect(agent).toHaveProperty("role")
-    expect(typeof agent.role).toBe("string")
-    expect(agent.role.length).toBeGreaterThan(0)
-    
-    expect(agent).toHaveProperty("instructions")
-    expect(typeof agent.instructions).toBe("string")
-    expect(agent.instructions.length).toBeGreaterThan(0)
-    
-    expect(agent).toHaveProperty("tools")
+
+    expect(agent.role).toBeTruthy()
+    expect(typeof agent.systemPrompt).toBe("string")
+    expect(agent.systemPrompt.length).toBeGreaterThan(0)
     expect(Array.isArray(agent.tools)).toBe(true)
+    expect(agent.maxTurns).toBeGreaterThan(0)
+    expect(typeof agent.temperature).toBe("number")
   })
 
   it("should return an agent with required properties when called with valid profile", async () => {
-    const profile: ToolchainProfile = {
-      name: "test-project",
-      packageManager: "npm",
-      framework: "node",
-      language: "typescript",
-      buildTool: "tsc",
-      testFramework: "vitest"
-    }
-    
+    const profile = makeProfile("typescript", "npm")
     const agent = await createPlannerAgent(profile)
-    
-    expect(agent).toHaveProperty("role")
-    expect(typeof agent.role).toBe("string")
-    expect(agent.role.length).toBeGreaterThan(0)
-    
-    expect(agent).toHaveProperty("instructions")
-    expect(typeof agent.instructions).toBe("string")
-    expect(agent.instructions.length).toBeGreaterThan(0)
-    
-    expect(agent).toHaveProperty("tools")
-    expect(Array.isArray(agent.tools)).toBe(true)
+
+    expect(agent.role).toBe("planner")
+    expect(agent.systemPrompt.length).toBeGreaterThan(0)
+    expect(agent.tools).toEqual(READ_ONLY_TOOLS)
   })
 
   it("should include planner-specific role identifier", async () => {
     const agent = await createPlannerAgent()
-    expect(agent.role.toLowerCase()).toMatch(/plan|architect|design/)
+    expect(agent.role.toLowerCase()).toMatch(/plan/)
   })
 
-  it("should include planning-related instructions", async () => {
+  it("should include planning-related system prompt", async () => {
     const agent = await createPlannerAgent()
-    expect(agent.instructions.toLowerCase()).toMatch(/plan|step|task|break|analyze/)
+    expect(agent.systemPrompt.toLowerCase()).toMatch(/plan|step|task|break|analyze/)
   })
 
   it("should include read-only tools for analysis", async () => {
     const agent = await createPlannerAgent()
     expect(agent.tools.length).toBeGreaterThan(0)
-    
-    // Planner should have tools for reading/analyzing code
-    const toolNames = agent.tools.map(tool => tool.name.toLowerCase())
-    expect(toolNames.some(name => name.includes("read") || name.includes("list") || name.includes("analyze"))).toBe(true)
+    const toolNames = agent.tools.map((tool) => tool.name.toLowerCase())
+    expect(toolNames.some((name) => name.includes("read") || name.includes("list"))).toBe(true)
   })
 })
 
 describe("Feature: createPlannerAgent handles different profile configurations", () => {
-  it("should adapt instructions based on package manager", async () => {
-    const npmProfile: ToolchainProfile = {
-      name: "npm-project",
-      packageManager: "npm",
-      framework: "node",
-      language: "javascript",
-      buildTool: "webpack",
-      testFramework: "jest"
-    }
-    
-    const yarnProfile: ToolchainProfile = {
-      name: "yarn-project", 
-      packageManager: "yarn",
-      framework: "react",
-      language: "typescript",
-      buildTool: "vite",
-      testFramework: "vitest"
-    }
-    
+  it("should adapt system prompt based on package manager", async () => {
+    const npmProfile = makeProfile("javascript", "npm")
+    const yarnProfile = makeProfile("typescript", "yarn")
+
     const npmAgent = await createPlannerAgent(npmProfile)
     const yarnAgent = await createPlannerAgent(yarnProfile)
-    
-    // Instructions should reference the appropriate package manager
-    expect(npmAgent.instructions.toLowerCase()).toMatch(/npm/)
-    expect(yarnAgent.instructions.toLowerCase()).toMatch(/yarn/)
+
+    expect(npmAgent.systemPrompt.toLowerCase()).toMatch(/npm/)
+    expect(yarnAgent.systemPrompt.toLowerCase()).toMatch(/yarn/)
   })
 
-  it("should adapt instructions based on test framework", async () => {
-    const jestProfile: ToolchainProfile = {
-      name: "jest-project",
-      packageManager: "npm",
-      framework: "node", 
-      language: "javascript",
-      buildTool: "webpack",
-      testFramework: "jest"
-    }
-    
-    const vitestProfile: ToolchainProfile = {
-      name: "vitest-project",
-      packageManager: "npm",
-      framework: "node",
-      language: "typescript", 
-      buildTool: "vite",
-      testFramework: "vitest"
-    }
-    
-    const jestAgent = await createPlannerAgent(jestProfile)
-    const vitestAgent = await createPlannerAgent(vitestProfile)
-    
-    // Instructions should reference the appropriate test framework
-    expect(jestAgent.instructions.toLowerCase()).toMatch(/jest/)
-    expect(vitestAgent.instructions.toLowerCase()).toMatch(/vitest/)
+  it("should adapt system prompt based on language / test tooling in template", async () => {
+    const jsProfile = makeProfile("javascript", "npm")
+    const tsProfile = makeProfile("typescript", "npm")
+
+    const jsAgent = await createPlannerAgent(jsProfile)
+    const tsAgent = await createPlannerAgent(tsProfile)
+
+    expect(jsAgent.systemPrompt).not.toBe(tsAgent.systemPrompt)
   })
 })
 
 describe("Feature: createPlannerAgent property-based tests", () => {
   it("should always return consistent agent structure regardless of profile", async () => {
-    await fc.assert(fc.asyncProperty(
-      fc.record({
-        name: fc.string({ minLength: 1, maxLength: 50 }),
-        packageManager: fc.constantFrom("npm", "yarn", "pnpm"),
-        framework: fc.constantFrom("node", "react", "vue", "angular", "express"),
-        language: fc.constantFrom("javascript", "typescript"),
-        buildTool: fc.constantFrom("webpack", "vite", "rollup", "tsc", "esbuild"),
-        testFramework: fc.constantFrom("jest", "vitest", "mocha", "tap")
-      }),
-      async (profile: ToolchainProfile) => {
-        const agent = await createPlannerAgent(profile)
-        
-        // Agent structure invariants
-        expect(typeof agent.role).toBe("string")
-        expect(agent.role.length).toBeGreaterThan(0)
-        expect(typeof agent.instructions).toBe("string") 
-        expect(agent.instructions.length).toBeGreaterThan(0)
-        expect(Array.isArray(agent.tools)).toBe(true)
-        expect(agent.tools.length).toBeGreaterThan(0)
-        
-        // All tools should have required properties
-        agent.tools.forEach(tool => {
-          expect(typeof tool.name).toBe("string")
-          expect(tool.name.length).toBeGreaterThan(0)
-          expect(typeof tool.description).toBe("string")
-          expect(tool.description.length).toBeGreaterThan(0)
-        })
-      }
-    ))
+    await fc.assert(
+      fc.asyncProperty(
+        fc.record({
+          language: fc.constantFrom<ToolchainProfile["language"]>(
+            "javascript",
+            "typescript",
+          ),
+          packageManager: fc.constantFrom("npm", "yarn", "pnpm"),
+        }),
+        async (fields) => {
+          const profile = makeProfile(fields.language, fields.packageManager)
+          const agent = await createPlannerAgent(profile)
+
+          expect(typeof agent.role).toBe("string")
+          expect(agent.role.length).toBeGreaterThan(0)
+          expect(typeof agent.systemPrompt).toBe("string")
+          expect(agent.systemPrompt.length).toBeGreaterThan(0)
+          expect(Array.isArray(agent.tools)).toBe(true)
+          expect(agent.tools.length).toBeGreaterThan(0)
+
+          for (const tool of agent.tools) {
+            expect(typeof tool.name).toBe("string")
+            expect(tool.name.length).toBeGreaterThan(0)
+            expect(typeof tool.description).toBe("string")
+            expect(tool.description.length).toBeGreaterThan(0)
+          }
+        },
+      ),
+    )
   })
 })
 
 describe("Feature: createPlannerAgent error conditions", () => {
-  it("should handle profile with empty string values", async () => {
-    const emptyProfile: ToolchainProfile = {
-      name: "",
-      packageManager: "npm",
-      framework: "node",
-      language: "javascript", 
-      buildTool: "webpack",
-      testFramework: "jest"
-    }
-    
-    const agent = await createPlannerAgent(emptyProfile)
-    expect(agent).toHaveProperty("role")
-    expect(agent).toHaveProperty("instructions")
-    expect(agent).toHaveProperty("tools")
+  it("should handle profile with minimal fields", async () => {
+    const profile = makeProfile("javascript", "npm")
+    const agent = await createPlannerAgent(profile)
+    expect(agent.role).toBeTruthy()
+    expect(agent.systemPrompt).toBeTruthy()
+    expect(agent.tools.length).toBeGreaterThan(0)
   })
 
-  it("should handle profile with unusual but valid combinations", async () => {
-    const unusualProfile: ToolchainProfile = {
-      name: "weird-project",
-      packageManager: "pnpm",
-      framework: "angular",
-      language: "typescript",
-      buildTool: "esbuild", 
-      testFramework: "tap"
-    }
-    
-    const agent = await createPlannerAgent(unusualProfile)
+  it("should handle unusual but valid combinations", async () => {
+    const unusual = makeProfile("typescript", "pnpm")
+    const agent = await createPlannerAgent(unusual)
     expect(agent.role).toBeTruthy()
-    expect(agent.instructions).toBeTruthy()
-    expect(agent.tools.length).toBeGreaterThan(0)
+    expect(agent.systemPrompt).toBeTruthy()
   })
 
   it("should handle undefined profile gracefully", async () => {
     const agent = await createPlannerAgent(undefined)
-    expect(agent).toHaveProperty("role")
-    expect(agent).toHaveProperty("instructions") 
-    expect(agent).toHaveProperty("tools")
+    expect(agent.role).toBeTruthy()
+    expect(agent.systemPrompt.length).toBeGreaterThan(0)
     expect(agent.tools.length).toBeGreaterThan(0)
   })
 })
 
 describe("Feature: createPlannerAgent domain-specific behavior", () => {
-  it("should provide tools appropriate for planning phase", async () => {
+  it("should provide read-only tools only", async () => {
     const agent = await createPlannerAgent()
-    
-    // Planner should not have write/modify tools - only read/analyze
-    const toolNames = agent.tools.map(tool => tool.name.toLowerCase())
-    const hasWriteTools = toolNames.some(name => 
-      name.includes("write") || 
-      name.includes("create") || 
-      name.includes("modify") ||
-      name.includes("delete") ||
-      name.includes("execute")
+    const toolNames = agent.tools.map((tool) => tool.name.toLowerCase())
+    const hasWriteTools = toolNames.some(
+      (name) =>
+        name.includes("write") ||
+        name.includes("run_command") ||
+        name.includes("edit"),
     )
-    
     expect(hasWriteTools).toBe(false)
   })
 
-  it("should generate different instructions for different project types", async () => {
-    const webProfile: ToolchainProfile = {
-      name: "web-app",
-      packageManager: "npm",
-      framework: "react",
-      language: "typescript",
-      buildTool: "vite",
-      testFramework: "vitest"
-    }
-    
-    const nodeProfile: ToolchainProfile = {
-      name: "api-server", 
-      packageManager: "npm",
-      framework: "express",
-      language: "javascript",
-      buildTool: "webpack",
-      testFramework: "jest"
-    }
-    
+  it("should generate different system prompts for different languages", async () => {
+    const webProfile = makeProfile("typescript", "npm")
+    const pyProfile = makeProfile("python", "pip")
+
     const webAgent = await createPlannerAgent(webProfile)
-    const nodeAgent = await createPlannerAgent(nodeProfile)
-    
-    // Instructions should be contextually different
-    expect(webAgent.instructions).not.toBe(nodeAgent.instructions)
-    
-    // Web project should mention frontend concerns
-    expect(webAgent.instructions.toLowerCase()).toMatch(/component|ui|frontend|browser/)
-    
-    // Node project should mention backend concerns  
-    expect(nodeAgent.instructions.toLowerCase()).toMatch(/server|api|backend|endpoint/)
+    const pyAgent = await createPlannerAgent(pyProfile)
+
+    expect(webAgent.systemPrompt).not.toBe(pyAgent.systemPrompt)
   })
 })

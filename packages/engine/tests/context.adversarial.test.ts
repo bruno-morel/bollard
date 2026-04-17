@@ -39,8 +39,8 @@ describe("Feature: createContext creates valid PipelineContext", () => {
     const ctx = createContext("test", "bp", validConfig)
     
     expect(ctx.costTracker).toBeDefined()
-    expect(typeof ctx.costTracker.addCost).toBe("function")
-    expect(typeof ctx.costTracker.getTotalCost).toBe("function")
+    expect(typeof ctx.costTracker.add).toBe("function")
+    expect(typeof ctx.costTracker.total).toBe("function")
   })
 
   it("should create log methods that accept message and optional data", () => {
@@ -137,9 +137,9 @@ describe("Feature: createContext property-based tests", () => {
       ))
     }),
     agent: fc.record({
-      max_cost_usd: fc.float({ min: 0, max: 1000 }),
-      max_duration_minutes: fc.integer({ min: 0, max: 10000 })
-    })
+      max_cost_usd: fc.double({ min: 0, max: 1000, noNaN: true }),
+      max_duration_minutes: fc.integer({ min: 0, max: 10000 }),
+    }),
   })
 
   it("should preserve input task and blueprintId exactly", () => {

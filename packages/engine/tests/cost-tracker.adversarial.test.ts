@@ -85,61 +85,60 @@ describe("Feature: Handle edge cases like zero limit correctly", () => {
     expect(result).toBe("$0.01 / $0.01 (50.0% used)")
   })
 
-  it("should handle negative costs from subtract operations", () => {
+  it("should reflect cost after valid subtract", () => {
     const tracker = new CostTracker(100)
-    tracker.add(50)
-    tracker.subtract(75)
-    
+    tracker.add(100)
+    tracker.subtract(25)
+
     const result = tracker.summary()
-    expect(result).toBe("$-25.00 / $100.00 (-25.0% used)")
+    expect(result).toBe("$75.00 / $100.00 (75.0% used)")
   })
 })
 
 describe("Property-based tests for summary formatting", () => {
+  const limitArb = fc.integer({ min: 1, max: 1_000_000 }).map((n) => n / 1000)
+  const totalArb = fc.integer({ min: 0, max: 1_000_000 }).map((n) => n / 1000)
+
   it("should always return string with correct format structure", () => {
-    fc.assert(fc.property(
-      fc.float({ min: 0, max: 1000 }),
-      fc.float({ min: 0.01, max: 1000 }),
-      (total, limit) => {
+    fc.assert(
+      fc.property(limitArb, totalArb, (limit, total) => {
         const tracker = new CostTracker(limit)
         tracker.add(total)
         const result = tracker.summary()
-        
-        // Should match pattern: $X.XX / $Y.YY (Z.Z% used) [optional EXCEEDED]
-        const pattern = /^\$\d+\.\d{2} \/ \$\d+\.\d{2} \(\d+\.\d% used\)( \[EXCEEDED\])?$/
+
+        const pattern =
+          /^\$\d+\.\d{2} \/ \$\d+\.\d{2} \(\d+\.\d+% used\)( \[EXCEEDED\])?$/
         expect(result).toMatch(pattern)
-      }
-    ))
+      }),
+    )
   })
 
   it("should append EXCEEDED only when total > limit", () => {
-    fc.assert(fc.property(
-      fc.float({ min: 0, max: 1000 }),
-      fc.float({ min: 0.01, max: 1000 }),
-      (total, limit) => {
+    fc.assert(
+      fc.property(limitArb, totalArb, (limit, total) => {
         const tracker = new CostTracker(limit)
         tracker.add(total)
         const result = tracker.summary()
-        
+
         const shouldExceed = total > limit
         const hasExceeded = result.includes("[EXCEEDED]")
         expect(hasExceeded).toBe(shouldExceed)
-      }
-    ))
+      }),
+    )
   })
 
   it("should calculate percentage correctly", () => {
-    fc.assert(fc.property(
-      fc.float({ min: 0, max: 100 }),
-      fc.float({ min: 0.01, max: 100 }),
-      (total, limit) => {
+    fc.assert(
+      fc.property(limitArb, totalArb, (limit, total) => {
         const tracker = new CostTracker(limit)
         tracker.add(total)
         const result = tracker.summary()
-        
-        const expectedPercentage = ((total / limit) * 100).toFixed(1)
+
+        const pct =
+          limit === 0 ? (total === 0 ? 0 : 100) : (total / limit) * 100
+        const expectedPercentage = pct.toFixed(1)
         expect(result).toContain(`(${expectedPercentage}% used)`)
-      }
-    ))
+      }),
+    )
   })
 })

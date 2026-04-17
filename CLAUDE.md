@@ -9,7 +9,7 @@ Bollard is an **artifact integrity framework** for AI-assisted software developm
 Bollard has completed **Stage 2** (adversarial verification infrastructure), **Stage 3a** (contract-scope adversarial testing — **validated GREEN on 2026-04-08**), **Stage 3b** (multi-language contract graph + dev ergonomics — **validated GREEN on 2026-04-09** — see [spec/stage3b-validation-results.md](../spec/stage3b-validation-results.md)), the **Stage 3c remainder** (polyglot mutation providers, semantic review + grounding, Anthropic response streaming, `go.work`-only Go detection — see the Remainder section in [spec/stage3c-validation-results.md](../spec/stage3c-validation-results.md)), **Stage 4a** (behavioral-scope adversarial testing — **validated GREEN on 2026-04-16** — see [spec/stage4a-validation-results.md](../spec/stage4a-validation-results.md)), and **Stage 4b** (production feedback loop — **validated GREEN on 2026-04-16** — see [spec/stage4b-validation-results.md](../spec/stage4b-validation-results.md)). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, boundary tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 (first half) fixed critical agent infrastructure issues: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. Stage 2 (second half) added Docker-isolated verification containers, LLM fallback signature extraction for edge languages, in-language adversarial test generation, adversarial test lifecycle (ephemeral + persistent-native), MCP server (`@bollard/mcp`), and OpenAI + Google LLM providers. **Stage 3a** adds per-scope `AdversarialConfig` with concern weights, `boundary-tester` + `contract-tester` agents, deterministic extractors for Python/Go/Rust, TypeScript contract graph (`buildContractContext`), four contract blueprint nodes, and `bollard contract` / MCP `bollard_contract`. **Stage 3b** adds polyglot dev image with pre-built Go/Rust extractor helpers, `dev-full` image with full Go/Rust/Python toolchains, `ContractGraphProvider` interface with Python/Go/Rust providers, polyglot risk gate (`scanDiffForExportChanges`), polyglot test summary parsers, and ADR-0002 for the syn-based Rust extractor helper. **Stage 4a** adds behavioral-scope adversarial testing: `buildBehavioralContext` (endpoints, config, deps, failure modes), `behavioral-tester` agent, behavioral grounding, coarse fault injection (`service_stop`), behavioral compose generator, 5 behavioral pipeline nodes. **Stage 4b** adds the production feedback loop: `@bollard/observe` package (probe extraction, HTTP probe runner, metrics store, deployment tracker, drift detector, flag manager, progressive rollout, probe scheduler), `extract-probes` blueprint node, CLI `probe`/`deploy`/`flag`/`drift` commands, 4 MCP tools, provider-based architecture with fully standalone built-in implementations.
 
 The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md)):
-- **Stage 4c:** Java/Kotlin language expansion (Wave 1). (OpenAI + Google `chatStream` parity shipped in Part 1.)
+- **Stage 4c:** Java/Kotlin Wave 1 shipped (Part 2 — detector, `bollard-extract-java`, contract graph, PIT, JVM compose, prompts). (OpenAI + Google `chatStream` parity was Part 1.)
 - **Stage 5:** Self-hosting + self-improvement.
 
 Stage 2's single adversarial tester (now called the **boundary-scope** tester) is the first of three adversarial scopes. Each scope has its own agent, context, and execution mode, probing four cross-cutting concerns (correctness, security, performance, resilience) with per-scope weights.
@@ -33,14 +33,15 @@ docker compose run --rm dev --filter @bollard/cli run start -- eval planner
 docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan plan.json]
 ```
 
-### Known limitations (Stage 4b complete)
+### Known limitations (Stage 4c JVM Wave 1)
 
 - Docker-isolated verification requires Docker-in-Docker (`docker.sock` mount) — degrades gracefully when unavailable.
-- Contract graph (`buildContractContext`) supports **TypeScript, Python, Go, and Rust** workspaces; other languages return an empty graph with a warning.
-- Test output parsing supports Vitest, pytest, `go test`, and `cargo test` summary formats. Non-standard runners fall back to zero/error detection.
+- Contract graph (`buildContractContext`) supports **TypeScript, Python, Go, Rust, Java, and Kotlin** Maven/Gradle layouts; other languages return an empty graph with a warning.
+- Test output parsing supports Vitest, pytest, `go test`, `cargo test`, Maven Surefire, and Gradle test summary lines. Non-standard runners fall back to zero/error detection.
 - Unknown languages still need an LLM provider for signature extraction (`getExtractor` throws `PROVIDER_NOT_FOUND` without one).
 - **LLM streaming:** Anthropic, OpenAI, and Google all implement `chatStream`; the executor uses the streaming path whenever `provider.chatStream` is present.
-- **Mutation testing:** TS/JS (Stryker), Python (mutmut), Rust (cargo-mutants). Go mutation testing deferred — no maintained upstream tool (`go-mutesting` is unmaintained). `MutationToolId` reserves `"go-mutesting"` for future use.
+- **Kotlin source extraction** in the helper is regex-based (no compiler); bytecode path for compiled `.class` is best-effort.
+- **Mutation testing:** TS/JS (Stryker), Python (mutmut), Rust (cargo-mutants), Java/Kotlin (PIT). Go mutation testing deferred — no maintained upstream tool (`go-mutesting` is unmaintained). `MutationToolId` reserves `"go-mutesting"` for future use.
 - No rollback on coder max-turns failure — partially-written files remain on disk — Stage 4c.
 - **Observe providers:** `@bollard/observe` ships built-in providers only (HTTP fetch, JSON files, git). External providers (Datadog, Flagsmith, Cloud Run, ArgoCD) are 4b+ — interfaces exist, implementations come when needed.
 - **Advanced fault injection:** Only `service_stop` implemented; network_delay/resource_limit are future work.
@@ -111,8 +112,8 @@ Pass `ANTHROPIC_API_KEY` via a `.env` file at the project root.
 
 Bollard ships two Docker targets:
 
-- **`dev`** (default, fast): Node 22 + pnpm + python3 + pre-built Go/Rust extractor helpers (`bollard-extract-go`, `bollard-extract-rs`). Use this for day-to-day TS development, unit tests, and any pipeline run that doesn't touch Go or Rust project code. Built by `docker compose build dev`.
-- **`dev-full`** (~2.24 GB; opt-in via compose profile `full`): extends `dev` with full Go 1.22 and Rust stable toolchains plus `pytest`/`ruff`. Required for Stage 3b validation runs and any pipeline that runs `go test` / `cargo test` / `pytest` against project code. Built by `docker compose --profile full build dev-full`. Run with `docker compose --profile full run --rm dev-full …`. The single consolidated RUN layer installs everything and cleans up build-only packages (curl, python3-pip) and unused GCC sanitizer runtimes in one pass to minimize image size. **Size floor is roughly 2.2 GB** (Rust toolchain + LLVM ~480 MB, Go ~224 MB, gcc/binutils/libc-dev ~120 MB, on top of the 989 MB `dev` base). Further trimming would require giving up a capability — don't chase it.
+- **`dev`** (default, fast): Node 22 + pnpm + python3 + pre-built Go/Rust/**Java** extractor helpers (`bollard-extract-go`, `bollard-extract-rs`, `bollard-extract-java` GraalVM native). Use this for day-to-day TS development, unit tests, and any pipeline run that doesn't touch Go/Rust/Java project code. Built by `docker compose build dev`.
+- **`dev-full`** (~2.24 GB; opt-in via compose profile `full`): extends `dev` with full Go 1.22 and Rust stable toolchains plus `pytest`/`ruff`, **JDK 21 + Maven** for JVM pipeline validation. Required for Stage 3b validation runs and any pipeline that runs `go test` / `cargo test` / `pytest` against project code. Built by `docker compose --profile full build dev-full`. Run with `docker compose --profile full run --rm dev-full …`. The single consolidated RUN layer installs everything and cleans up build-only packages (curl, python3-pip) and unused GCC sanitizer runtimes in one pass to minimize image size. **Size floor is roughly 2.2 GB** (Rust toolchain + LLVM ~480 MB, Go ~224 MB, gcc/binutils/libc-dev ~120 MB, on top of the 989 MB `dev` base). Further trimming would require giving up a capability — don't chase it.
 
 CI runs the fast suite on `dev` and the Stage 3b validation suite on `dev-full`. Day-to-day contributors never need to build `dev-full` unless they're working on polyglot pipeline runs.
 
@@ -120,7 +121,7 @@ CI runs the fast suite on `dev` and the Stage 3b validation suite on `dev-full`.
 
 ```
 bollard/
-├── Dockerfile                    # Multi-stage: go-helper-builder, rust-helper-builder, dev, dev-full
+├── Dockerfile                    # Multi-stage: go/rust/java helper builders, dev, dev-full
 ├── compose.yaml                  # Docker Compose for all dev commands (dev + dev-full behind `full` profile)
 ├── scripts/
 │   ├── extract_go/               # Go AST extractor helper (bollard-extract-go binary)
@@ -133,12 +134,15 @@ bollard/
 │   │   └── src/
 │   │       ├── main.rs
 │   │       └── extract.rs
+│   ├── extract_java/             # JavaParser + Kotlin regex + ASM (bollard-extract-java native image)
+│   │   └── pom.xml, src/main/java/dev/bollard/extract/*.java
 │   └── retro-adversarial.ts
 ├── docker/
 │   ├── Dockerfile.verify         # Black-box adversarial test container (Node 22 + vitest)
 │   ├── Dockerfile.verify-python  # Node + Python 3 runtime
 │   ├── Dockerfile.verify-go      # Node + Go 1.22
-│   └── Dockerfile.verify-rust    # Node + Rust toolchain
+│   ├── Dockerfile.verify-rust    # Node + Rust toolchain
+│   └── Dockerfile.verify-jvm     # Node + Temurin JDK 21 + Maven
 ├── .env                          # ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY (gitignored)
 ├── package.json                  # root workspace
 ├── pnpm-workspace.yaml           # packages: ["packages/*"]
@@ -158,6 +162,7 @@ bollard/
 │   │   │       ├── go.ts         # Detect go.mod or go.work, golangci-lint, go vet/test
 │   │   │       ├── rust.ts       # Detect Cargo.toml, clippy, cargo test/audit
 │   │   │       ├── javascript.ts # Detect package.json w/o tsconfig, ESLint/Biome, Jest/Vitest/Mocha
+│   │   │       ├── java.ts       # Maven/Gradle; Java vs Kotlin from source tree
 │   │   │       └── fallback.ts   # Returns null; buildManualProfile for interactive init
 │   │   └── tests/
 │   │       ├── detect.test.ts    # 31 tests — all detectors + orchestrator
@@ -210,7 +215,7 @@ bollard/
 │   │   │   │   ├── write-file.ts # Write file, create dirs (path-traversal protected)
 │   │   │   │   ├── edit-file.ts  # Surgical string replacement in files (Stage 2)
 │   │   │   │   ├── list-dir.ts   # List directory with type indicators
-│   │   │   │   ├── search.ts     # Grep-based search with glob filtering
+│   │   │   │   ├── search.ts     # Ripgrep-based search with glob filtering (fixed-string default)
 │   │   │   │   └── run-command.ts # Execute whitelisted commands with timeout
 │   │   │   └── evals/
 │   │   │       ├── planner/cases.ts  # 4 eval cases for planner output quality
@@ -243,20 +248,21 @@ bollard/
 │   │   │   │   ├── typescript.ts     # TypeScriptContractProvider + TS workspace helpers
 │   │   │   │   ├── python.ts         # PythonContractProvider + Python workspace helpers
 │   │   │   │   ├── go.ts             # GoContractProvider + Go workspace helpers
-│   │   │   │   └── rust.ts           # RustContractProvider + Cargo workspace helpers
-│   │   │   ├── extractors/       # python.ts, go.ts, rust.ts — deterministic SignatureExtractor
+│   │   │   │   ├── rust.ts           # RustContractProvider + Cargo workspace helpers
+│   │   │   │   └── java.ts           # JavaContractProvider (Maven/Gradle multi-module)
+│   │   │   ├── extractors/       # python.ts, go.ts, rust.ts, java.ts — deterministic SignatureExtractor
 │   │   │   ├── behavioral-extractor.ts  # buildBehavioralContext — endpoints, config, deps, failure modes (regex)
 │   │   │   ├── behavioral-grounding.ts  # behavioralContextToCorpus → contract-style claim grounding
 │   │   │   ├── fault-injector.ts       # createFaultInjector — service_stop via docker compose (extensible)
 │   │   │   ├── compose-generator.ts  # generateVerifyCompose, generateBehavioralCompose
-│   │   │   ├── mutation.ts       # runMutationTesting — Stryker / mutmut / cargo-mutants by language
+│   │   │   ├── mutation.ts       # runMutationTesting — Stryker / mutmut / cargo-mutants / pitest by language
 │   │   │   ├── review-grounding.ts # parseReviewDocument, verifyReviewGrounding (semantic review Layer 1)
 │   │   │   └── test-lifecycle.ts # resolveTestOutputDir, resolveContractTestOutputRel, resolveBehavioralTestOutputRel, writeTestMetadata, …
 │   │   └── tests/
 │   │       ├── static.test.ts    # 4 tests — structure + live integration
 │   │       ├── dynamic.test.ts   # 2 tests — integration test
 │   │       ├── type-extractor.test.ts  # signatures, types, extractors
-│   │       ├── extractor-helpers.test.ts  # 3 tests — bollard-extract-go/rs helper binaries
+│   │       ├── extractor-helpers.test.ts  # bollard-extract-go/rs/java helper binaries
 │   │       ├── contract-extractor.test.ts
 │   │       ├── compose-generator.test.ts  # 6 tests — YAML generation per language/mode
 │   │       └── test-lifecycle.test.ts  # lifecycle resolution, output dirs, metadata
@@ -311,7 +317,9 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** 9 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`, `behavioral-tester.md`
-- **Latest count (authoritative, 2026-04-17, post Stage 4c Part 1 streaming + hardening + self-test):** `705` passed, `4` skipped (709 total). Skips: 4 LLM live smoke tests (no key). Stage 4c Part 1 added OpenAI + Google `chatStream`, streaming unit tests, and Anthropic `tool_input_delta` `toolUseId` fix. Post-4c hardening: auto-format generated adversarial test files (Biome in write nodes), search tool switched from grep to ripgrep with fixed-string default, `rm` added to coder allowlist with path guard, Anthropic smoke test model updated to `claude-haiku-4-5-20251001`. Bollard-on-bollard self-test added `CostTracker.summary()` (+15 tests).
+- **Latest count (authoritative, 2026-04-17, post Stage 4c Part 2 Java/Kotlin Wave 1):** `744` passed, `4` skipped (748 total). Skips: 4 LLM live smoke tests (no key). Stage 4c Part 2 adds JVM detection, Graal `bollard-extract-java`, `JavaContractProvider`, PIT mutation provider, Surefire/Gradle test parsers, JVM compose images, risk-gate patterns, and prompt `isJava`/`isKotlin` blocks (+~38 tests vs Part 1 baseline).
+- **Adversarial suite** (`vitest.adversarial.config.ts`): `331` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c).
+- **Vitest + Vite 8:** you may see `esbuild` option deprecated in favor of `oxc` — harmless until Vitest defaults align; pin Vite 7.x if you need a silent log.
 
 ### Mutation Testing (Stage 3c)
 
@@ -519,8 +527,8 @@ The core Stage 1 upgrade. Runs a tool-use loop:
 | write-file | `write_file` | Coder only | Write/overwrite files, creates parent dirs |
 | edit-file | `edit_file` | Coder only | Surgical string replacement (unique match required), path-traversal protected |
 | list-dir | `list_dir` | Planner + Coder | List directory contents with type indicators |
-| search | `search` | Planner + Coder | Grep-based regex search with glob filter |
-| run-command | `run_command` | Coder only | Execute whitelisted commands (pnpm, node, tsc, biome, git, etc.) |
+| search | `search` | Planner + Coder | Ripgrep-based search with fixed-string default (optional regex mode) |
+| run-command | `run_command` | Coder only | Execute whitelisted commands (pnpm, node, tsc, biome, git, rm, etc.) with path guards |
 
 All tools enforce path-traversal protection: resolved path must start with `workDir`.
 
@@ -692,7 +700,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - `compactOlderTurns` handles `edit_file` payloads
 
 ### Stage 2 — Docker Isolation & Multi-Provider (DONE):
-- Docker-isolated verification containers: `Dockerfile.verify`, `Dockerfile.verify-python`, `Dockerfile.verify-go`, `Dockerfile.verify-rust`
+- Docker-isolated verification containers: `Dockerfile.verify`, `Dockerfile.verify-python`, `Dockerfile.verify-go`, `Dockerfile.verify-rust`, `Dockerfile.verify-jvm`
 - `compose-generator.ts` generates `compose.verify.yml` from `ToolchainProfile`
 - `docker-verify` blueprint node (after contract nodes) with graceful Docker-unavailable degradation
 - `LlmFallbackExtractor` — LLM-based signature extraction for unknown languages when a provider is supplied
@@ -744,9 +752,19 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - Anthropic `tool_input_delta` events now carry the correct `toolUseId` (from the preceding `content_block_start`).
 - See [spec/stage4c-streaming-parity.md](../spec/stage4c-streaming-parity.md).
 
+### Stage 4c (Part 1) hardening (DONE) — Pipeline quality-of-life
+- **Auto-format generated adversarial tests:** `formatGeneratedAdversarialTestFile()` runs `biome check --write --unsafe` after each write node (boundary, contract, behavioral). Non-fatal try/catch.
+- **Search tool → ripgrep:** `search.ts` now uses `rg` with `--fixed-strings` by default (no more `Unmatched )` errors). Optional `regex: true` for intentional regex.
+- **`rm` in coder allowlist:** Path-guarded (must be inside workDir, no recursive `-r`/`-rf`).
+- **Anthropic model ID:** smoke test and pricing updated to `claude-haiku-4-5-20251001`.
+- **Bollard-on-bollard self-test:** `CostTracker.summary()` — 28/28 nodes, $0.63, information barrier held, 699 → 705 tests.
+
+### Stage 4c (Part 2) (DONE) — Java/Kotlin Wave 1
+- `detectToolchain` JVM detector (Maven/Gradle), `MutationToolId` `"pitest"`, `scripts/extract_java` + Graal `bollard-extract-java`, `JavaParserExtractor`, `JavaContractProvider`, `PitestProvider`, Surefire/Gradle `parseSummary`, `docker/Dockerfile.verify-jvm`, `DEFAULT_IMAGES` Temurin 21 for java/kotlin, behavioral compose JVM start commands.
+
 ### DO NOT build yet:
-- **New languages outside the current five (TS/JS/Python/Go/Rust)** — Java, Kotlin, C#/.NET, Ruby, PHP are sequenced into three waves (Stage 4c → 4c+ → 5+). Full design in [spec/07-adversarial-scopes.md §12.1](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md). Do not add language detectors, extractors, or verify images for any of these languages ad-hoc — each wave is coordinated so the dev image, `dev-full` image, mutation testing pattern, and contract graph all land together. Swift, Scala, Elixir, F#, Clojure, Haskell, OCaml, Nim, and Zig are explicit non-goals with no near-term timeline.
-- **JavaScript contract graph** — `buildContractContext` does not yet treat plain JS workspaces like TypeScript. Stage 4c.
+- **New languages outside the current seven (TS/JS/Python/Go/Rust/Java/Kotlin)** — C#/.NET, Ruby, PHP, and further waves are sequenced (Stage 4c+ → 5+). Full design in [spec/07-adversarial-scopes.md §12.1](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md). Do not add language detectors, extractors, or verify images for any of these languages ad-hoc — each wave is coordinated so the dev image, `dev-full` image, mutation testing pattern, and contract graph all land together. Swift, Scala, Elixir, F#, Clojure, Haskell, OCaml, Nim, and Zig are explicit non-goals with no near-term timeline.
+- **JavaScript contract graph** — `buildContractContext` does not yet treat plain JS workspaces like TypeScript. Stage 4c+.
 - **External observe providers** — Datadog, Flagsmith, LaunchDarkly, Cloud Run, ArgoCD implementations. Interfaces exist in `@bollard/observe`; implementations are 4b+.
 - **Advanced fault injection** — network_delay, resource_limit via `tc`/`iptables`. `FaultInjector` interface is extensible; only `service_stop` is implemented.
 - **Library-mode behavioral testing** — agent prompt has `{{#if hasPublicApi}}` ready; implementation deferred.
