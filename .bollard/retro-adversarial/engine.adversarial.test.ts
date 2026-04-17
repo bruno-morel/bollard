@@ -214,7 +214,14 @@ describe("Feature: Property-based tests for core functions", () => {
 
   it("should handle arbitrary valid probe assertion types", () => {
     fc.assert(fc.property(
-      fc.constantFrom("status", "latency", "json_field"),
+      fc.constantFrom(
+        "status",
+        "latency",
+        "json_field",
+        "body_contains",
+        "body_matches",
+        "header",
+      ),
       fc.anything(),
       (assertionType, expected) => {
         const assertion: ProbeAssertion = {

@@ -13,6 +13,7 @@
     { "path": "../agents" },
     { "path": "../detect" },
     { "path": "../verify" },
-    { "path": "../cli" }
+    { "path": "../cli" },
+    { "path": "../observe" }
   ]
 }

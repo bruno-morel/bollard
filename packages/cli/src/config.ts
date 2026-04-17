@@ -8,6 +8,7 @@ import type {
 } from "@bollard/detect/src/types.js"
 import type { BollardConfig } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
+import type { ObserveProviderConfig } from "@bollard/observe/src/providers/types.js"
 import { parse as parseYaml } from "yaml"
 import { z } from "zod"
 import { type RootAdversarialYaml, applyRootAdversarialYaml } from "./adversarial-yaml.js"
@@ -81,6 +82,28 @@ const toolchainYamlSchema = z
   })
   .strict()
 
+const observeSlotSchema = z
+  .object({
+    provider: z.string().optional(),
+    config: z.record(z.unknown()).optional(),
+  })
+  .strict()
+
+const observeYamlSchema = z
+  .object({
+    probes: observeSlotSchema.optional(),
+    flags: observeSlotSchema.optional(),
+    deployments: observeSlotSchema.optional(),
+    drift: observeSlotSchema.optional(),
+    metrics: observeSlotSchema
+      .extend({
+        retentionDays: z.number().optional(),
+      })
+      .optional(),
+    baseUrl: z.string().optional(),
+  })
+  .strict()
+
 const bollardYamlSchema = z
   .object({
     llm: z
@@ -109,6 +132,7 @@ const bollardYamlSchema = z
         concurrency: z.number().optional(),
       })
       .optional(),
+    observe: observeYamlSchema.optional(),
   })
   .strict()
 
@@ -121,6 +145,7 @@ export interface ResolvedConfig {
   config: BollardConfig
   profile: ToolchainProfile
   sources: Record<string, AnnotatedValue<unknown>>
+  observe?: ObserveProviderConfig
 }
 
 export async function resolveConfig(
@@ -139,6 +164,7 @@ export async function resolveConfig(
   populateDetectionSources(cwd, profile, sources)
 
   const yamlResult = loadBollardYaml(cwd, config, sources)
+  const observeFromYaml = yamlResult?.observe
   if (yamlResult?.adversarial) {
     applyRootAdversarialYaml(profile, yamlResult.adversarial as RootAdversarialYaml)
   }
@@ -198,7 +224,12 @@ export async function resolveConfig(
     })
   }
 
-  return { config, profile, sources }
+  return {
+    config,
+    profile,
+    sources,
+    ...(observeFromYaml !== undefined ? { observe: observeFromYaml } : {}),
+  }
 }
 
 function populateDetectionSources(
@@ -288,6 +319,7 @@ interface LoadedBollardYaml {
     timeoutMs?: number | undefined
     concurrency?: number | undefined
   }
+  observe?: ObserveProviderConfig
 }
 
 function loadBollardYaml(
@@ -356,6 +388,7 @@ function loadBollardYaml(
     ...(data.toolchain !== undefined ? { toolchain: data.toolchain } : {}),
     ...(data.adversarial !== undefined ? { adversarial: data.adversarial } : {}),
     ...(data.mutation !== undefined ? { mutation: data.mutation } : {}),
+    ...(data.observe !== undefined ? { observe: data.observe as ObserveProviderConfig } : {}),
   }
 }
 

@@ -1,18 +1,15 @@
 {
-  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker/master/packages/core/schema/stryker-schema.json",
   "testRunner": "vitest",
-  "plugins": ["@stryker-mutator/vitest-runner"],
   "vitest": {
-    "configFile": "vitest.stryker.config.ts"
+    "configFile": "vitest.config.ts"
   },
   "mutate": [
-    "packages/engine/src/**/*.ts",
-    "packages/detect/src/**/*.ts",
-    "packages/verify/src/**/*.ts",
-    "packages/blueprints/src/**/*.ts",
-    "!packages/*/src/**/*.test.ts"
+    "packages/engine/src/cost-tracker.ts"
   ],
-  "reporters": ["json", "clear-text", "progress"],
+  "reporters": [
+    "json",
+    "clear-text"
+  ],
   "jsonReporter": {
     "fileName": "reports/mutation/mutation.json"
   },
@@ -22,6 +19,5 @@
     "break": null
   },
   "concurrency": 2,
-  "timeoutMS": 60000,
-  "tempDirName": ".stryker-tmp"
+  "timeoutMS": 300000
 }

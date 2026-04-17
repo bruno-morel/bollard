@@ -1,18 +1,16 @@
 {
-  "name": "@bollard/blueprints",
+  "name": "@bollard/observe",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/implement-feature.ts",
+    ".": "./src/index.ts",
     "./src/*": "./src/*"
   },
   "dependencies": {
     "@bollard/detect": "workspace:*",
     "@bollard/engine": "workspace:*",
-    "@bollard/agents": "workspace:*",
-    "@bollard/llm": "workspace:*",
     "@bollard/verify": "workspace:*",
-    "@bollard/observe": "workspace:*"
+    "typescript": "^5.7.3"
   }
 }

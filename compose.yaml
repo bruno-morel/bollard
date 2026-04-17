@@ -15,6 +15,7 @@ services:
       - blueprints_modules:/app/packages/blueprints/node_modules
       - detect_modules:/app/packages/detect/node_modules
       - mcp_modules:/app/packages/mcp/node_modules
+      - observe_modules:/app/packages/observe/node_modules
       - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /app
     environment:
@@ -42,6 +43,7 @@ services:
       - blueprints_modules_full:/app/packages/blueprints/node_modules
       - detect_modules_full:/app/packages/detect/node_modules
       - mcp_modules_full:/app/packages/mcp/node_modules
+      - observe_modules_full:/app/packages/observe/node_modules
       - /var/run/docker.sock:/var/run/docker.sock
       - go_cache:/root/.cache/go-build
       - cargo_cache:/root/.cargo/registry
@@ -64,6 +66,7 @@ volumes:
   blueprints_modules:
   detect_modules:
   mcp_modules:
+  observe_modules:
   node_modules_full:
   engine_modules_full:
   llm_modules_full:
@@ -73,5 +76,6 @@ volumes:
   blueprints_modules_full:
   detect_modules_full:
   mcp_modules_full:
+  observe_modules_full:
   go_cache:
   cargo_cache:

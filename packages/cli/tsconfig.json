@@ -13,6 +13,7 @@
     { "path": "../llm" },
     { "path": "../agents" },
     { "path": "../verify" },
-    { "path": "../blueprints" }
+    { "path": "../blueprints" },
+    { "path": "../observe" }
   ]
 }

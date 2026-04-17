@@ -3,10 +3,12 @@ import type { PipelineContext } from "./context.js"
 export type NodeType = "deterministic" | "agentic" | "risk_gate" | "human_gate"
 
 export interface ProbeAssertion {
-  type: "status" | "latency" | "json_field"
+  type: "status" | "latency" | "json_field" | "body_contains" | "body_matches" | "header"
   expected: unknown
   path?: string
   maxMs?: number
+  /** HTTP header name when type is "header" */
+  name?: string
 }
 
 export interface ProbeDefinition {
@@ -14,8 +16,13 @@ export interface ProbeDefinition {
   name: string
   endpoint: string
   method: "GET" | "POST"
+  body?: unknown
+  headers?: Record<string, string>
   assertions: ProbeAssertion[]
   intervalSeconds: number
+  riskTier: "low" | "medium" | "high" | "critical"
+  sourceRunId?: string
+  sourceClaimId?: string
 }
 
 export interface NodeResultError {

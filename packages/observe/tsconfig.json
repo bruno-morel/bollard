@@ -10,8 +10,6 @@
   "references": [
     { "path": "../detect" },
     { "path": "../engine" },
-    { "path": "../agents" },
-    { "path": "../verify" },
-    { "path": "../observe" }
+    { "path": "../verify" }
   ]
 }

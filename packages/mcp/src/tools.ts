@@ -118,6 +118,116 @@ async function handleBehavioral(input: Record<string, unknown>, workDir: string)
   return buildBehavioralContext(profile, dir)
 }
 
+const probeRunInputSchema = z.object({
+  workDir: z.string().optional(),
+  url: z.string().optional(),
+  probeId: z.string().optional(),
+})
+
+async function handleProbeRun(input: Record<string, unknown>, workDir: string): Promise<unknown> {
+  const parsed = probeRunInputSchema.parse(input)
+  const dir = parsed.workDir ?? workDir
+  const { resolveConfig } = await import("@bollard/cli/src/config.js")
+  const { resolveProviders } = await import("@bollard/observe/src/providers/resolve.js")
+  const { DefaultProbeScheduler } = await import("@bollard/observe/src/probe-scheduler.js")
+  const { observe } = await resolveConfig(undefined, dir)
+  const providers = resolveProviders(observe, dir)
+  const baseUrl =
+    parsed.url ??
+    providers.options.baseUrl ??
+    process.env["BOLLARD_PROBE_BASE_URL"] ??
+    "http://127.0.0.1:3000"
+  const scheduler = new DefaultProbeScheduler({ workDir: dir, executor: providers.probeExecutor })
+  const all = await scheduler.loadProbes()
+  const probes = parsed.probeId ? all.filter((p) => p.id === parsed.probeId) : all
+  const results = []
+  for (const probe of probes) {
+    const r = await providers.probeExecutor.execute(probe, baseUrl)
+    await providers.metricsStore.record(r)
+    results.push(r)
+  }
+  return { baseUrl, results }
+}
+
+const deployRecordInputSchema = z.object({
+  workDir: z.string().optional(),
+  sha: z.string().optional(),
+  environment: z.string().optional(),
+})
+
+async function handleDeployRecord(
+  input: Record<string, unknown>,
+  workDir: string,
+): Promise<unknown> {
+  const parsed = deployRecordInputSchema.parse(input)
+  const dir = parsed.workDir ?? workDir
+  const { resolveConfig } = await import("@bollard/cli/src/config.js")
+  const { resolveProviders } = await import("@bollard/observe/src/providers/resolve.js")
+  const { observe } = await resolveConfig(undefined, dir)
+  const { deploymentTracker } = resolveProviders(observe, dir)
+  const sha = parsed.sha ?? process.env["GITHUB_SHA"] ?? process.env["GIT_SHA"] ?? "unknown"
+  const meta = {
+    deploymentId: sha,
+    timestamp: Date.now(),
+    sourceRunIds: [] as string[],
+    relatedCommits: [sha],
+    environment: parsed.environment ?? "production",
+  }
+  await deploymentTracker.record(meta)
+  return { recorded: meta }
+}
+
+const flagSetInputSchema = z.object({
+  workDir: z.string().optional(),
+  flagId: z.string(),
+  value: z.string(),
+})
+
+async function handleFlagSet(input: Record<string, unknown>, workDir: string): Promise<unknown> {
+  const parsed = flagSetInputSchema.parse(input)
+  const dir = parsed.workDir ?? workDir
+  const { resolveConfig } = await import("@bollard/cli/src/config.js")
+  const { resolveProviders } = await import("@bollard/observe/src/providers/resolve.js")
+  const { observe } = await resolveConfig(undefined, dir)
+  const { flagProvider } = resolveProviders(observe, dir)
+  const val = parsed.value
+  let enabled = false
+  let percent = 0
+  if (val === "on") {
+    enabled = true
+    percent = 100
+  } else if (val === "off") {
+    enabled = false
+    percent = 0
+  } else {
+    const n = Number(val.replace(/%$/, ""))
+    percent = Number.isNaN(n) ? 0 : Math.min(100, Math.max(0, n))
+    enabled = percent > 0
+  }
+  await flagProvider.set(parsed.flagId, {
+    id: parsed.flagId,
+    enabled,
+    percent,
+    updatedAt: Date.now(),
+    updatedBy: "human",
+  })
+  return { flagId: parsed.flagId, enabled, percent }
+}
+
+const driftCheckInputSchema = z.object({
+  workDir: z.string().optional(),
+})
+
+async function handleDriftCheck(input: Record<string, unknown>, workDir: string): Promise<unknown> {
+  const parsed = driftCheckInputSchema.parse(input)
+  const dir = parsed.workDir ?? workDir
+  const { resolveConfig } = await import("@bollard/cli/src/config.js")
+  const { resolveProviders } = await import("@bollard/observe/src/providers/resolve.js")
+  const { observe } = await resolveConfig(undefined, dir)
+  const { driftDetector } = resolveProviders(observe, dir)
+  return driftDetector.check()
+}
+
 function zodToJsonSchema(schema: z.ZodObject<z.ZodRawShape>): Record<string, unknown> {
   const shape = schema.shape
   const properties: Record<string, unknown> = {}
@@ -199,5 +309,29 @@ export const tools: McpToolDefinition[] = [
       "Build behavioral-scope context (endpoints, config, dependencies, failure modes) as JSON",
     inputSchema: zodToJsonSchema(behavioralInputSchema),
     handler: handleBehavioral,
+  },
+  {
+    name: "bollard_probe_run",
+    description: "Execute stored HTTP probes against a base URL and record metrics",
+    inputSchema: zodToJsonSchema(probeRunInputSchema),
+    handler: handleProbeRun,
+  },
+  {
+    name: "bollard_deploy_record",
+    description: "Append a deployment record to the built-in deployment tracker",
+    inputSchema: zodToJsonSchema(deployRecordInputSchema),
+    handler: handleDeployRecord,
+  },
+  {
+    name: "bollard_flag_set",
+    description: "Set a feature flag in the built-in file provider (on|off|percent)",
+    inputSchema: zodToJsonSchema(flagSetInputSchema),
+    handler: handleFlagSet,
+  },
+  {
+    name: "bollard_drift_check",
+    description: "Run git-based drift detection vs last verified SHA",
+    inputSchema: zodToJsonSchema(driftCheckInputSchema),
+    handler: handleDriftCheck,
   },
 ]

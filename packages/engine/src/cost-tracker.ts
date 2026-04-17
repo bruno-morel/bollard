@@ -67,4 +67,24 @@ export class CostTracker {
   snapshot(): Readonly<{ totalCostUsd: number }> {
     return Object.freeze({ totalCostUsd: this._total })
   }
+
+  summary(): string {
+    const totalFormatted = this._total.toFixed(2)
+    const limitFormatted = this._limit.toFixed(2)
+
+    // Handle percentage calculation with edge case for zero limit
+    let percentage: number
+    if (this._limit === 0) {
+      // When limit is 0, if total is also 0, percentage is 0%
+      // If total > 0, we show it as exceeded (100% to avoid "Infinity")
+      percentage = this._total === 0 ? 0 : 100
+    } else {
+      percentage = (this._total / this._limit) * 100
+    }
+
+    const percentageFormatted = percentage.toFixed(1)
+    const baseString = `$${totalFormatted} / $${limitFormatted} (${percentageFormatted}% used)`
+
+    return this.exceeded() ? `${baseString} [EXCEEDED]` : baseString
+  }
 }

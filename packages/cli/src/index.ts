@@ -15,6 +15,12 @@ import { resolveConfig } from "./config.js"
 import { collectAffectedPathsFromPlan } from "./contract-plan.js"
 import { diffToolchainProfile } from "./diff.js"
 import { humanGateHandler } from "./human-gate.js"
+import {
+  runDeployCommand,
+  runDriftCommand,
+  runFlagCommand,
+  runProbeCommand,
+} from "./observe-commands.js"
 import { createAgentSpinner } from "./spinner.js"
 import { BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW } from "./terminal-styles.js"
 
@@ -718,6 +724,26 @@ async function main(): Promise<void> {
     return
   }
 
+  if (command === "probe") {
+    await runProbeCommand(rest)
+    return
+  }
+
+  if (command === "deploy") {
+    await runDeployCommand(rest)
+    return
+  }
+
+  if (command === "flag") {
+    await runFlagCommand(rest)
+    return
+  }
+
+  if (command === "drift") {
+    await runDriftCommand(rest)
+    return
+  }
+
   log(`\n${BOLD}${CYAN}bollard${RESET} — artifact integrity framework\n`)
   log("Commands:\n")
   log(`  ${BOLD}run${RESET} <blueprint> --task <task>   Run a blueprint`)
@@ -734,6 +760,10 @@ async function main(): Promise<void> {
   log(
     `  ${BOLD}promote-test${RESET} <path>             Promote adversarial test to project test dir`,
   )
+  log(`  ${BOLD}probe${RESET} run|watch|list           Production probes (HTTP)`)
+  log(`  ${BOLD}deploy${RESET} record|list|current      Deployment metadata`)
+  log(`  ${BOLD}flag${RESET} set|list|kill             Feature flags (file-based)`)
+  log(`  ${BOLD}drift${RESET} check|watch             Git drift vs last verified`)
   log("")
   log(`Blueprints: ${DIM}demo, implement-feature${RESET}`)
   log("")

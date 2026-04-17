@@ -64,6 +64,9 @@ importers:
       '@bollard/llm':
         specifier: workspace:*
         version: link:../llm
+      '@bollard/observe':
+        specifier: workspace:*
+        version: link:../observe
       '@bollard/verify':
         specifier: workspace:*
         version: link:../verify
@@ -85,6 +88,9 @@ importers:
       '@bollard/llm':
         specifier: workspace:*
         version: link:../llm
+      '@bollard/observe':
+        specifier: workspace:*
+        version: link:../observe
       '@bollard/verify':
         specifier: workspace:*
         version: link:../verify
@@ -138,6 +144,9 @@ importers:
       '@bollard/llm':
         specifier: workspace:*
         version: link:../llm
+      '@bollard/observe':
+        specifier: workspace:*
+        version: link:../observe
       '@bollard/verify':
         specifier: workspace:*
         version: link:../verify
@@ -147,6 +156,21 @@ importers:
       zod:
         specifier: ^3.24.4
         version: 3.25.76
+
+  packages/observe:
+    dependencies:
+      '@bollard/detect':
+        specifier: workspace:*
+        version: link:../detect
+      '@bollard/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@bollard/verify':
+        specifier: workspace:*
+        version: link:../verify
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
 
   packages/verify:
     dependencies:

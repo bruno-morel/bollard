@@ -4,6 +4,8 @@ import type {
   Content,
   FunctionDeclaration,
   FunctionDeclarationSchema,
+  GenerateContentResponse,
+  GenerativeModel,
   Part,
 } from "@google/generative-ai"
 import type {
@@ -27,6 +29,217 @@ function estimateCost(model: string, inputTokens: number, outputTokens: number):
   return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000
 }
 
+function mapGoogleStopReason(
+  finishReason: string | undefined,
+  hasToolCalls: boolean,
+): LLMResponse["stopReason"] {
+  if (hasToolCalls) return "tool_use"
+  if (finishReason === "MAX_TOKENS") return "max_tokens"
+  return "end_turn"
+}
+
+function mapGoogleError(err: unknown): never {
+  if (BollardError.is(err)) throw err
+
+  if (err instanceof Error) {
+    const message = err.message.toLowerCase()
+    if (message.includes("rate limit") || message.includes("quota")) {
+      throw new BollardError({
+        code: "LLM_RATE_LIMIT",
+        message: `Google rate limit: ${err.message}`,
+        cause: err,
+      })
+    }
+    if (
+      message.includes("api key") ||
+      message.includes("authentication") ||
+      message.includes("unauthorized")
+    ) {
+      throw new BollardError({
+        code: "LLM_AUTH",
+        message: `Google auth error: ${err.message}`,
+        cause: err,
+      })
+    }
+    if (message.includes("timeout") || message.includes("timed out")) {
+      throw new BollardError({
+        code: "LLM_TIMEOUT",
+        message: `Google timeout: ${err.message}`,
+        cause: err,
+      })
+    }
+    throw new BollardError({
+      code: "LLM_PROVIDER_ERROR",
+      message: `Google error: ${err.message}`,
+      cause: err,
+    })
+  }
+  throw new BollardError({
+    code: "LLM_PROVIDER_ERROR",
+    message: `Google error: ${String(err)}`,
+  })
+}
+
+/** Tools config for Google model (exported for tests). */
+export function buildGoogleToolsConfig(
+  request: LLMRequest,
+): { functionDeclarations: FunctionDeclaration[] }[] | undefined {
+  if (!request.tools?.length) return undefined
+  return [
+    {
+      functionDeclarations: request.tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        parameters: t.inputSchema as unknown as FunctionDeclarationSchema,
+      })),
+    },
+  ]
+}
+
+/** Message contents for chat / stream (exported for tests). */
+export function buildGoogleContents(request: LLMRequest): Content[] {
+  const contents: Content[] = []
+
+  for (const msg of request.messages) {
+    const role = msg.role === "assistant" ? "model" : "user"
+
+    if (typeof msg.content === "string") {
+      contents.push({ role, parts: [{ text: msg.content }] })
+      continue
+    }
+
+    const parts: Part[] = []
+    for (const block of msg.content) {
+      if (block.type === "text") {
+        parts.push({ text: block.text ?? "" })
+      } else if (block.type === "tool_use") {
+        parts.push({
+          functionCall: {
+            name: block.toolName ?? "",
+            args: (block.toolInput ?? {}) as Record<string, string>,
+          },
+        })
+      } else if (block.type === "tool_result") {
+        parts.push({
+          functionResponse: {
+            name: block.toolName ?? block.toolUseId ?? "",
+            response: { result: block.text ?? "" },
+          },
+        })
+      }
+    }
+
+    if (parts.length > 0) {
+      contents.push({ role, parts })
+    }
+  }
+
+  return contents
+}
+
+export function getGoogleModel(client: GoogleGenerativeAI, request: LLMRequest): GenerativeModel {
+  const tools = buildGoogleToolsConfig(request)
+  return client.getGenerativeModel({
+    model: request.model,
+    systemInstruction: request.system,
+    generationConfig: {
+      maxOutputTokens: request.maxTokens,
+      temperature: request.temperature,
+    },
+    ...(tools ? { tools } : {}),
+  })
+}
+
+/** Maps Google streaming chunks to Bollard stream events (exported for tests). */
+export async function* googleChunksToStreamEvents(
+  modelId: string,
+  chunks: AsyncIterable<GenerateContentResponse>,
+): AsyncIterable<LLMStreamEvent> {
+  let textBuffer = ""
+  const toolRecords: { toolUseId: string; toolName: string; toolInput: Record<string, unknown> }[] =
+    []
+  let blockIndex = 0
+  let sawCandidate = false
+  let lastFinishReason: string | undefined
+  let promptTokens = 0
+  let outputTokens = 0
+
+  for await (const chunk of chunks) {
+    if (chunk.usageMetadata) {
+      promptTokens = chunk.usageMetadata.promptTokenCount ?? promptTokens
+      outputTokens = chunk.usageMetadata.candidatesTokenCount ?? outputTokens
+    }
+
+    const candidate = chunk.candidates?.[0]
+    if (!candidate) continue
+
+    sawCandidate = true
+
+    for (const part of candidate.content?.parts ?? []) {
+      if ("text" in part && part.text) {
+        textBuffer += part.text
+        yield { type: "text_delta", text: part.text }
+      }
+      if ("functionCall" in part && part.functionCall) {
+        const fc = part.functionCall
+        const toolUseId = `google-${fc.name}-${Date.now()}-${blockIndex}`
+        const argsObj = (fc.args ?? {}) as Record<string, unknown>
+        const json = JSON.stringify(argsObj)
+        yield { type: "tool_use_start", toolName: fc.name, toolUseId }
+        yield { type: "tool_input_delta", toolUseId, partialJson: json }
+        yield { type: "content_block_stop", index: blockIndex }
+        blockIndex++
+        toolRecords.push({
+          toolUseId,
+          toolName: fc.name,
+          toolInput: argsObj,
+        })
+      }
+    }
+
+    if (candidate.finishReason) {
+      lastFinishReason = candidate.finishReason
+      const hasToolCalls = toolRecords.length > 0
+      yield {
+        type: "message_delta",
+        stopReason: mapGoogleStopReason(candidate.finishReason, hasToolCalls),
+        usage: { outputTokens },
+      }
+    }
+  }
+
+  if (!sawCandidate) {
+    throw new BollardError({
+      code: "LLM_INVALID_RESPONSE",
+      message: "Google stream yielded no candidates",
+    })
+  }
+
+  const content: LLMContentBlock[] = []
+  if (textBuffer) {
+    content.push({ type: "text", text: textBuffer })
+  }
+  for (const t of toolRecords) {
+    content.push({
+      type: "tool_use",
+      toolName: t.toolName,
+      toolInput: t.toolInput,
+      toolUseId: t.toolUseId,
+    })
+  }
+
+  const hasToolCalls = toolRecords.length > 0
+  yield {
+    type: "message_complete",
+    response: {
+      content,
+      stopReason: mapGoogleStopReason(lastFinishReason, hasToolCalls),
+      usage: { inputTokens: promptTokens, outputTokens },
+      costUsd: estimateCost(modelId, promptTokens, outputTokens),
+    },
+  }
+}
+
 export class GoogleProvider implements LLMProvider {
   readonly name = "google"
   private readonly client: GoogleGenerativeAI
@@ -37,62 +250,8 @@ export class GoogleProvider implements LLMProvider {
 
   async chat(request: LLMRequest): Promise<LLMResponse> {
     try {
-      const tools: { functionDeclarations: FunctionDeclaration[] }[] = []
-      if (request.tools?.length) {
-        tools.push({
-          functionDeclarations: request.tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            parameters: t.inputSchema as unknown as FunctionDeclarationSchema,
-          })),
-        })
-      }
-
-      const model = this.client.getGenerativeModel({
-        model: request.model,
-        systemInstruction: request.system,
-        generationConfig: {
-          maxOutputTokens: request.maxTokens,
-          temperature: request.temperature,
-        },
-        ...(tools.length > 0 ? { tools } : {}),
-      })
-
-      const contents: Content[] = []
-
-      for (const msg of request.messages) {
-        const role = msg.role === "assistant" ? "model" : "user"
-
-        if (typeof msg.content === "string") {
-          contents.push({ role, parts: [{ text: msg.content }] })
-          continue
-        }
-
-        const parts: Part[] = []
-        for (const block of msg.content) {
-          if (block.type === "text") {
-            parts.push({ text: block.text ?? "" })
-          } else if (block.type === "tool_use") {
-            parts.push({
-              functionCall: {
-                name: block.toolName ?? "",
-                args: (block.toolInput ?? {}) as Record<string, string>,
-              },
-            })
-          } else if (block.type === "tool_result") {
-            parts.push({
-              functionResponse: {
-                name: block.toolName ?? block.toolUseId ?? "",
-                response: { result: block.text ?? "" },
-              },
-            })
-          }
-        }
-
-        if (parts.length > 0) {
-          contents.push({ role, parts })
-        }
-      }
+      const model = getGoogleModel(this.client, request)
+      const contents = buildGoogleContents(request)
 
       const result = await model.generateContent({ contents })
       const response = result.response
@@ -137,61 +296,26 @@ export class GoogleProvider implements LLMProvider {
         costUsd: estimateCost(request.model, inputTokens, outputTokens),
       }
     } catch (err: unknown) {
-      if (BollardError.is(err)) throw err
-
-      if (err instanceof Error) {
-        const message = err.message.toLowerCase()
-        if (message.includes("rate limit") || message.includes("quota")) {
-          throw new BollardError({
-            code: "LLM_RATE_LIMIT",
-            message: `Google rate limit: ${err.message}`,
-            cause: err,
-          })
-        }
-        if (
-          message.includes("api key") ||
-          message.includes("authentication") ||
-          message.includes("unauthorized")
-        ) {
-          throw new BollardError({
-            code: "LLM_AUTH",
-            message: `Google auth error: ${err.message}`,
-            cause: err,
-          })
-        }
-        if (message.includes("timeout") || message.includes("timed out")) {
-          throw new BollardError({
-            code: "LLM_TIMEOUT",
-            message: `Google timeout: ${err.message}`,
-            cause: err,
-          })
-        }
-        throw new BollardError({
-          code: "LLM_PROVIDER_ERROR",
-          message: `Google error: ${err.message}`,
-          cause: err,
-        })
-      }
-      throw new BollardError({
-        code: "LLM_PROVIDER_ERROR",
-        message: `Google error: ${String(err)}`,
-      })
+      mapGoogleError(err)
     }
   }
 
-  chatStream(_request: LLMRequest): AsyncIterable<LLMStreamEvent> {
-    return {
-      [Symbol.asyncIterator](): AsyncIterator<LLMStreamEvent> {
-        return {
-          next: async () => {
-            throw new BollardError({
-              code: "PROVIDER_NOT_FOUND",
-              message:
-                "Google streaming not yet implemented — use chat() or switch to Anthropic provider",
-            })
-          },
-        }
-      },
+  async *chatStream(request: LLMRequest): AsyncIterable<LLMStreamEvent> {
+    const model = getGoogleModel(this.client, request)
+    const contents = buildGoogleContents(request)
+
+    let stream: AsyncGenerator<GenerateContentResponse>
+    try {
+      const result = await model.generateContentStream({ contents })
+      stream = result.stream
+    } catch (err: unknown) {
+      mapGoogleError(err)
+    }
+
+    try {
+      yield* googleChunksToStreamEvents(request.model, stream)
+    } catch (err: unknown) {
+      mapGoogleError(err)
     }
   }
 }

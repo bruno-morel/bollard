@@ -617,4 +617,128 @@ describe("CostTracker", () => {
       expect(typeof tracker.subtract).toBe("function")
     })
   })
+
+  describe("summary()", () => {
+    it("formats basic summary correctly", () => {
+      const tracker = new CostTracker(10.0)
+      tracker.add(3.5)
+
+      const result = tracker.summary()
+      expect(result).toBe("$3.50 / $10.00 (35.0% used)")
+    })
+
+    it("formats zero total correctly", () => {
+      const tracker = new CostTracker(10.0)
+
+      const result = tracker.summary()
+      expect(result).toBe("$0.00 / $10.00 (0.0% used)")
+    })
+
+    it("formats exact limit match correctly", () => {
+      const tracker = new CostTracker(5.0)
+      tracker.add(5.0)
+
+      const result = tracker.summary()
+      expect(result).toBe("$5.00 / $5.00 (100.0% used)")
+    })
+
+    it("shows EXCEEDED when budget is exceeded", () => {
+      const tracker = new CostTracker(10.0)
+      tracker.add(12.5)
+
+      const result = tracker.summary()
+      expect(result).toBe("$12.50 / $10.00 (125.0% used) [EXCEEDED]")
+    })
+
+    it("handles zero limit with zero total", () => {
+      const tracker = new CostTracker(0.0)
+
+      const result = tracker.summary()
+      expect(result).toBe("$0.00 / $0.00 (0.0% used)")
+    })
+
+    it("handles zero limit with positive total", () => {
+      const tracker = new CostTracker(0.0)
+      tracker.add(1.0)
+
+      const result = tracker.summary()
+      expect(result).toBe("$1.00 / $0.00 (100.0% used) [EXCEEDED]")
+    })
+
+    it("formats fractional amounts to 2 decimal places", () => {
+      const tracker = new CostTracker(7.123)
+      tracker.add(3.456)
+
+      const result = tracker.summary()
+      expect(result).toBe("$3.46 / $7.12 (48.5% used)")
+    })
+
+    it("formats percentage to 1 decimal place", () => {
+      const tracker = new CostTracker(3.0)
+      tracker.add(1.0)
+
+      const result = tracker.summary()
+      expect(result).toBe("$1.00 / $3.00 (33.3% used)")
+    })
+
+    it("handles very small amounts", () => {
+      const tracker = new CostTracker(0.01)
+      tracker.add(0.005)
+
+      const result = tracker.summary()
+      expect(result).toBe("$0.01 / $0.01 (50.0% used)")
+    })
+
+    it("handles large amounts", () => {
+      const tracker = new CostTracker(1000.0)
+      tracker.add(999.99)
+
+      const result = tracker.summary()
+      expect(result).toBe("$999.99 / $1000.00 (100.0% used)")
+    })
+
+    it("shows exceeded for slightly over budget", () => {
+      const tracker = new CostTracker(10.0)
+      tracker.add(10.01)
+
+      const result = tracker.summary()
+      expect(result).toBe("$10.01 / $10.00 (100.1% used) [EXCEEDED]")
+    })
+
+    it("handles multiple adds before summary", () => {
+      const tracker = new CostTracker(20.0)
+      tracker.add(5.25)
+      tracker.add(3.75)
+      tracker.add(1.5)
+
+      const result = tracker.summary()
+      expect(result).toBe("$10.50 / $20.00 (52.5% used)")
+    })
+
+    it("reflects state after subtract operations", () => {
+      const tracker = new CostTracker(10.0)
+      tracker.add(8.0)
+      tracker.subtract(3.0)
+
+      const result = tracker.summary()
+      expect(result).toBe("$5.00 / $10.00 (50.0% used)")
+    })
+
+    it("reflects state after reset", () => {
+      const tracker = new CostTracker(10.0)
+      tracker.add(8.0)
+      tracker.reset()
+
+      const result = tracker.summary()
+      expect(result).toBe("$0.00 / $10.00 (0.0% used)")
+    })
+
+    it("handles edge case of very high percentage", () => {
+      const tracker = new CostTracker(1.0)
+      tracker.add(50.0)
+
+      const result = tracker.summary()
+      expect(result).toBe("$50.00 / $1.00 (5000.0% used) [EXCEEDED]")
+    })
+  })
 })

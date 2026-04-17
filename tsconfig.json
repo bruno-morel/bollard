@@ -31,6 +31,7 @@
     { "path": "packages/verify" },
     { "path": "packages/blueprints" },
     { "path": "packages/detect" },
-    { "path": "packages/mcp" }
+    { "path": "packages/mcp" },
+    { "path": "packages/observe" }
   ]
 }

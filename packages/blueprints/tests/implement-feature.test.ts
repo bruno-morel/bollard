@@ -7,8 +7,8 @@ import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
 describe("createImplementFeatureBlueprint", () => {
   const bp = createImplementFeatureBlueprint("/tmp/test")
 
-  it("has 27 nodes in the correct order", () => {
-    expect(bp.nodes).toHaveLength(27)
+  it("has 28 nodes in the correct order", () => {
+    expect(bp.nodes).toHaveLength(28)
     const ids = bp.nodes.map((n) => n.id)
     expect(ids).toEqual([
       "create-branch",
@@ -31,6 +31,7 @@ describe("createImplementFeatureBlueprint", () => {
       "verify-behavioral-grounding",
       "write-behavioral-tests",
       "run-behavioral-tests",
+      "extract-probes",
       "run-mutation-testing",
       "generate-review-diff",
       "semantic-review",
@@ -64,6 +65,7 @@ describe("createImplementFeatureBlueprint", () => {
       { id: "verify-behavioral-grounding", type: "deterministic" },
       { id: "write-behavioral-tests", type: "deterministic" },
       { id: "run-behavioral-tests", type: "deterministic" },
+      { id: "extract-probes", type: "deterministic" },
       { id: "run-mutation-testing", type: "deterministic" },
       { id: "generate-review-diff", type: "deterministic" },
       { id: "semantic-review", type: "agentic" },
@@ -154,7 +156,8 @@ describe("createImplementFeatureBlueprint", () => {
     expect(ids[iContract + 3]).toBe("verify-behavioral-grounding")
     expect(ids[iContract + 4]).toBe("write-behavioral-tests")
     expect(ids[iContract + 5]).toBe("run-behavioral-tests")
-    expect(ids[iContract + 6]).toBe("run-mutation-testing")
+    expect(ids[iContract + 6]).toBe("extract-probes")
+    expect(ids[iContract + 7]).toBe("run-mutation-testing")
   })
 
   it("semantic review nodes sit between run-mutation-testing and docker-verify", () => {

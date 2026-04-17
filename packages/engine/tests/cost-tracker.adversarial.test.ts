@@ -1,229 +1,145 @@
 import { describe, it, expect } from "vitest"
 import * as fc from "fast-check"
-import { CostTracker, BollardError } from "@bollard/engine"
+import { CostTracker } from "../src/cost-tracker.js"
 
-describe("Feature: CostTracker has a subtract(usd: number) method that reduces the total cost", () => {
-  it("should reduce total cost by given amount", () => {
-    const tracker = new CostTracker(100)
-    tracker.add(50)
-    tracker.subtract(20)
-    expect(tracker.total()).toBe(30)
+describe("Feature: CostTracker.summary() returns formatted string with total, limit, and percentage", () => {
+  it("should return formatted string with total, limit, and percentage", () => {
+    const tracker = new CostTracker(100.0)
+    tracker.add(25.50)
+    
+    const result = tracker.summary()
+    expect(result).toBe("$25.50 / $100.00 (25.5% used)")
   })
 
-  it("should handle zero as valid input", () => {
-    const tracker = new CostTracker(100)
-    tracker.add(50)
-    tracker.subtract(0)
-    expect(tracker.total()).toBe(50)
+  it("should format dollar amounts to 2 decimal places", () => {
+    const tracker = new CostTracker(50)
+    tracker.add(10.1)
+    
+    const result = tracker.summary()
+    expect(result).toBe("$10.10 / $50.00 (20.2% used)")
   })
 
-  it("should handle subtracting entire balance", () => {
-    const tracker = new CostTracker(100)
-    tracker.add(25)
-    tracker.subtract(25)
-    expect(tracker.total()).toBe(0)
-  })
-})
-
-describe("Feature: subtract throws BollardError with CONTRACT_VIOLATION code when given negative input", () => {
-  it("should throw on negative input", () => {
-    const tracker = new CostTracker(100)
-    tracker.add(50)
-    
-    expect(() => tracker.subtract(-1)).toThrow()
-    const error = (() => {
-      try {
-        tracker.subtract(-1)
-      } catch (e) {
-        return e
-      }
-    })()
-    
-    expect(BollardError.hasCode(error, "CONTRACT_VIOLATION")).toBe(true)
-  })
-
-  it("should throw on large negative values", () => {
-    const tracker = new CostTracker(100)
-    tracker.add(50)
-    
-    expect(() => tracker.subtract(-100)).toThrow()
-    const error = (() => {
-      try {
-        tracker.subtract(-100)
-      } catch (e) {
-        return e
-      }
-    })()
-    
-    expect(BollardError.hasCode(error, "CONTRACT_VIOLATION")).toBe(true)
-  })
-})
-
-describe("Feature: subtract throws BollardError with CONTRACT_VIOLATION code when result would go below zero", () => {
-  it("should throw when subtracting more than current total", () => {
-    const tracker = new CostTracker(100)
-    tracker.add(30)
-    
-    expect(() => tracker.subtract(31)).toThrow()
-    const error = (() => {
-      try {
-        tracker.subtract(31)
-      } catch (e) {
-        return e
-      }
-    })()
-    
-    expect(BollardError.hasCode(error, "CONTRACT_VIOLATION")).toBe(true)
-  })
-
-  it("should throw when subtracting from zero balance", () => {
-    const tracker = new CostTracker(100)
-    
-    expect(() => tracker.subtract(1)).toThrow()
-    const error = (() => {
-      try {
-        tracker.subtract(1)
-      } catch (e) {
-        return e
-      }
-    })()
-    
-    expect(BollardError.hasCode(error, "CONTRACT_VIOLATION")).toBe(true)
-  })
-
-  it("should throw when subtracting large amount from small balance", () => {
-    const tracker = new CostTracker(100)
-    tracker.add(5)
-    
-    expect(() => tracker.subtract(100)).toThrow()
-    const error = (() => {
-      try {
-        tracker.subtract(100)
-      } catch (e) {
-        return e
-      }
-    })()
-    
-    expect(BollardError.hasCode(error, "CONTRACT_VIOLATION")).toBe(true)
-  })
-})
-
-describe("Feature: subtract rejects NaN and Infinity inputs", () => {
-  it("should throw on NaN input", () => {
-    const tracker = new CostTracker(100)
-    tracker.add(50)
-    
-    expect(() => tracker.subtract(NaN)).toThrow()
-    const error = (() => {
-      try {
-        tracker.subtract(NaN)
-      } catch (e) {
-        return e
-      }
-    })()
-    
-    expect(BollardError.hasCode(error, "CONTRACT_VIOLATION")).toBe(true)
-  })
-
-  it("should throw on Infinity input", () => {
-    const tracker = new CostTracker(100)
-    tracker.add(50)
-    
-    expect(() => tracker.subtract(Infinity)).toThrow()
-    const error = (() => {
-      try {
-        tracker.subtract(Infinity)
-      } catch (e) {
-        return e
-      }
-    })()
-    
-    expect(BollardError.hasCode(error, "CONTRACT_VIOLATION")).toBe(true)
-  })
-
-  it("should throw on negative Infinity input", () => {
-    const tracker = new CostTracker(100)
-    tracker.add(50)
-    
-    expect(() => tracker.subtract(-Infinity)).toThrow()
-    const error = (() => {
-      try {
-        tracker.subtract(-Infinity)
-      } catch (e) {
-        return e
-      }
-    })()
-    
-    expect(BollardError.hasCode(error, "CONTRACT_VIOLATION")).toBe(true)
-  })
-})
-
-describe("Property-based tests for subtract method", () => {
-  it("should maintain non-negative balance invariant", () => {
-    fc.assert(fc.property(
-      fc.float({ min: 0.01, max: 1000 }),
-      fc.float({ min: 0.01, max: 1000 }),
-      (initialAmount, subtractAmount) => {
-        const tracker = new CostTracker(2000)
-        tracker.add(initialAmount)
-        
-        if (subtractAmount <= initialAmount) {
-          tracker.subtract(subtractAmount)
-          expect(tracker.total()).toBeGreaterThanOrEqual(0)
-          expect(tracker.total()).toBeCloseTo(initialAmount - subtractAmount, 10)
-        } else {
-          expect(() => tracker.subtract(subtractAmount)).toThrow()
-        }
-      }
-    ))
-  })
-
-  it("should handle valid positive subtractions", () => {
-    fc.assert(fc.property(
-      fc.float({ min: 10, max: 1000 }),
-      fc.float({ min: 0, max: 10 }),
-      (initialAmount, subtractAmount) => {
-        const tracker = new CostTracker(2000)
-        tracker.add(initialAmount)
-        
-        const beforeTotal = tracker.total()
-        tracker.subtract(subtractAmount)
-        const afterTotal = tracker.total()
-        
-        expect(afterTotal).toBeCloseTo(beforeTotal - subtractAmount, 10)
-        expect(afterTotal).toBeGreaterThanOrEqual(0)
-      }
-    ))
-  })
-})
-
-describe("Edge cases and boundary values", () => {
-  it("should handle very small positive values", () => {
-    const tracker = new CostTracker(100)
+  it("should format percentage to 1 decimal place", () => {
+    const tracker = new CostTracker(3)
     tracker.add(1)
-    tracker.subtract(0.01)
-    expect(tracker.total()).toBeCloseTo(0.99, 10)
+    
+    const result = tracker.summary()
+    expect(result).toBe("$1.00 / $3.00 (33.3% used)")
   })
 
-  it("should handle precision edge cases", () => {
+  it("should handle zero total cost", () => {
     const tracker = new CostTracker(100)
-    tracker.add(0.1)
-    tracker.add(0.2)
-    tracker.subtract(0.3)
-    expect(tracker.total()).toBeCloseTo(0, 10)
+    
+    const result = tracker.summary()
+    expect(result).toBe("$0.00 / $100.00 (0.0% used)")
+  })
+})
+
+describe("Feature: When budget is exceeded, append ' [EXCEEDED]'", () => {
+  it("should append [EXCEEDED] when total exceeds limit", () => {
+    const tracker = new CostTracker(50.0)
+    tracker.add(75.25)
+    
+    const result = tracker.summary()
+    expect(result).toBe("$75.25 / $50.00 (150.5% used) [EXCEEDED]")
   })
 
-  it("should preserve state on failed operations", () => {
+  it("should not append [EXCEEDED] when total equals limit", () => {
+    const tracker = new CostTracker(100.0)
+    tracker.add(100.0)
+    
+    const result = tracker.summary()
+    expect(result).toBe("$100.00 / $100.00 (100.0% used)")
+  })
+
+  it("should not append [EXCEEDED] when total is less than limit", () => {
+    const tracker = new CostTracker(100.0)
+    tracker.add(99.99)
+    
+    const result = tracker.summary()
+    expect(result).toBe("$99.99 / $100.00 (100.0% used)")
+  })
+})
+
+describe("Feature: Handle edge cases like zero limit correctly", () => {
+  it("should show 0% when both total and limit are 0", () => {
+    const tracker = new CostTracker(0)
+    
+    const result = tracker.summary()
+    expect(result).toBe("$0.00 / $0.00 (0.0% used)")
+  })
+
+  it("should show 100% when total > 0 and limit = 0", () => {
+    const tracker = new CostTracker(0)
+    tracker.add(10.50)
+    
+    const result = tracker.summary()
+    expect(result).toBe("$10.50 / $0.00 (100.0% used) [EXCEEDED]")
+  })
+
+  it("should handle very small amounts correctly", () => {
+    const tracker = new CostTracker(0.01)
+    tracker.add(0.005)
+    
+    const result = tracker.summary()
+    expect(result).toBe("$0.01 / $0.01 (50.0% used)")
+  })
+
+  it("should handle negative costs from subtract operations", () => {
     const tracker = new CostTracker(100)
     tracker.add(50)
-    const originalTotal = tracker.total()
+    tracker.subtract(75)
     
-    try {
-      tracker.subtract(100)
-    } catch (e) {
-      // Expected to throw
-    }
-    
-    expect(tracker.total()).toBe(originalTotal)
+    const result = tracker.summary()
+    expect(result).toBe("$-25.00 / $100.00 (-25.0% used)")
+  })
+})
+
+describe("Property-based tests for summary formatting", () => {
+  it("should always return string with correct format structure", () => {
+    fc.assert(fc.property(
+      fc.float({ min: 0, max: 1000 }),
+      fc.float({ min: 0.01, max: 1000 }),
+      (total, limit) => {
+        const tracker = new CostTracker(limit)
+        tracker.add(total)
+        const result = tracker.summary()
+        
+        // Should match pattern: $X.XX / $Y.YY (Z.Z% used) [optional EXCEEDED]
+        const pattern = /^\$\d+\.\d{2} \/ \$\d+\.\d{2} \(\d+\.\d% used\)( \[EXCEEDED\])?$/
+        expect(result).toMatch(pattern)
+      }
+    ))
+  })
+
+  it("should append EXCEEDED only when total > limit", () => {
+    fc.assert(fc.property(
+      fc.float({ min: 0, max: 1000 }),
+      fc.float({ min: 0.01, max: 1000 }),
+      (total, limit) => {
+        const tracker = new CostTracker(limit)
+        tracker.add(total)
+        const result = tracker.summary()
+        
+        const shouldExceed = total > limit
+        const hasExceeded = result.includes("[EXCEEDED]")
+        expect(hasExceeded).toBe(shouldExceed)
+      }
+    ))
+  })
+
+  it("should calculate percentage correctly", () => {
+    fc.assert(fc.property(
+      fc.float({ min: 0, max: 100 }),
+      fc.float({ min: 0.01, max: 100 }),
+      (total, limit) => {
+        const tracker = new CostTracker(limit)
+        tracker.add(total)
+        const result = tracker.summary()
+        
+        const expectedPercentage = ((total / limit) * 100).toFixed(1)
+        expect(result).toContain(`(${expectedPercentage}% used)`)
+      }
+    ))
   })
 })
