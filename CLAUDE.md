@@ -317,7 +317,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** 9 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`, `behavioral-tester.md`
-- **Latest count (authoritative, 2026-04-17, post Stage 4c Part 2 Java/Kotlin Wave 1):** `744` passed, `4` skipped (748 total). Skips: 4 LLM live smoke tests (no key). Stage 4c Part 2 adds JVM detection, Graal `bollard-extract-java`, `JavaContractProvider`, PIT mutation provider, Surefire/Gradle test parsers, JVM compose images, risk-gate patterns, and prompt `isJava`/`isKotlin` blocks (+~38 tests vs Part 1 baseline).
+- **Latest count (authoritative, 2026-04-19, Stage 4c Part 2 full validation re-run):** `753` passed, `4` skipped (757 total, 60 files). Skips: 4 LLM live smoke tests (no key). Stage 4c Part 2 adds JVM detection, Graal `bollard-extract-java`, `JavaContractProvider`, PIT mutation provider, Surefire/Gradle test parsers, JVM compose images, risk-gate patterns, and prompt `isJava`/`isKotlin` blocks (+~47 tests vs Part 1 baseline).
 - **Adversarial suite** (`vitest.adversarial.config.ts`): `331` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c).
 - **Vitest + Vite 8:** you may see `esbuild` option deprecated in favor of `oxc` — harmless until Vitest defaults align; pin Vite 7.x if you need a silent log.
 
@@ -761,7 +761,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 
 ### Stage 4c (Part 2) (DONE) — Java/Kotlin Wave 1
 - `detectToolchain` JVM detector (Maven/Gradle), `MutationToolId` `"pitest"`, `scripts/extract_java` + Graal `bollard-extract-java`, `JavaParserExtractor`, `JavaContractProvider`, `PitestProvider`, Surefire/Gradle `parseSummary`, `docker/Dockerfile.verify-jvm`, `DEFAULT_IMAGES` Temurin 21 for java/kotlin, behavioral compose JVM start commands.
-- **Validation (2026-04-17):** 744 pass / 4 skip; adversarial 331 pass. Integration audits GREEN; full Java `implement-feature` E2E not run — see [spec/stage4c-validation-results.md](../spec/stage4c-validation-results.md).
+- **Validation (2026-04-19 full re-run):** 753 pass / 4 skip; adversarial 331 pass. Phase 0–2 GREEN; Phase 3 Bollard-on-bollard reached 14/28 nodes ($0.44 / 129s) then hit a cross-module contract-test placement bug at node 15; Phase 4 Gradle detection GREEN (live pipeline deferred). See [spec/stage4c-validation-results.md](../spec/stage4c-validation-results.md).
 
 ### DO NOT build yet:
 - **New languages outside the current seven (TS/JS/Python/Go/Rust/Java/Kotlin)** — C#/.NET, Ruby, PHP, and further waves are sequenced (Stage 4c+ → 5+). Full design in [spec/07-adversarial-scopes.md §12.1](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md). Do not add language detectors, extractors, or verify images for any of these languages ad-hoc — each wave is coordinated so the dev image, `dev-full` image, mutation testing pattern, and contract graph all land together. Swift, Scala, Elixir, F#, Clojure, Haskell, OCaml, Nim, and Zig are explicit non-goals with no near-term timeline.

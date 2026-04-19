@@ -18,7 +18,7 @@ Features deferred from v0.1 spec to keep scope tight. These are all good ideas �
 
 **Stage 4c Part 1 hardening** (auto-format write nodes, grep→ripgrep, `rm` allowlist, model ID update) — 705 pass / 4 skip. Bollard-on-bollard self-test: 28/28 nodes, $0.63.
 
-**Stage 4c Part 2** — Java/Kotlin Wave 1 — automated suite and integration checks **validated 2026-04-17** (744 pass / 4 skip; adversarial 331 pass). Full Java `implement-feature` E2E deferred; see [stage4c-validation-results.md](./stage4c-validation-results.md). Design: [stage4c-java-kotlin-wave1.md](./stage4c-java-kotlin-wave1.md).
+**Stage 4c Part 2** — Java/Kotlin Wave 1 — automated baseline **validated 2026-04-17** (744 pass / 4 skip; adversarial 331 pass). **2026-04-19:** Full validation re-run under Docker: Phase 0 GREEN (**753 pass / 4 skip**; adversarial 331), Phase 1 integration audit GREEN, Phase 2 cross-cutting GREEN (extractor on non-trivial Java and Gradle-over-Maven precedence re-verified), Phase 3 Bollard-on-bollard on a multi-module Maven project reached **14/28 nodes** ($0.44 / 129s) and surfaced a cross-module contract-test placement bug (see issue #1 in results), Phase 4 Gradle detection GREEN (live pipeline deferred — no Gradle in `dev-full`). Status **YELLOW** pending Wave 1.1 contract-test placement fix; see [stage4c-validation-results.md](./stage4c-validation-results.md). Design: [stage4c-java-kotlin-wave1.md](./stage4c-java-kotlin-wave1.md).
 
 **Stage 4d** — DX & Agent Integrations: planned. See [stage4d-dx-agent-integrations.md](./stage4d-dx-agent-integrations.md).
 
