@@ -4,6 +4,7 @@ import { BollardError } from "@bollard/engine/src/errors.js"
 import type { LLMProvider } from "@bollard/llm/src/types.js"
 import ts from "typescript"
 import { GoAstExtractor } from "./extractors/go.js"
+import { JavaParserExtractor } from "./extractors/java.js"
 import { PythonAstExtractor } from "./extractors/python.js"
 import { RustSynExtractor } from "./extractors/rust.js"
 
@@ -431,6 +432,9 @@ export function getExtractor(
       return new GoAstExtractor(warn)
     case "rust":
       return new RustSynExtractor(warn)
+    case "java":
+    case "kotlin":
+      return new JavaParserExtractor(warn)
     default:
       if (!provider || !model) {
         throw new BollardError({
@@ -532,6 +536,12 @@ const NOISE_IDENTIFIERS = new Set([
 ])
 
 export function extractPrivateIdentifiers(filePath: string, sourceText: string): string[] {
+  // The TypeScript AST cannot model Java/Kotlin. Feeding `.java` / `.kt` through
+  // `createSourceFile` mis-parses modifiers (e.g. `final` in `private final Type x`) as
+  // bogus "private" identifiers and trips the adversarial leak scan with false positives.
+  if (filePath.endsWith(".java") || filePath.endsWith(".kt")) {
+    return []
+  }
   const sourceFile = ts.createSourceFile(
     filePath,
     sourceText,

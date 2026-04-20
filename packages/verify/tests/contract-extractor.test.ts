@@ -6,9 +6,12 @@ import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { buildContractContext } from "../src/contract-extractor.js"
+import { parseGradleIncludes } from "../src/contract-providers/java.js"
 
 const THIS_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(THIS_DIR, "../../..")
+const JAVA_MAVEN_MULTI = resolve(THIS_DIR, "fixtures/contract/java-maven-multi")
+const JAVA_GRADLE_MULTI = resolve(THIS_DIR, "fixtures/contract/java-gradle-multi")
 
 const tsProfile: ToolchainProfile = {
   language: "typescript",
@@ -26,6 +29,32 @@ const tsProfile: ToolchainProfile = {
   ignorePatterns: [],
   allowedCommands: ["pnpm"],
   adversarial: defaultAdversarialConfig({ language: "typescript" }),
+}
+
+const javaMavenProfile: ToolchainProfile = {
+  language: "java",
+  packageManager: "maven",
+  checks: {
+    test: { label: "maven test", cmd: "mvn", args: ["test"], source: "auto-detected" },
+  },
+  sourcePatterns: ["**/*.java"],
+  testPatterns: ["**/test/**/*.java"],
+  ignorePatterns: ["target"],
+  allowedCommands: ["mvn", "java"],
+  adversarial: defaultAdversarialConfig({ language: "java" }),
+}
+
+const javaGradleProfile: ToolchainProfile = {
+  language: "java",
+  packageManager: "gradle",
+  checks: {
+    test: { label: "gradle test", cmd: "./gradlew", args: ["test"], source: "auto-detected" },
+  },
+  sourcePatterns: ["**/*.java"],
+  testPatterns: ["**/test/**/*.java"],
+  ignorePatterns: ["build"],
+  allowedCommands: ["./gradlew", "gradle"],
+  adversarial: defaultAdversarialConfig({ language: "java" }),
 }
 
 describe("buildContractContext", () => {
@@ -510,5 +539,46 @@ describe("RustContractProvider", () => {
     expect(ctx.edges).toHaveLength(1)
     expect(ctx.edges[0]?.from).toBe("consumer")
     expect(ctx.edges[0]?.to).toBe("my-crate")
+  })
+})
+
+describe("parseGradleIncludes", () => {
+  it("parses include with quoted project paths", () => {
+    const inc = parseGradleIncludes("include ':module-a'\ninclude ':module-b'")
+    expect(inc).toContain("module-a")
+    expect(inc).toContain("module-b")
+  })
+
+  it("parses include block form", () => {
+    const inc = parseGradleIncludes("include(\n  ':a',\n  ':b'\n)")
+    expect(inc).toContain("a")
+    expect(inc).toContain("b")
+  })
+})
+
+describe("buildContractContext JVM", () => {
+  it("discovers Maven multi-module layout", async () => {
+    const ctx = await buildContractContext([], javaMavenProfile, JAVA_MAVEN_MULTI)
+    expect(ctx.modules.length).toBeGreaterThanOrEqual(2)
+    const ids = ctx.modules.map((m) => m.id).sort()
+    expect(ids).toContain("module-a")
+    expect(ids).toContain("module-b")
+  })
+
+  it("builds edges from imports in Maven multi-module fixture", async () => {
+    const ctx = await buildContractContext([], javaMavenProfile, JAVA_MAVEN_MULTI)
+    const cross = ctx.edges.find((e) => e.from === "module-b" && e.to === "module-a")
+    expect(cross).toBeDefined()
+  })
+
+  it("discovers Gradle multi-module projects", async () => {
+    const ctx = await buildContractContext([], javaGradleProfile, JAVA_GRADLE_MULTI)
+    expect(ctx.modules.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it("builds import edge in Gradle multi-module fixture", async () => {
+    const ctx = await buildContractContext([], javaGradleProfile, JAVA_GRADLE_MULTI)
+    const cross = ctx.edges.find((e) => e.from === "module-b" && e.to === "module-a")
+    expect(cross).toBeDefined()
   })
 })

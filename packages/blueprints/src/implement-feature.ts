@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
-import { dirname, resolve } from "node:path"
+import { basename, dirname, resolve } from "node:path"
 import { promisify } from "node:util"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { Blueprint, NodeResult } from "@bollard/engine/src/blueprint.js"
@@ -37,7 +37,15 @@ import {
   resolveContractTestOutputRel,
 } from "@bollard/verify/src/test-lifecycle.js"
 import { extractPrivateIdentifiers, getExtractor } from "@bollard/verify/src/type-extractor.js"
-import { deriveAdversarialTestPath, stripMarkdownFences } from "./write-tests-helpers.js"
+import {
+  deriveAdversarialTestPath,
+  inferJvmPackageFromMainSource,
+  jvmContractCoerceVitestItToJUnit5,
+  normalizeJvmWrittenTestClassName,
+  resolveContractTestModulePrefix,
+  sanitizeJavaPrimitiveInstanceofMisuse,
+  stripMarkdownFences,
+} from "./write-tests-helpers.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -46,6 +54,9 @@ async function formatGeneratedAdversarialTestFile(
   workDir: string,
   fullPath: string,
 ): Promise<void> {
+  if (fullPath.endsWith(".java") || fullPath.endsWith(".kt")) {
+    return
+  }
   try {
     await execFileAsync("biome", ["check", "--write", "--unsafe", fullPath], {
       cwd: workDir,
@@ -102,6 +113,10 @@ function isExportChangeLine(line: string, language?: LanguageId): boolean {
       return isGoExportChange(content)
     case "rust":
       return isRustExportChange(content)
+    case "java":
+      return isJavaExportChange(content)
+    case "kotlin":
+      return isKotlinExportChange(content)
     default:
       return /^export\s/.test(content)
   }
@@ -128,6 +143,25 @@ function isRustExportChange(content: string): boolean {
   const trimmed = content.trimStart()
   if (/^pub\s+(fn|struct|enum|trait|type|mod|use)\s/.test(trimmed)) return true
   if (/^pub\s*\(/.test(trimmed)) return true
+  return false
+}
+
+function isJavaExportChange(content: string): boolean {
+  const trimmed = content.trimStart()
+  if (/^public\s+(class|interface|enum|record|@interface)\s/.test(trimmed)) return true
+  if (/^public\s+[\w<>,\s\[\]]+\s+\w+\s*\(/.test(trimmed)) return true
+  if (/^public\s+static\s+final\s+/.test(trimmed)) return true
+  return false
+}
+
+function isKotlinExportChange(content: string): boolean {
+  const trimmed = content.trimStart()
+  if (/^(private|internal)\s+/.test(trimmed)) return false
+  if (/^\s*fun\s+\w+\s*[:(]/.test(trimmed)) return true
+  if (/^\s*(data\s+)?class\s+\w+/.test(trimmed)) return true
+  if (/^\s*interface\s+\w+/.test(trimmed)) return true
+  if (/^\s*object\s+\w+/.test(trimmed)) return true
+  if (/^\s*(val|var)\s+\w+\s*:/.test(trimmed)) return true
   return false
 }
 
@@ -321,14 +355,24 @@ export function createImplementFeatureBlueprint(
 
           const testPath = deriveAdversarialTestPath(firstFile, ctx.toolchainProfile, "boundary")
           const cleanOutput = stripMarkdownFences(testerOutput)
+          const lang = ctx.toolchainProfile?.language
+          let toWrite = cleanOutput
+          if (lang === "java" || lang === "kotlin") {
+            const ext = lang === "java" ? ".java" : ".kt"
+            const expectedClass = basename(testPath, ext)
+            toWrite = normalizeJvmWrittenTestClassName(cleanOutput, expectedClass, lang)
+            if (lang === "java") {
+              toWrite = sanitizeJavaPrimitiveInstanceofMisuse(toWrite)
+            }
+          }
           const fullPath = resolve(workDir, testPath)
           await mkdir(dirname(fullPath), { recursive: true })
-          await writeFile(fullPath, cleanOutput, "utf-8")
+          await writeFile(fullPath, toWrite, "utf-8")
           await formatGeneratedAdversarialTestFile(ctx, workDir, fullPath)
 
           return {
             status: "ok",
-            data: { testFile: testPath, bytesWritten: cleanOutput.length },
+            data: { testFile: testPath, bytesWritten: toWrite.length },
           }
         },
       },
@@ -580,6 +624,30 @@ export function createImplementFeatureBlueprint(
           const claims = verifyRes.claims
           const lang = profile.language ?? "typescript"
 
+          const files = getAffectedSourceFiles(ctx)
+          const firstFile = files[0]
+          if (!firstFile) {
+            return {
+              status: "fail",
+              error: {
+                code: "NODE_EXECUTION_FAILED",
+                message: "No affected files for contract tests",
+              },
+            }
+          }
+
+          // For JVM multi-module contract tests, the test must be placed in the consumer
+          // module (the one that imports the provider) so it can compile against the edge's
+          // imported symbols. Non-JVM / single-module cases fall through unchanged.
+          const contractExtract = ctx.results["extract-contracts"]?.data as
+            | { contract?: ContractContext }
+            | undefined
+          const contractSourceFile = resolveContractTestModulePrefix(
+            firstFile,
+            contractExtract?.contract,
+            lang,
+          )
+
           // Hoist import lines from claim test bodies into the preamble
           const hoistedImports = new Set<string>()
           const strippedBodies: string[] = []
@@ -604,6 +672,24 @@ export function createImplementFeatureBlueprint(
             preamble = "import pytest\n"
             wrapStart = ""
             wrapEnd = ""
+          } else if (lang === "java" || lang === "kotlin") {
+            const ext = lang === "java" ? "java" : "kt"
+            const derivedRel = deriveAdversarialTestPath(contractSourceFile, profile, "contract")
+            const simpleName = basename(derivedRel, `.${ext}`)
+            const pkg = inferJvmPackageFromMainSource(contractSourceFile)
+            const importLines = [...hoistedImports].sort().join("\n")
+            if (lang === "java") {
+              const jUnitImports =
+                "import org.junit.jupiter.api.Test;\nimport static org.junit.jupiter.api.Assertions.*;"
+              preamble = pkg
+                ? `package ${pkg};\n\n${jUnitImports}\n${importLines}\n`
+                : `${jUnitImports}\n${importLines}\n`
+            } else {
+              preamble = pkg ? `package ${pkg};\n\n${importLines}\n` : `${importLines}\n`
+            }
+            wrapStart =
+              lang === "java" ? `\npublic class ${simpleName} {\n` : `\nclass ${simpleName} {\n`
+            wrapEnd = "\n}\n"
           } else {
             const vitestImport = 'import { describe, it, expect, vi } from "vitest"'
             const allImports = [vitestImport, ...hoistedImports].join("\n")
@@ -612,10 +698,12 @@ export function createImplementFeatureBlueprint(
             wrapEnd = "\n})\n"
           }
 
-          const testBodies = strippedBodies.join("\n\n")
+          let testBodies = strippedBodies.join("\n\n")
+          if (lang === "java" && testBodies.includes("it(")) {
+            testBodies = jvmContractCoerceVitestItToJUnit5(testBodies)
+          }
           const fileContent = `${preamble}${wrapStart}${testBodies}${wrapEnd}`
 
-          const files = getAffectedSourceFiles(ctx)
           const leakedTokens: string[] = []
           for (const filePath of files) {
             try {
@@ -638,18 +726,7 @@ export function createImplementFeatureBlueprint(
             })
           }
 
-          const firstFile = files[0]
-          if (!firstFile) {
-            return {
-              status: "fail",
-              error: {
-                code: "NODE_EXECUTION_FAILED",
-                message: "No affected files for contract tests",
-              },
-            }
-          }
-
-          const derivedRel = deriveAdversarialTestPath(firstFile, profile, "contract")
+          const derivedRel = deriveAdversarialTestPath(contractSourceFile, profile, "contract")
           const testPath = resolveContractTestOutputRel({
             runId: ctx.runId,
             task: ctx.task,

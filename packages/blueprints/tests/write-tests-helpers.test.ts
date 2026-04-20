@@ -1,7 +1,16 @@
+import { join } from "node:path"
 import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
-import type { ToolchainProfile } from "@bollard/detect/src/types.js"
+import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
+import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
 import { describe, expect, it } from "vitest"
-import { deriveAdversarialTestPath, stripMarkdownFences } from "../src/write-tests-helpers.js"
+import {
+  deriveAdversarialTestPath,
+  jvmContractCoerceVitestItToJUnit5,
+  normalizeJvmWrittenTestClassName,
+  resolveContractTestModulePrefix,
+  sanitizeJavaPrimitiveInstanceofMisuse,
+  stripMarkdownFences,
+} from "../src/write-tests-helpers.js"
 
 const makeProfile = (language: string): ToolchainProfile => ({
   language: language as ToolchainProfile["language"],
@@ -115,6 +124,180 @@ describe("deriveAdversarialTestPath", () => {
   it("behavioral scope Go: _behavioral_test suffix", () => {
     expect(deriveAdversarialTestPath("pkg/handler.go", makeProfile("go"), "behavioral")).toBe(
       "pkg/handler_behavioral_test.go",
+    )
+  })
+
+  it("Java boundary: mirrors package under src/test/java with AdversarialTest suffix", () => {
+    expect(
+      deriveAdversarialTestPath("src/main/java/com/example/Foo.java", makeProfile("java")),
+    ).toBe(join("src/test/java/com/example", "FooAdversarialTest.java"))
+  })
+
+  it("Java contract: FooContractTest.java under src/test/java", () => {
+    expect(
+      deriveAdversarialTestPath(
+        "src/main/java/com/example/Foo.java",
+        makeProfile("java"),
+        "contract",
+      ),
+    ).toBe(join("src/test/java/com/example", "FooContractTest.java"))
+  })
+
+  it("Java behavioral: FooBehavioralTest.java under src/test/java", () => {
+    expect(
+      deriveAdversarialTestPath(
+        "src/main/java/com/example/Foo.java",
+        makeProfile("java"),
+        "behavioral",
+      ),
+    ).toBe(join("src/test/java/com/example", "FooBehavioralTest.java"))
+  })
+
+  it("Java multi-module: preserves module dir before src/test (Maven/Gradle)", () => {
+    const base = "core/src/main/java/com/example/core/Calculator.java"
+    expect(deriveAdversarialTestPath(base, makeProfile("java"))).toBe(
+      join("core/src/test/java/com/example/core", "CalculatorAdversarialTest.java"),
+    )
+    expect(deriveAdversarialTestPath(base, makeProfile("java"), "contract")).toBe(
+      join("core/src/test/java/com/example/core", "CalculatorContractTest.java"),
+    )
+    expect(deriveAdversarialTestPath(base, makeProfile("java"), "behavioral")).toBe(
+      join("core/src/test/java/com/example/core", "CalculatorBehavioralTest.java"),
+    )
+  })
+
+  it("Kotlin boundary: mirrors package under src/test/kotlin with AdversarialTest suffix", () => {
+    expect(
+      deriveAdversarialTestPath("src/main/kotlin/com/example/Bar.kt", makeProfile("kotlin")),
+    ).toBe(join("src/test/kotlin/com/example", "BarAdversarialTest.kt"))
+  })
+
+  it("Kotlin contract and behavioral under src/test/kotlin", () => {
+    expect(
+      deriveAdversarialTestPath("src/main/kotlin/x/Y.kt", makeProfile("kotlin"), "contract"),
+    ).toBe(join("src/test/kotlin/x", "YContractTest.kt"))
+    expect(
+      deriveAdversarialTestPath("src/main/kotlin/x/Y.kt", makeProfile("kotlin"), "behavioral"),
+    ).toBe(join("src/test/kotlin/x", "YBehavioralTest.kt"))
+  })
+})
+
+describe("resolveContractTestModulePrefix", () => {
+  const makeContract = (edges: Array<{ from: string; to: string }>): ContractContext => ({
+    modules: [],
+    edges: [],
+    affectedEdges: edges.map((e) => ({
+      from: e.from,
+      to: e.to,
+      importedSymbols: [],
+      providerErrors: [],
+      consumerCatches: [],
+    })),
+  })
+
+  it("rewrites module prefix to consumer for Java cross-module edge", () => {
+    const src = "core/src/main/java/com/example/core/Calculator.java"
+    const contract = makeContract([{ from: "api", to: "core" }])
+    expect(resolveContractTestModulePrefix(src, contract, "java")).toBe(
+      "api/src/main/java/com/example/core/Calculator.java",
+    )
+  })
+
+  it("rewrites module prefix to consumer for Kotlin cross-module edge", () => {
+    const src = "core/src/main/kotlin/com/example/core/Calc.kt"
+    const contract = makeContract([{ from: "api", to: "core" }])
+    expect(resolveContractTestModulePrefix(src, contract, "kotlin")).toBe(
+      "api/src/main/kotlin/com/example/core/Calc.kt",
+    )
+  })
+
+  it("returns original path when no affected edges (single-module)", () => {
+    const src = "src/main/java/com/example/Foo.java"
+    const contract = makeContract([])
+    expect(resolveContractTestModulePrefix(src, contract, "java")).toBe(src)
+  })
+
+  it("returns original path when contract context is undefined", () => {
+    const src = "core/src/main/java/com/example/core/Calculator.java"
+    expect(resolveContractTestModulePrefix(src, undefined, "java")).toBe(src)
+  })
+
+  it("returns original path for non-JVM languages (no-op)", () => {
+    const src = "packages/api/src/index.ts"
+    const contract = makeContract([{ from: "consumer", to: "provider" }])
+    for (const lang of ["typescript", "python", "go", "rust"] as LanguageId[]) {
+      expect(resolveContractTestModulePrefix(src, contract, lang)).toBe(src)
+    }
+  })
+
+  it("returns original path when provider already equals consumer", () => {
+    const src = "api/src/main/java/com/example/api/Facade.java"
+    const contract = makeContract([{ from: "api", to: "api" }])
+    expect(resolveContractTestModulePrefix(src, contract, "java")).toBe(src)
+  })
+
+  it("returns original path when the source lacks src/main/<lang>/ layout", () => {
+    const src = "lib/Foo.java"
+    const contract = makeContract([{ from: "api", to: "core" }])
+    expect(resolveContractTestModulePrefix(src, contract, "java")).toBe(src)
+  })
+
+  it("supports nested Gradle-style module ids (foo/bar)", () => {
+    const src = "core/src/main/java/com/example/core/Calculator.java"
+    const contract = makeContract([{ from: "apps/api", to: "core" }])
+    expect(resolveContractTestModulePrefix(src, contract, "java")).toBe(
+      "apps/api/src/main/java/com/example/core/Calculator.java",
+    )
+  })
+})
+
+describe("jvmContractCoerceVitestItToJUnit5", () => {
+  it("unwraps Vitest it() blocks into @Test methods", () => {
+    const src = `it('delegates', () -> {
+  assertEquals(1.0, 1.0);
+})`
+    const out = jvmContractCoerceVitestItToJUnit5(src)
+    expect(out).toContain("@Test")
+    expect(out).toContain("void contractClaim_0()")
+    expect(out).toContain("assertEquals(1.0, 1.0)")
+    expect(out).not.toContain("it('")
+  })
+})
+
+describe("sanitizeJavaPrimitiveInstanceofMisuse", () => {
+  it("rewrites invalid primitive double instanceof Double assertions", () => {
+    const bad = "Assertions.assertTrue(result instanceof Double || result == (double) result);"
+    expect(sanitizeJavaPrimitiveInstanceofMisuse(bad)).toBe(
+      "Assertions.assertTrue(Double.isFinite(result));",
+    )
+  })
+})
+
+describe("normalizeJvmWrittenTestClassName", () => {
+  it("renames first Java class to match AdversarialTest filename", () => {
+    const src = `import org.junit.jupiter.api.Test;
+
+class CalculatorTest {
+  @Test void t() {}
+}`
+    expect(normalizeJvmWrittenTestClassName(src, "CalculatorAdversarialTest", "java")).toBe(
+      `import org.junit.jupiter.api.Test;
+
+public class CalculatorAdversarialTest {
+  @Test void t() {}
+}`,
+    )
+  })
+
+  it("leaves Java class unchanged when already correct", () => {
+    const src = "public class CalculatorAdversarialTest {\n}\n"
+    expect(normalizeJvmWrittenTestClassName(src, "CalculatorAdversarialTest", "java")).toBe(src)
+  })
+
+  it("renames first Kotlin class to match AdversarialTest filename", () => {
+    const src = "class FooTest {\n}\n"
+    expect(normalizeJvmWrittenTestClassName(src, "FooAdversarialTest", "kotlin")).toBe(
+      "class FooAdversarialTest {\n}\n",
     )
   })
 })

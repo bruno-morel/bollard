@@ -99,6 +99,37 @@ describe("resolveContractTestOutputRel", () => {
       join(".bollard", "runs", "run-9", "adversarial", "contract", "foo.contract.test.ts"),
     )
   })
+
+  it("passes through JVM paths under src/test/ unchanged", () => {
+    const jvm = join("src", "test", "java", "com", "example", "FooContractTest.java")
+    const rel = resolveContractTestOutputRel({
+      runId: "run-9",
+      task: "Add power",
+      derivedRelativePath: jvm,
+      lifecycle: "persistent",
+    })
+    expect(rel).toBe(jvm)
+  })
+
+  it("passes through multi-module JVM paths (module/src/test/...) unchanged", () => {
+    const jvm = join(
+      "core",
+      "src",
+      "test",
+      "java",
+      "com",
+      "example",
+      "core",
+      "FooContractTest.java",
+    )
+    const rel = resolveContractTestOutputRel({
+      runId: "run-9",
+      task: "Add power",
+      derivedRelativePath: jvm,
+      lifecycle: "ephemeral",
+    })
+    expect(rel).toBe(jvm)
+  })
 })
 
 describe("writeTestMetadata", () => {

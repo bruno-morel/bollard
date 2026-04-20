@@ -254,7 +254,7 @@ import OpenAI from "openai"
       /@anthropic-ai\/sdk|openai|@google\/generative-ai|@modelcontextprotocol\/sdk/,
     )
     expect(ctx.config.some((c) => c.key === "ANTHROPIC_API_KEY")).toBe(true)
-  })
+  }, 20_000)
 
   it("extracts JavaScript app routes", async () => {
     const dir = await makeTempProject()

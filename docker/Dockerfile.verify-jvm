@@ -1,0 +1,17 @@
+FROM node:22-slim AS base
+WORKDIR /bollard
+RUN corepack enable && corepack prepare pnpm@latest --activate
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY packages/ packages/
+RUN pnpm install --frozen-lockfile
+COPY . .
+
+FROM base AS verify-jvm
+COPY --from=eclipse-temurin:21-jdk /opt/java/openjdk /opt/java/openjdk
+ENV JAVA_HOME="/opt/java/openjdk" PATH="/opt/java/openjdk/bin:${PATH}"
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends maven \
+    && rm -rf /var/lib/apt/lists/* \
+    && java -version && mvn --version
+ENTRYPOINT ["pnpm", "exec", "tsx"]
+CMD ["packages/cli/src/index.ts", "verify"]

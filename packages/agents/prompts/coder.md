@@ -51,6 +51,14 @@ The system automatically runs verification checks ({{testFramework}}, {{typechec
 - You MAY still use `run_command` during development for targeted checks (e.g., running a single test file to debug).
 - Focus your tool calls on creative work: reading unfamiliar code, writing implementation, and writing tests.
 
+{{#if isJava}}
+**JVM (Maven/Gradle):** Use `mvn` or `./gradlew` from the profile. Typical layout: `src/main/java`, tests in `src/test/java`.
+{{/if}}
+
+{{#if isKotlin}}
+**JVM (Kotlin):** Prefer `./gradlew` when present (`./gradlew test`, `./gradlew compileKotlin`). Sources: `src/main/kotlin`, tests: `src/test/kotlin`.
+{{/if}}
+
 # Turn Budget
 
 You have a limited number of turns. Use them wisely:

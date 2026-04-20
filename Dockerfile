@@ -31,9 +31,31 @@ RUN mkdir -p /out \
     && cp target/release/bollard-extract-rs /out/bollard-extract-rs
 
 # ──────────────────────────────────────────────────────────────
+# Stage C1 — Java helper: fat JAR (Maven)
+# ──────────────────────────────────────────────────────────────
+FROM maven:3.9-eclipse-temurin-21 AS java-jar-builder
+WORKDIR /src
+COPY scripts/extract_java/pom.xml ./
+RUN mvn -q dependency:go-offline
+COPY scripts/extract_java/ ./
+RUN mvn -q package -DskipTests
+
+# ──────────────────────────────────────────────────────────────
+# Stage C2 — Java helper: GraalVM native-image
+# ──────────────────────────────────────────────────────────────
+FROM ghcr.io/graalvm/native-image-community:21 AS java-helper-builder
+COPY --from=java-jar-builder /src/target/bollard-extract-java-1.0.0-jar-with-dependencies.jar /tmp/app.jar
+RUN mkdir -p /out \
+    && native-image \
+        --no-fallback \
+        -jar /tmp/app.jar \
+        -o /out/bollard-extract-java \
+        -H:+ReportExceptionStackTraces
+
+# ──────────────────────────────────────────────────────────────
 # Stage C — dev (fast, day-to-day)
-# Node 22 + pnpm + python3 + pre-built Go/Rust extractor helpers.
-# No Go or Rust toolchain at runtime.
+# Node 22 + pnpm + python3 + pre-built Go/Rust/Java extractor helpers.
+# No Go, Rust, or JVM toolchain at runtime (Java helper is native binary).
 # ──────────────────────────────────────────────────────────────
 FROM node:22-slim AS dev
 RUN apt-get update \
@@ -43,7 +65,8 @@ RUN apt-get update \
 RUN corepack enable && corepack prepare pnpm@latest --activate
 COPY --from=go-helper-builder   /out/bollard-extract-go /usr/local/bin/bollard-extract-go
 COPY --from=rust-helper-builder /out/bollard-extract-rs /usr/local/bin/bollard-extract-rs
-RUN bollard-extract-go --version && bollard-extract-rs --version
+COPY --from=java-helper-builder /out/bollard-extract-java /usr/local/bin/bollard-extract-java
+RUN bollard-extract-go --version && bollard-extract-rs --version && bollard-extract-java --version
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/engine/package.json packages/engine/package.json
@@ -68,11 +91,13 @@ ENTRYPOINT ["pnpm"]
 # make deletions invisible to the layer that created the files.
 # ──────────────────────────────────────────────────────────────
 FROM dev AS dev-full
-ENV GOPATH=/go GOTOOLCHAIN=local PATH=/usr/local/go/bin:/go/bin:/root/.cargo/bin:$PATH
+ENV GOPATH=/go GOTOOLCHAIN=local PATH=/usr/local/go/bin:/go/bin:/root/.cargo/bin:/opt/java/openjdk/bin:$PATH
+COPY --from=eclipse-temurin:21-jdk /opt/java/openjdk /opt/java/openjdk
+ENV JAVA_HOME=/opt/java/openjdk
 RUN set -eux \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-       curl gcc libc6-dev pkg-config python3-pip \
+       curl gcc libc6-dev pkg-config python3-pip maven \
     \
     && ARCH=$(dpkg --print-architecture) \
     && case "$ARCH" in \
@@ -85,6 +110,8 @@ RUN set -eux \
     && rm -rf /usr/local/go/api /usr/local/go/doc \
               /usr/local/go/test /usr/local/go/misc \
     && go version \
+    \
+    && java -version && mvn --version \
     \
     && curl -fsSL https://sh.rustup.rs \
        | sh -s -- -y --default-toolchain stable --profile minimal \

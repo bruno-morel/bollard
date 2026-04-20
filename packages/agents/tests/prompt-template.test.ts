@@ -24,6 +24,48 @@ const TS_PROFILE: ToolchainProfile = {
   adversarial: defaultAdversarialConfig({ language: "typescript" }),
 }
 
+const JAVA_PROFILE: ToolchainProfile = {
+  language: "java",
+  packageManager: "maven",
+  checks: {
+    typecheck: { label: "mvn compile", cmd: "mvn", args: ["compile"], source: "auto-detected" },
+    lint: { label: "checkstyle", cmd: "mvn", args: ["checkstyle:check"], source: "auto-detected" },
+    test: { label: "mvn test", cmd: "mvn", args: ["test"], source: "auto-detected" },
+    audit: { label: "owasp", cmd: "mvn", args: ["verify"], source: "auto-detected" },
+  },
+  sourcePatterns: ["**/*.java"],
+  testPatterns: ["**/test/**/*.java"],
+  ignorePatterns: ["target"],
+  allowedCommands: ["mvn", "java", "javac", "git"],
+  adversarial: defaultAdversarialConfig({ language: "java" }),
+}
+
+const KOTLIN_PROFILE: ToolchainProfile = {
+  language: "kotlin",
+  packageManager: "gradle",
+  checks: {
+    typecheck: {
+      label: "compile",
+      cmd: "./gradlew",
+      args: ["compileKotlin"],
+      source: "auto-detected",
+    },
+    lint: { label: "detekt", cmd: "./gradlew", args: ["detekt"], source: "auto-detected" },
+    test: { label: "test", cmd: "./gradlew", args: ["test"], source: "auto-detected" },
+    audit: {
+      label: "audit",
+      cmd: "./gradlew",
+      args: ["dependencyCheckAnalyze"],
+      source: "auto-detected",
+    },
+  },
+  sourcePatterns: ["**/*.kt"],
+  testPatterns: ["**/test/**/*.kt"],
+  ignorePatterns: ["build"],
+  allowedCommands: ["./gradlew", "gradle", "java", "git"],
+  adversarial: defaultAdversarialConfig({ language: "kotlin" }),
+}
+
 const PY_PROFILE: ToolchainProfile = {
   language: "python",
   packageManager: "poetry",
@@ -212,5 +254,19 @@ describe("fillPromptTemplate", () => {
     const r = fillPromptTemplate(t, TS_PROFILE)
     expect(r).not.toContain("{{")
     expect(r).not.toContain("Z")
+  })
+
+  it("renders isJava block for Java profile", () => {
+    const t = "{{#if isJava}}JVM{{/if}}{{#if isKotlin}}Kotlin{{/if}}"
+    expect(fillPromptTemplate(t, JAVA_PROFILE)).toBe("JVM")
+    expect(fillPromptTemplate(t, KOTLIN_PROFILE)).toBe("Kotlin")
+    expect(fillPromptTemplate(t, TS_PROFILE)).toBe("")
+  })
+
+  it("JVM profiles include java and build tools in allowed commands string", () => {
+    const t = "{{allowedCommands}}"
+    expect(fillPromptTemplate(t, JAVA_PROFILE)).toContain("mvn")
+    expect(fillPromptTemplate(t, JAVA_PROFILE)).toContain("java")
+    expect(fillPromptTemplate(t, KOTLIN_PROFILE)).toContain("gradle")
   })
 })

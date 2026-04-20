@@ -6,6 +6,7 @@ import { detectToolchain } from "../src/detect.js"
 import { detect as detectFallback } from "../src/languages/fallback.js"
 import { buildManualProfile } from "../src/languages/fallback.js"
 import { detect as detectGo, parseGoWorkUses } from "../src/languages/go.js"
+import { detect as detectJava } from "../src/languages/java.js"
 import { detect as detectJavascript } from "../src/languages/javascript.js"
 import { detect as detectPython } from "../src/languages/python.js"
 import { detect as detectRust } from "../src/languages/rust.js"
@@ -18,6 +19,13 @@ const PY_PROJECT = resolve(FIXTURES, "py-project")
 const GO_PROJECT = resolve(FIXTURES, "go-project")
 const GO_WORKSPACE = resolve(FIXTURES, "go-workspace")
 const RUST_PROJECT = resolve(FIXTURES, "rust-project")
+const JAVA_MAVEN = resolve(FIXTURES, "java-maven")
+const JAVA_GRADLE = resolve(FIXTURES, "java-gradle")
+const KOTLIN_GRADLE = resolve(FIXTURES, "kotlin-gradle")
+const JAVA_KOTLIN_MIXED = resolve(FIXTURES, "java-kotlin-mixed")
+const JAVA_GRADLE_WITH_POM = resolve(FIXTURES, "java-gradle-with-pom")
+const JAVA_MAVEN_AUDIT = resolve(FIXTURES, "java-maven-audit")
+const JAVA_GRADLE_AUDIT = resolve(FIXTURES, "java-gradle-audit")
 const EMPTY_PROJECT = resolve(FIXTURES, "empty-project")
 
 describe("TypeScript detector", () => {
@@ -310,5 +318,81 @@ describe("detectToolchain orchestrator", () => {
     expect(profile.checks.test?.args).toEqual(["run", "test"])
     expect(profile.checks.audit?.cmd).toBe("npm")
     expect(profile.checks.audit?.args).toEqual(["audit", "--audit-level=high"])
+  })
+
+  it("detects Maven Java project", async () => {
+    const profile = await detectToolchain(JAVA_MAVEN)
+    expect(profile.language).toBe("java")
+    expect(profile.packageManager).toBe("maven")
+    expect(profile.checks.typecheck?.cmd).toBe("mvn")
+    expect(profile.mutation?.tool).toBe("pitest")
+    expect(profile.allowedCommands).toContain("mvn")
+    expect(profile.allowedCommands).toContain("java")
+  })
+
+  it("detects Gradle Java project", async () => {
+    const profile = await detectToolchain(JAVA_GRADLE)
+    expect(profile.language).toBe("java")
+    expect(profile.packageManager).toBe("gradle")
+    expect(profile.checks.test?.cmd).toMatch(/gradle/)
+    expect(profile.mutation?.tool).toBe("pitest")
+  })
+
+  it("detects Kotlin-only Gradle as kotlin", async () => {
+    const profile = await detectToolchain(KOTLIN_GRADLE)
+    expect(profile.language).toBe("kotlin")
+    expect(profile.packageManager).toBe("gradle")
+  })
+
+  it("detects mixed Java/Kotlin as java", async () => {
+    const profile = await detectToolchain(JAVA_KOTLIN_MIXED)
+    expect(profile.language).toBe("java")
+    expect(profile.packageManager).toBe("gradle")
+  })
+
+  it("prefers Gradle when both pom and Gradle markers exist", async () => {
+    const profile = await detectToolchain(JAVA_GRADLE_WITH_POM)
+    expect(profile.packageManager).toBe("gradle")
+  })
+})
+
+describe("Java/Kotlin detector (direct)", () => {
+  it("Maven: java + maven + pitest + checkstyle lint when checkstyle.xml present", async () => {
+    const r = await detectJava(JAVA_MAVEN)
+    expect(r?.language).toBe("java")
+    expect(r?.packageManager).toBe("maven")
+    expect(r?.checks.lint?.label).toBe("checkstyle")
+    expect(r?.mutation?.enabled).toBe(true)
+    expect(r?.mutation?.tool).toBe("pitest")
+    expect(r?.sourcePatterns).toContain("**/*.java")
+  })
+
+  it("returns null when no JVM project markers", async () => {
+    expect(await detectJava(EMPTY_PROJECT)).toBeNull()
+  })
+
+  it("Maven: omits audit when OWASP dependency-check plugin is not declared", async () => {
+    const r = await detectJava(JAVA_MAVEN)
+    expect(r?.checks.audit).toBeUndefined()
+  })
+
+  it("Maven: emits audit command when OWASP dependency-check plugin is declared", async () => {
+    const r = await detectJava(JAVA_MAVEN_AUDIT)
+    expect(r?.checks.audit).toBeDefined()
+    expect(r?.checks.audit?.cmd).toBe("mvn")
+    expect(r?.checks.audit?.args).toEqual(["org.owasp:dependency-check-maven:check"])
+    expect(r?.checks.audit?.label).toBe("OWASP dependency-check")
+  })
+
+  it("Gradle: omits audit when dependencyCheck plugin is not declared", async () => {
+    const r = await detectJava(JAVA_GRADLE)
+    expect(r?.checks.audit).toBeUndefined()
+  })
+
+  it("Gradle: emits audit command when dependencyCheck plugin is declared", async () => {
+    const r = await detectJava(JAVA_GRADLE_AUDIT)
+    expect(r?.checks.audit).toBeDefined()
+    expect(r?.checks.audit?.args).toEqual(["dependencyCheckAnalyze"])
+    expect(r?.checks.audit?.label).toBe("gradle dependencyCheckAnalyze")
   })
 })

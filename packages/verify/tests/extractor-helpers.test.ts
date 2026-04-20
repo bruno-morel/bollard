@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile)
 const THIS_DIR = dirname(fileURLToPath(import.meta.url))
 const GO_FIXTURE = resolve(THIS_DIR, "fixtures/extractor-helpers/go/sample.go")
 const RUST_FIXTURE = resolve(THIS_DIR, "fixtures/extractor-helpers/rust/sample.rs")
+const JAVA_FIXTURE = resolve(THIS_DIR, "fixtures/extractors/java/Sample.java")
 
 interface ExtractedSignature {
   filePath: string
@@ -63,6 +64,37 @@ describe("bollard-extract-go helper", () => {
   })
 })
 
+describe("bollard-extract-java helper", () => {
+  it("prints version", async () => {
+    const { stdout } = await execFileAsync("bollard-extract-java", ["--version"], {
+      timeout: 30_000,
+    })
+    expect(stdout.trim()).toContain("bollard-extract-java")
+  })
+
+  it("extracts public class and method from a Java file", async () => {
+    const { stdout } = await execFileAsync("bollard-extract-java", [JAVA_FIXTURE], {
+      cwd: dirname(JAVA_FIXTURE),
+      timeout: 30_000,
+    })
+
+    const result: HelperResult = JSON.parse(stdout)
+
+    expect(result.signatures).toBeInstanceOf(Array)
+    expect(result.signatures.length).toBe(1)
+    expect(result.types).toBeInstanceOf(Array)
+
+    const sig = result.signatures[0]
+    expect(sig).toBeDefined()
+    expect(sig?.filePath).toBe(JAVA_FIXTURE)
+    expect(sig?.signatures).toContain("Sample")
+    expect(sig?.signatures).toContain("getName")
+
+    const typeNames = result.types.map((t) => t.name)
+    expect(typeNames).toContain("Sample")
+  })
+})
+
 describe("bollard-extract-rs helper", () => {
   it("extracts pub items and skips private ones from a Rust file", async () => {
     const { stdout } = await execFileAsync("bollard-extract-rs", [RUST_FIXTURE], {
@@ -108,5 +140,15 @@ describe("helper error handling", () => {
     expect(goResult.warnings).toBeDefined()
     expect(goResult.warnings?.length).toBeGreaterThan(0)
     expect(goResult.signatures[0]?.signatures).toBe("")
+
+    const { stdout: javaOut } = await execFileAsync(
+      "bollard-extract-java",
+      [join(dirname(JAVA_FIXTURE), "Missing.java")],
+      { cwd: dirname(JAVA_FIXTURE), timeout: 30_000 },
+    )
+    const javaResult: HelperResult = JSON.parse(javaOut)
+    expect(javaResult.warnings).toBeDefined()
+    expect(javaResult.warnings?.length).toBeGreaterThan(0)
+    expect(javaResult.signatures[0]?.signatures).toBe("")
   })
 })

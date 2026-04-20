@@ -24,9 +24,12 @@ const {
   parseStrykerReport,
   parseMutmutResultsOutput,
   parseCargoMutantsOutcomes,
+  parsePitReport,
+  derivePitTargetClasses,
   StrykerProvider,
   MutmutProvider,
   CargoMutantsProvider,
+  PitestProvider,
   getMutationProvider,
   runMutationTesting,
 } = await import("../src/mutation.js")
@@ -477,10 +480,53 @@ describe("CargoMutantsProvider", () => {
   })
 })
 
+describe("parsePitReport", () => {
+  it("counts KILLED, SURVIVED, NO_COVERAGE, TIMED_OUT from mutations.xml", () => {
+    const xml = `<mutations>
+  <mutation detected="true" status="KILLED"/>
+  <mutation detected="false" status="SURVIVED"/>
+  <mutation detected="false" status="NO_COVERAGE"/>
+  <mutation detected="false" status="TIMED_OUT"/>
+</mutations>`
+    const r = parsePitReport(xml)
+    expect(r.killed).toBe(1)
+    expect(r.survived).toBe(1)
+    expect(r.noCoverage).toBe(1)
+    expect(r.timeout).toBe(1)
+    expect(r.totalMutants).toBe(4)
+    expect(r.score).toBeGreaterThan(0)
+  })
+
+  it("returns zero for empty xml", () => {
+    const r = parsePitReport("")
+    expect(r.totalMutants).toBe(0)
+    expect(r.score).toBe(0)
+  })
+})
+
+describe("derivePitTargetClasses", () => {
+  it("maps Java source paths to comma-separated FQCNs", () => {
+    const profile = makeProfile()
+    expect(derivePitTargetClasses(["src/main/java/com/foo/Bar.java"], profile)).toBe("com.foo.Bar")
+  })
+
+  it("maps Kotlin paths", () => {
+    const profile = makeProfile()
+    expect(derivePitTargetClasses(["src/main/kotlin/a/B.kt"], profile)).toBe("a.B")
+  })
+
+  it("uses star when no files", () => {
+    const profile = makeProfile()
+    expect(derivePitTargetClasses(undefined, profile)).toBe("*")
+  })
+})
+
 describe("getMutationProvider", () => {
   it("routes to correct provider by language", () => {
     expect(getMutationProvider("python")).toBeInstanceOf(MutmutProvider)
     expect(getMutationProvider("rust")).toBeInstanceOf(CargoMutantsProvider)
+    expect(getMutationProvider("java")).toBeInstanceOf(PitestProvider)
+    expect(getMutationProvider("kotlin")).toBeInstanceOf(PitestProvider)
     expect(getMutationProvider("go")).toBeUndefined()
   })
 })

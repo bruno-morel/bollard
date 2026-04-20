@@ -152,6 +152,54 @@ mod tests {
     }
 }
 ```
+{{else if isJava}}
+Generate JUnit 5 tests. Use:
+
+- `@Test` from `org.junit.jupiter.api.Test`
+- `assertThrows`, `assertEquals`, `assertNotNull` from `org.junit.jupiter.api.Assertions`
+- `@ParameterizedTest` with `@ValueSource` or `@CsvSource` for edge cases
+- **The test file is saved as `<SourceBase>AdversarialTest.java` (same package as the class under test).** Name the **public** class exactly `<SourceBase>AdversarialTest` (e.g. `CalculatorAdversarialTest` for `Calculator.java`). Start with a `package ...;` line matching `src/test/java/...`.
+- **Numeric correctness:** For `power` / exponentiation with a **negative base**, an **odd** integer exponent yields a **negative** result (e.g. (-2)³ = -8). Only even exponents make the result positive. Match normal real arithmetic unless the task explicitly defines different rules.
+
+Do NOT use: JUnit 4 (`@RunWith`, `org.junit.Assert`), Mockito, or Spring test annotations unless the project already uses them.
+
+```java
+package com.example;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assertions;
+
+public class CalculatorAdversarialTest {
+  @Test
+  void shouldDoSomething() {
+    // ...
+  }
+}
+```
+{{else if isKotlin}}
+Generate JUnit 5 tests in Kotlin. Use:
+
+- `@Test`, `assertEquals`, `assertThrows` from `org.junit.jupiter.api`
+- `assertFailsWith<ExceptionType> { }` where appropriate
+- `@ParameterizedTest` for edge cases
+- **The file is saved as `<SourceBase>AdversarialTest.kt`.** Name the class exactly `<SourceBase>AdversarialTest` and use a `package` line matching `src/test/kotlin/...`.
+- **Numeric correctness:** For `power` with a negative base, odd exponents preserve the sign of the base unless the task says otherwise.
+
+Do NOT use: JUnit 4, Mockito, or Spring test annotations unless the project already uses them.
+
+```kotlin
+package com.example
+
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+
+class CalculatorAdversarialTest {
+  @Test
+  fun shouldDoSomething() {
+    // ...
+  }
+}
+```
 {{else}}
 Use the test framework conventions appropriate for the language. Start with imports, then structured test cases.
 {{/if}}

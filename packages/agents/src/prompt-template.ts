@@ -101,6 +101,8 @@ export function fillPromptTemplate(
     isPython: lang === "python",
     isGo: lang === "go",
     isRust: lang === "rust",
+    isJava: lang === "java",
+    isKotlin: lang === "kotlin",
   }
 
   let result = processConditionals(template, conditionVars)

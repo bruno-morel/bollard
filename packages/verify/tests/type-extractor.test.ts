@@ -7,6 +7,7 @@ import { BollardError } from "@bollard/engine/src/errors.js"
 import type { LLMProvider } from "@bollard/llm/src/types.js"
 import { describe, expect, it } from "vitest"
 import { GoAstExtractor } from "../src/extractors/go.js"
+import { JavaParserExtractor } from "../src/extractors/java.js"
 import { PythonAstExtractor } from "../src/extractors/python.js"
 import { RustSynExtractor } from "../src/extractors/rust.js"
 import {
@@ -51,6 +52,7 @@ function hasExecutable(cmd: string, args: string[]): boolean {
 }
 
 const PYTHON3_ON_PATH = hasExecutable("python3", ["--version"])
+const JAVA_EXTRACT_ON_PATH = hasExecutable("bollard-extract-java", ["--version"])
 
 async function readSource(pkgPath: string): Promise<string> {
   return readFile(resolve(PACKAGES_DIR, pkgPath), "utf-8")
@@ -189,6 +191,17 @@ export function publicFn(): void { }
     expect(result).not.toContain("ctx")
     expect(result).not.toContain("publicFn")
   })
+
+  it("returns empty for .java and .kt (TS AST cannot model JVM modifiers without false positives)", () => {
+    const java = `
+public class X {
+  private final Calculator calc = new Calculator();
+  private int secretField;
+}
+`
+    expect(extractPrivateIdentifiers("Foo.java", java)).toEqual([])
+    expect(extractPrivateIdentifiers("Bar.kt", "private val x = 1")).toEqual([])
+  })
 })
 
 describe("extractTypeDefinitions", () => {
@@ -321,10 +334,12 @@ describe("SignatureExtractor implementations", () => {
     expect(extractor).toBeInstanceOf(TsCompilerExtractor)
   })
 
-  it("getExtractor returns deterministic extractors for python, go, rust", () => {
+  it("getExtractor returns deterministic extractors for python, go, rust, java, kotlin", () => {
     expect(getExtractor("python")).toBeInstanceOf(PythonAstExtractor)
     expect(getExtractor("go")).toBeInstanceOf(GoAstExtractor)
     expect(getExtractor("rust")).toBeInstanceOf(RustSynExtractor)
+    expect(getExtractor("java")).toBeInstanceOf(JavaParserExtractor)
+    expect(getExtractor("kotlin")).toBeInstanceOf(JavaParserExtractor)
   })
 
   it("getExtractor with provider still uses PythonAstExtractor for python", () => {
@@ -586,6 +601,17 @@ pub type Qux = Vec<i32>;
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe("JavaParserExtractor", () => {
+  it.skipIf(!JAVA_EXTRACT_ON_PATH)("extracts public API from a Java fixture", async () => {
+    const fp = resolve(THIS_DIR, "fixtures/extractors/java/Sample.java")
+    const ext = new JavaParserExtractor()
+    const result = await ext.extract([fp], undefined, dirname(fp))
+    expect(result.signatures.length).toBeGreaterThan(0)
+    expect(result.signatures[0]?.signatures).toContain("Sample")
+    expect(result.signatures[0]?.signatures).toContain("getName")
   })
 })
 

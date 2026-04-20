@@ -1,0 +1,4 @@
+plugins {
+  id 'java'
+  id 'org.owasp.dependencycheck' version '9.0.9'
+}

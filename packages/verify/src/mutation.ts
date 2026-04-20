@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
-import { readFile, writeFile } from "node:fs/promises"
+import { existsSync } from "node:fs"
+import { readFile, readdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
@@ -501,9 +502,182 @@ export class StrykerProvider implements MutationTestingProvider {
   }
 }
 
+/** Map source paths to FQCNs for PIT `-DtargetClasses`. */
+export function derivePitTargetClasses(
+  mutateFiles: string[] | undefined,
+  _profile: ToolchainProfile,
+): string {
+  if (!mutateFiles || mutateFiles.length === 0) {
+    return "*"
+  }
+  const classes: string[] = []
+  for (const f of mutateFiles) {
+    const norm = f.replace(/\\/g, "/")
+    const m = norm.match(/src\/main\/(?:java|kotlin)\/(.+)\.(java|kt)$/)
+    if (m?.[1]) {
+      classes.push(m[1].replace(/\//g, "."))
+    }
+  }
+  return classes.length > 0 ? classes.join(",") : "*"
+}
+
+/** Parse PIT `mutations.xml` (regex-based, no XML dependency). */
+export function parsePitReport(xmlText: string): MutationTestResult {
+  let killed = 0
+  let survived = 0
+  let noCoverage = 0
+  let timeout = 0
+  const re = /status="(KILLED|SURVIVED|NO_COVERAGE|TIMED_OUT|RUN_ERROR)"/gi
+  let m: RegExpExecArray | null
+  while (true) {
+    m = re.exec(xmlText)
+    if (m === null) break
+    const s = m[1]?.toUpperCase()
+    if (s === "KILLED") killed++
+    else if (s === "SURVIVED") survived++
+    else if (s === "NO_COVERAGE") noCoverage++
+    else if (s === "TIMED_OUT" || s === "RUN_ERROR") timeout++
+  }
+  const totalMutants = killed + survived + noCoverage + timeout
+  const score = totalMutants > 0 ? ((killed + timeout) / totalMutants) * 100 : 0
+  return {
+    score,
+    killed,
+    survived,
+    noCoverage,
+    timeout,
+    totalMutants,
+    duration_ms: 0,
+  }
+}
+
+async function findPitMutationsXml(workDir: string): Promise<string | undefined> {
+  const candidates = [
+    join(workDir, "target/pit-reports/mutations.xml"),
+    join(workDir, "build/reports/pitest/mutations.xml"),
+  ]
+  for (const p of candidates) {
+    if (existsSync(p)) return p
+  }
+  try {
+    const pitRoot = join(workDir, "target/pit-reports")
+    const entries = await readdir(pitRoot, { withFileTypes: true })
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        const p = join(pitRoot, e.name, "mutations.xml")
+        if (existsSync(p)) return p
+      }
+    }
+  } catch {
+    /* no pit reports */
+  }
+  return undefined
+}
+
+export class PitestProvider implements MutationTestingProvider {
+  readonly language: LanguageId = "java"
+
+  async run(
+    workDir: string,
+    profile: ToolchainProfile,
+    mutateFiles?: string[],
+  ): Promise<MutationTestResult> {
+    const startMs = Date.now()
+    const isGradle = profile.packageManager === "gradle"
+    const targetClasses = derivePitTargetClasses(mutateFiles, profile)
+    const timeout = profile.mutation?.timeoutMs ?? 600_000
+
+    if (isGradle) {
+      const gradlew = join(workDir, "gradlew")
+      const cmd = existsSync(gradlew) ? "./gradlew" : "gradle"
+      try {
+        await execFileAsync(
+          cmd,
+          [
+            "pitest",
+            `-DtargetClasses=${targetClasses}`,
+            "-DoutputFormats=XML",
+            "-DtimestampedReports=false",
+          ],
+          {
+            cwd: workDir,
+            maxBuffer: 10 * 1024 * 1024,
+            timeout,
+          },
+        )
+      } catch (err: unknown) {
+        if (isExecNotFound(err)) {
+          throw new BollardError({
+            code: "NODE_EXECUTION_FAILED",
+            message:
+              "gradle/gradlew not found — add Gradle wrapper or use dev-full image with Gradle on PATH",
+            ...(err instanceof Error ? { cause: err } : {}),
+          })
+        }
+        process.stderr.write(
+          `bollard: pitest (gradle) failed: ${err instanceof Error ? err.message : String(err)}\n`,
+        )
+        return { ...ZERO_RESULT, duration_ms: Date.now() - startMs }
+      }
+    } else {
+      try {
+        await execFileAsync(
+          "mvn",
+          [
+            "org.pitest:pitest-maven:mutationCoverage",
+            `-DtargetClasses=${targetClasses}`,
+            "-DoutputFormats=XML",
+            "-DtimestampedReports=false",
+            "-q",
+          ],
+          {
+            cwd: workDir,
+            maxBuffer: 10 * 1024 * 1024,
+            timeout,
+          },
+        )
+      } catch (err: unknown) {
+        if (isExecNotFound(err)) {
+          throw new BollardError({
+            code: "NODE_EXECUTION_FAILED",
+            message: "mvn not found — install Maven or use the dev-full image",
+            ...(err instanceof Error ? { cause: err } : {}),
+          })
+        }
+        process.stderr.write(
+          `bollard: pitest (maven) failed: ${err instanceof Error ? err.message : String(err)}\n`,
+        )
+        return { ...ZERO_RESULT, duration_ms: Date.now() - startMs }
+      }
+    }
+
+    const reportPath = await findPitMutationsXml(workDir)
+    if (!reportPath) {
+      process.stderr.write("bollard: PIT mutations.xml not found after pitest run\n")
+      return { ...ZERO_RESULT, duration_ms: Date.now() - startMs }
+    }
+    let xmlText: string
+    try {
+      xmlText = await readFile(reportPath, "utf-8")
+    } catch (err: unknown) {
+      process.stderr.write(
+        `bollard: failed to read PIT report: ${err instanceof Error ? err.message : String(err)}\n`,
+      )
+      return { ...ZERO_RESULT, duration_ms: Date.now() - startMs }
+    }
+    const result = parsePitReport(xmlText)
+    return {
+      ...result,
+      duration_ms: Date.now() - startMs,
+      reportPath,
+    }
+  }
+}
+
 const strykerSingleton = new StrykerProvider()
 const mutmutSingleton = new MutmutProvider()
 const cargoMutantsSingleton = new CargoMutantsProvider()
+const pitestSingleton = new PitestProvider()
 
 export function getMutationProvider(language: LanguageId): MutationTestingProvider | undefined {
   switch (language) {
@@ -514,6 +688,9 @@ export function getMutationProvider(language: LanguageId): MutationTestingProvid
       return mutmutSingleton
     case "rust":
       return cargoMutantsSingleton
+    case "java":
+    case "kotlin":
+      return pitestSingleton
     default:
       return undefined
   }

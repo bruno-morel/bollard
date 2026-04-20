@@ -54,6 +54,11 @@ export function resolveContractTestOutputRel(params: {
   derivedRelativePath: string
   lifecycle: "ephemeral" | "persistent"
 }): string {
+  const derived = params.derivedRelativePath.replace(/\\/g, "/")
+  /** JVM contract tests live under `src/test/**` (or `<module>/src/test/**` in multi-module builds) */
+  if (derived.includes("/src/test/") || derived.startsWith("src/test/")) {
+    return params.derivedRelativePath
+  }
   const slug = _slugify(params.task)
   const fileName = basename(params.derivedRelativePath)
   if (params.lifecycle === "persistent") {
@@ -69,6 +74,10 @@ export function resolveBehavioralTestOutputRel(params: {
   derivedRelativePath: string
   lifecycle: "ephemeral" | "persistent"
 }): string {
+  const derived = params.derivedRelativePath.replace(/\\/g, "/")
+  if (derived.includes("/src/test/") || derived.startsWith("src/test/")) {
+    return params.derivedRelativePath
+  }
   const slug = _slugify(params.task)
   const fileName = basename(params.derivedRelativePath)
   if (params.lifecycle === "persistent") {

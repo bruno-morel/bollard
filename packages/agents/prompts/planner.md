@@ -12,6 +12,14 @@ Source files match: {{sourcePatterns}}.
 Test files match: {{testPatterns}}.
 Allowed commands: {{allowedCommands}}.
 
+{{#if isJava}}
+For Maven/Gradle JVM projects: expect `pom.xml` or `build.gradle(.kts)`, `src/main/java`, and `src/test/java` for tests.
+{{/if}}
+
+{{#if isKotlin}}
+For Kotlin JVM projects: expect Gradle with `src/main/kotlin` and `src/test/kotlin` when using the Kotlin plugin.
+{{/if}}
+
 # What You Receive
 
 - A task description (what needs to be built, fixed, or changed)

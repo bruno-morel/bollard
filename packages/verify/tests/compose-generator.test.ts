@@ -27,6 +27,21 @@ const TS_PROFILE: ToolchainProfile = {
   adversarial: withBoundaryOverrides("typescript", { mode: "both" }),
 }
 
+const JAVA_PROFILE: ToolchainProfile = {
+  language: "java",
+  packageManager: "maven",
+  checks: {
+    typecheck: { label: "compile", cmd: "mvn", args: ["compile"], source: "auto-detected" },
+    lint: { label: "checkstyle", cmd: "mvn", args: ["checkstyle:check"], source: "auto-detected" },
+    test: { label: "test", cmd: "mvn", args: ["test"], source: "auto-detected" },
+  },
+  sourcePatterns: ["**/*.java"],
+  testPatterns: ["**/test/**/*.java"],
+  ignorePatterns: ["target"],
+  allowedCommands: ["mvn", "java"],
+  adversarial: withBoundaryOverrides("java", { mode: "both" }),
+}
+
 const PY_PROFILE: ToolchainProfile = {
   language: "python",
   packageManager: "poetry",
@@ -72,6 +87,34 @@ describe("generateVerifyCompose", () => {
     expect(result.services).toContain("verify-native")
     expect(result.yaml).toContain("python:3.12-slim")
     expect(result.yaml).toContain("bollard/verify:latest")
+  })
+
+  it("uses eclipse-temurin:21 for Java profiles", () => {
+    const result = generateVerifyCompose({
+      workDir: "/tmp/java-project",
+      profile: JAVA_PROFILE,
+    })
+    expect(result.yaml).toContain("eclipse-temurin:21")
+    expect(result.yaml).toContain("mvn test")
+  })
+
+  it("uses eclipse-temurin:21 for Kotlin profiles", () => {
+    const kotlinProfile: ToolchainProfile = {
+      ...JAVA_PROFILE,
+      language: "kotlin",
+      packageManager: "gradle",
+      checks: {
+        ...JAVA_PROFILE.checks,
+        test: { label: "test", cmd: "./gradlew", args: ["test"], source: "auto-detected" },
+      },
+      adversarial: withBoundaryOverrides("kotlin", { mode: "both" }),
+    }
+    const result = generateVerifyCompose({
+      workDir: "/tmp/kt-project",
+      profile: kotlinProfile,
+    })
+    expect(result.yaml).toContain("eclipse-temurin:21")
+    expect(result.yaml).toContain("./gradlew test")
   })
 
   it("omits verify-native when adversarial mode is blackbox", () => {
@@ -225,5 +268,31 @@ describe("generateBehavioralCompose", () => {
       behavioralTestRelPath: "t.test.ts",
     })
     expect(result.yaml).toContain("pnpm run start")
+  })
+
+  it("JVM: uses mvn spring-boot:run when pom.xml is present", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "bollard-beh-compose-"))
+    await writeFile(join(tempDir, "pom.xml"), "<project/>", "utf-8")
+    const result = await generateBehavioralCompose({
+      workDir: tempDir,
+      profile: JAVA_PROFILE,
+      behavioralContext: EMPTY_BEHAVIORAL,
+      behavioralTestRelPath: "src/test/java/XTest.java",
+    })
+    expect(result.yaml).toContain("mvn spring-boot:run")
+    expect(result.yaml).toContain("eclipse-temurin:21")
+  })
+
+  it("JVM: uses gradle bootRun when build.gradle is present", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "bollard-beh-compose-"))
+    await writeFile(join(tempDir, "build.gradle"), "plugins { id 'java' }", "utf-8")
+    const result = await generateBehavioralCompose({
+      workDir: tempDir,
+      profile: JAVA_PROFILE,
+      behavioralContext: EMPTY_BEHAVIORAL,
+      behavioralTestRelPath: "src/test/java/XTest.java",
+    })
+    expect(result.yaml).toContain("gradle bootRun")
+    expect(result.yaml).toContain("eclipse-temurin:21")
   })
 })

@@ -73,6 +73,14 @@ If you cannot ground a claim in the provided BehavioralContext, **do not emit it
 **Vitest:** `toThrow()` accepts an Error class or a regex, NOT a callback. For error codes use try/catch with `expect` on fields.
 {{/if}}
 
+{{#if isJava}}
+**JVM services:** When endpoints suggest Spring Boot / servlet containers, use `HttpClient`, `RestTemplate`, or `WebClient`-style assertions against `BASE_URL`. For plain JAR `main` apps, use process or HTTP probes as implied by the endpoint catalog.
+{{/if}}
+
+{{#if isKotlin}}
+**JVM / Ktor / Spring:** Prefer framework-native HTTP clients if the stack is evident from the context; otherwise use Java `HttpClient` against `BASE_URL`.
+{{/if}}
+
 ## Example (shape only)
 
 ```json

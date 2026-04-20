@@ -26,7 +26,13 @@ export type PackageManagerId =
   | "gradle"
   | "maven"
 
-export type MutationToolId = "stryker" | "mutmut" | "go-mutesting" | "cargo-mutants" | "mutant"
+export type MutationToolId =
+  | "stryker"
+  | "mutmut"
+  | "go-mutesting"
+  | "cargo-mutants"
+  | "mutant"
+  | "pitest"
 
 export type ConfigSource = "default" | "auto-detected" | "env" | "file" | "cli"
 

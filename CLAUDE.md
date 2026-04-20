@@ -47,6 +47,8 @@ docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan 
 - **Advanced fault injection:** Only `service_stop` implemented; network_delay/resource_limit are future work.
 - **`runBlueprint` signature:** takes an optional trailing `toolchainProfile` — omitting it silently disables contract nodes. Any new entry point that constructs a blueprint run must thread the profile through (see CLI `implement-feature` for the pattern).
 - **Vitest discovery of `.bollard/`:** `runTests` branches on paths containing `.bollard/` and uses `vitest.contract.config.ts`. Any new "write test to `.bollard/` then run it" flow must go through `runTests(profile, testFiles)` rather than invoking `pnpm run test` directly.
+- **JVM cross-module contract tests:** `resolveContractTestModulePrefix` places contract tests in the consumer module (from `affectedEdges[0].from`). If the contract-tester agent generates assertions that assume the consumer has been extended (e.g., new dispatch cases), those tests may fail at runtime — this is an LLM test-design issue, not infrastructure.
+- **JVM audit detection:** OWASP dependency-check commands are only emitted when the plugin is declared in `pom.xml` / `build.gradle(.kts)`. Projects without the plugin get no `audit` check (previously caused hard failures).
 
 ## Tech Stack (Non-Negotiable)
 
@@ -317,7 +319,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** 9 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`, `behavioral-tester.md`
-- **Latest count (authoritative, 2026-04-19, Stage 4c Part 2 full validation re-run):** `753` passed, `4` skipped (757 total, 60 files). Skips: 4 LLM live smoke tests (no key). Stage 4c Part 2 adds JVM detection, Graal `bollard-extract-java`, `JavaContractProvider`, PIT mutation provider, Surefire/Gradle test parsers, JVM compose images, risk-gate patterns, and prompt `isJava`/`isKotlin` blocks (+~47 tests vs Part 1 baseline).
+- **Latest count (authoritative, 2026-04-20, Stage 4c Wave 1.1 fix):** `769` passed, `4` skipped (773 total, 60 files). Skips: 4 LLM live smoke tests (no key). Wave 1.1 adds cross-module contract-test placement fix (`resolveContractTestModulePrefix`), conditional OWASP audit detection, and associated tests (+16 vs pre-fix baseline).
 - **Adversarial suite** (`vitest.adversarial.config.ts`): `331` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c).
 - **Vitest + Vite 8:** you may see `esbuild` option deprecated in favor of `oxc` — harmless until Vitest defaults align; pin Vite 7.x if you need a silent log.
 
@@ -761,7 +763,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 
 ### Stage 4c (Part 2) (DONE) — Java/Kotlin Wave 1
 - `detectToolchain` JVM detector (Maven/Gradle), `MutationToolId` `"pitest"`, `scripts/extract_java` + Graal `bollard-extract-java`, `JavaParserExtractor`, `JavaContractProvider`, `PitestProvider`, Surefire/Gradle `parseSummary`, `docker/Dockerfile.verify-jvm`, `DEFAULT_IMAGES` Temurin 21 for java/kotlin, behavioral compose JVM start commands.
-- **Validation (2026-04-19 full re-run):** 753 pass / 4 skip; adversarial 331 pass. Phase 0–2 GREEN; Phase 3 Bollard-on-bollard reached 14/28 nodes ($0.44 / 129s) then hit a cross-module contract-test placement bug at node 15; Phase 4 Gradle detection GREEN (live pipeline deferred). See [spec/stage4c-validation-results.md](../spec/stage4c-validation-results.md).
+- **Validation (2026-04-20, Wave 1.1 fix):** 769 pass / 4 skip; adversarial 331 pass. Phase 0–2 GREEN; Phase 3 Bollard-on-bollard reached node 15 `run-contract-tests` (cross-module test now placed in consumer module `api/`, compiles and runs). Wave 1.1 fixes: `resolveContractTestModulePrefix` for cross-module JVM contract-test placement, conditional OWASP audit detection (`hasOwaspMavenPlugin`/`hasOwaspGradlePlugin`). Phase 4 Gradle detection GREEN (live pipeline deferred). See [spec/stage4c-validation-results.md](../spec/stage4c-validation-results.md).
 
 ### DO NOT build yet:
 - **New languages outside the current seven (TS/JS/Python/Go/Rust/Java/Kotlin)** — C#/.NET, Ruby, PHP, and further waves are sequenced (Stage 4c+ → 5+). Full design in [spec/07-adversarial-scopes.md §12.1](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md). Do not add language detectors, extractors, or verify images for any of these languages ad-hoc — each wave is coordinated so the dev image, `dev-full` image, mutation testing pattern, and contract graph all land together. Swift, Scala, Elixir, F#, Clojure, Haskell, OCaml, Nim, and Zig are explicit non-goals with no near-term timeline.

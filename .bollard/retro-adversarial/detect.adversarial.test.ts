@@ -30,7 +30,7 @@ const validPackageManagers: PackageManagerId[] = [
 ]
 
 const validMutationTools: MutationToolId[] = [
-  "stryker", "mutmut", "go-mutesting", "cargo-mutants", "mutant"
+  "stryker", "mutmut", "go-mutesting", "cargo-mutants", "mutant", "pitest",
 ]
 
 const validConfigSources: ConfigSource[] = [

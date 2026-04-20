@@ -119,8 +119,11 @@ export function deriveAllowedCommands(
     case "rust":
       return ["cargo", "rustc", ...extra, ...base]
     case "java":
-    case "kotlin":
-      return [pkgMgr ?? "gradle", ...extra, ...base]
+    case "kotlin": {
+      const buildCmds =
+        pkgMgr === "maven" ? ["mvn"] : pkgMgr === "gradle" ? ["./gradlew", "gradle"] : ["gradle"]
+      return [...buildCmds, "java", "javac", "jar", ...extra, ...base]
+    }
     case "ruby":
       return ["ruby", "bundle", ...extra, ...base]
     case "csharp":

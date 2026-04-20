@@ -72,6 +72,14 @@ If you cannot ground a claim in the provided context, **do not emit it**. Writin
 **Vitest assertion note:** `toThrow()` accepts an Error class or a regex, NOT a callback function. To check an error code, use a try/catch with `expect(err.code).toBe(...)` or `BollardError.hasCode()`.
 {{/if}}
 
+{{#if isJava}}
+**JVM / Maven-Gradle:** Respect module boundaries from the contract graph. Prefer tests that cross package boundaries only through public APIs (`public` types). Avoid relying on package-private or `internal` visibility across modules.
+{{/if}}
+
+{{#if isKotlin}}
+**JVM / Gradle:** Same as Java — exercise contracts via public APIs. Kotlin `internal` visibility is module-scoped; do not assume cross-module access.
+{{/if}}
+
 ## Example (TypeScript + vitest)
 
 ```json

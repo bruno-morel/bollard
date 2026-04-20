@@ -76,6 +76,34 @@ function parseCargoTestSummary(clean: string): ParsedSummary | null {
   return { passed, failed, total: passed + failed, failedTests: failedNames }
 }
 
+/** Maven Surefire: Tests run: 42, Failures: 0, Errors: 0, Skipped: 2 */
+function parseSurefireSummary(clean: string): ParsedSummary | null {
+  const m = clean.match(
+    /Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)/,
+  )
+  if (!m) return null
+  const run = Number(m[1])
+  const failures = Number(m[2])
+  const errors = Number(m[3])
+  const skipped = Number(m[4])
+  const failed = failures + errors
+  const passed = Math.max(0, run - failed - skipped)
+  return { passed, failed, total: run, failedTests: [] }
+}
+
+/** Gradle test: 42 tests completed, 2 failed, 1 skipped */
+function parseGradleTestSummary(clean: string): ParsedSummary | null {
+  const m = clean.match(
+    /(\d+)\s+tests?\s+completed(?:,\s*(\d+)\s+failed)?(?:,\s*(\d+)\s+skipped)?/i,
+  )
+  if (!m) return null
+  const total = Number(m[1])
+  const failed = m[2] ? Number(m[2]) : 0
+  const skipped = m[3] ? Number(m[3]) : 0
+  const passed = Math.max(0, total - failed - skipped)
+  return { passed, failed, total, failedTests: [] }
+}
+
 export function parseSummary(output: string): ParsedSummary {
   const clean = stripAnsi(output)
 
@@ -91,6 +119,12 @@ export function parseSummary(output: string): ParsedSummary {
   const cargo = parseCargoTestSummary(clean)
   if (cargo) return cargo
 
+  const surefire = parseSurefireSummary(clean)
+  if (surefire) return surefire
+
+  const gradleTest = parseGradleTestSummary(clean)
+  if (gradleTest) return gradleTest
+
   const failedNames: string[] = []
   const failMatch = clean.matchAll(/FAIL\s+(\S+\.test\.ts)/g)
   for (const m of failMatch) {
@@ -102,6 +136,48 @@ export function parseSummary(output: string): ParsedSummary {
 function pathsTouchBollardGeneratedTests(testFiles: string[] | undefined): boolean {
   if (!testFiles || testFiles.length === 0) return false
   return testFiles.some((f) => f.replace(/\\/g, "/").includes(".bollard/"))
+}
+
+/** `src/test/java/com/foo/BarTest.java` → `com.foo.BarTest` */
+function inferJvmTestFqcnFromRelPath(relPath: string): string | null {
+  const norm = relPath.replace(/\\/g, "/")
+  const m = norm.match(/src\/test\/(?:java|kotlin)\/(.+)\.(java|kt)$/)
+  if (!m?.[1]) return null
+  return m[1].replace(/\//g, ".")
+}
+
+export function appendTestFileArgs(
+  profile: ToolchainProfile | undefined,
+  args: string[],
+  testFiles: string[] | undefined,
+): void {
+  if (!testFiles || testFiles.length === 0) return
+  const lang = profile?.language
+  if (lang === "java" || lang === "kotlin") {
+    const fqcns = testFiles
+      .map((f) => inferJvmTestFqcnFromRelPath(f))
+      .filter((x): x is string => x !== null)
+    if (fqcns.length === 0) {
+      args.push(...testFiles)
+      return
+    }
+    const pm = profile?.packageManager
+    if (pm === "maven") {
+      args.push(`-Dtest=${fqcns.join("+")}`)
+      // In multi-module reactors, only the consumer module contains a cross-module contract
+      // test class; other modules' surefire runs otherwise fail the build with
+      // "No tests matching pattern ... were executed!" before the consumer module gets a turn.
+      args.push("-Dsurefire.failIfNoSpecifiedTests=false")
+    } else if (pm === "gradle") {
+      for (const fqcn of fqcns) {
+        args.push("--tests", fqcn)
+      }
+    } else {
+      args.push(...testFiles)
+    }
+    return
+  }
+  args.push(...testFiles)
 }
 
 export async function runTests(
@@ -118,9 +194,7 @@ export async function runTests(
   } else if (profile?.checks.test) {
     cmd = profile.checks.test.cmd
     args = [...profile.checks.test.args]
-    if (testFiles && testFiles.length > 0) {
-      args.push(...testFiles)
-    }
+    appendTestFileArgs(profile, args, testFiles)
   } else {
     cmd = "pnpm"
     args = ["exec", "vitest", "run"]

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
@@ -20,6 +21,8 @@ const DEFAULT_IMAGES: Partial<Record<LanguageId, string>> = {
   python: "python:3.12-slim",
   go: "golang:1.22",
   rust: "rust:1.77-slim",
+  java: "eclipse-temurin:21",
+  kotlin: "eclipse-temurin:21",
 }
 
 function resolveRuntimeImage(profile: ToolchainProfile): string {
@@ -131,24 +134,38 @@ export async function generateBehavioralCompose(
   void config.behavioralContext
   const runtimeImage = resolveRuntimeImage(config.profile)
   let startCmd = "sleep 3600"
-  try {
-    const pkgPath = join(config.workDir, "package.json")
-    const raw = await readFile(pkgPath, "utf-8")
-    const pkg = JSON.parse(raw) as { scripts?: Record<string, string> }
-    const pm =
-      config.profile.packageManager === "pnpm"
-        ? "pnpm"
-        : config.profile.packageManager === "yarn"
-          ? "yarn"
-          : "npm"
-    const scripts = pkg.scripts
-    if (scripts?.["start"]) {
-      startCmd = `${pm} run start`
-    } else if (scripts?.["dev"]) {
-      startCmd = `${pm} run dev`
+  const lang = config.profile.language
+  if (lang === "java" || lang === "kotlin") {
+    const gradlew = join(config.workDir, "gradlew")
+    const hasGradle =
+      existsSync(join(config.workDir, "build.gradle")) ||
+      existsSync(join(config.workDir, "build.gradle.kts"))
+    const hasMaven = existsSync(join(config.workDir, "pom.xml"))
+    if (hasGradle) {
+      startCmd = existsSync(gradlew) ? "./gradlew bootRun" : "gradle bootRun"
+    } else if (hasMaven) {
+      startCmd = "mvn spring-boot:run"
     }
-  } catch {
-    /* keep placeholder when no package.json */
+  } else {
+    try {
+      const pkgPath = join(config.workDir, "package.json")
+      const raw = await readFile(pkgPath, "utf-8")
+      const pkg = JSON.parse(raw) as { scripts?: Record<string, string> }
+      const pm =
+        config.profile.packageManager === "pnpm"
+          ? "pnpm"
+          : config.profile.packageManager === "yarn"
+            ? "yarn"
+            : "npm"
+      const scripts = pkg.scripts
+      if (scripts?.["start"]) {
+        startCmd = `${pm} run start`
+      } else if (scripts?.["dev"]) {
+        startCmd = `${pm} run dev`
+      }
+    } catch {
+      /* keep placeholder when no package.json */
+    }
   }
 
   const testRel = config.behavioralTestRelPath.replace(/\\/g, "/")

@@ -11,3 +11,4 @@ _tmp_*/
 .idea/
 reports/
 .stryker-tmp/
+scripts/extract_java/target/

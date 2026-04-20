@@ -123,6 +123,14 @@ export async function executeAgent(
   ctx: AgentContext,
   options?: ExecutorOptions,
 ): Promise<AgentResult> {
+  if (!Number.isFinite(agent.maxTurns) || agent.maxTurns < 1) {
+    throw new BollardError({
+      code: "CONFIG_INVALID",
+      message: `Agent "${agent.role}" requires maxTurns to be a positive finite number`,
+      context: { agentRole: agent.role, maxTurns: agent.maxTurns },
+    })
+  }
+
   const startMs = Date.now()
   let totalCostUsd = 0
   let turns = 0

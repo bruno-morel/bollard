@@ -64,6 +64,14 @@ function makeAgent(tools: AgentTool[] = [], overrides?: Partial<AgentDefinition>
 }
 
 describe("executeAgent", () => {
+  it("throws CONFIG_INVALID when maxTurns is missing or not positive", async () => {
+    const provider = new MockProvider([textResponse("x")])
+    const bad = { ...makeAgent(), maxTurns: 0 as unknown as number }
+    await expect(executeAgent(bad, "hi", provider, "test", makeCtx())).rejects.toMatchObject({
+      code: "CONFIG_INVALID",
+    })
+  })
+
   it("returns text response with zero turns when no tools called", async () => {
     const provider = new MockProvider([textResponse("Hello world")])
     const agent = makeAgent()

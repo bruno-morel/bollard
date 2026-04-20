@@ -1,0 +1,123 @@
+ Container bollard-dev-full-run-64e498c96cae Creating 
+ Container bollard-dev-full-run-64e498c96cae Created 
+=== gradle availability ===
+WARN: gradle not installed in dev-full
+
+=== verify --profile output ===
+! Corepack is about to download https://registry.npmjs.org/pnpm/-/pnpm-10.33.0.tgz
+
+> @bollard/cli@0.0.1 start /app/packages/cli
+> tsx src/index.ts -- verify --profile --work-dir /tmp/gradle-test
+
+{
+  "language": "java",
+  "checks": {
+    "typecheck": {
+      "label": "gradle compile",
+      "cmd": "gradle",
+      "args": [
+        "compileJava"
+      ],
+      "source": "auto-detected"
+    },
+    "lint": {
+      "label": "gradle check",
+      "cmd": "gradle",
+      "args": [
+        "check"
+      ],
+      "source": "auto-detected"
+    },
+    "test": {
+      "label": "gradle test",
+      "cmd": "gradle",
+      "args": [
+        "test"
+      ],
+      "source": "auto-detected"
+    },
+    "audit": {
+      "label": "gradle dependencyCheckAnalyze",
+      "cmd": "gradle",
+      "args": [
+        "dependencyCheckAnalyze"
+      ],
+      "source": "auto-detected"
+    }
+  },
+  "sourcePatterns": [
+    "**/*.java",
+    "**/*.kt",
+    "!**/test/**",
+    "!**/build/**"
+  ],
+  "testPatterns": [
+    "**/test/**/*.java",
+    "**/test/**/*.kt"
+  ],
+  "ignorePatterns": [
+    "build",
+    ".gradle",
+    "target"
+  ],
+  "allowedCommands": [
+    "./gradlew",
+    "gradle",
+    "java",
+    "javac",
+    "jar",
+    "git",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "diff"
+  ],
+  "adversarial": {
+    "boundary": {
+      "enabled": true,
+      "integration": "integrated",
+      "lifecycle": "persistent",
+      "concerns": {
+        "correctness": "high",
+        "security": "high",
+        "performance": "low",
+        "resilience": "low"
+      },
+      "frameworkCapable": true,
+      "mode": "in-language"
+    },
+    "contract": {
+      "enabled": true,
+      "integration": "integrated",
+      "lifecycle": "persistent",
+      "concerns": {
+        "correctness": "high",
+        "security": "medium",
+        "performance": "medium",
+        "resilience": "medium"
+      },
+      "frameworkCapable": false
+    },
+    "behavioral": {
+      "enabled": false,
+      "integration": "independent",
+      "lifecycle": "ephemeral",
+      "concerns": {
+        "correctness": "medium",
+        "security": "high",
+        "performance": "high",
+        "resilience": "high"
+      },
+      "frameworkCapable": false
+    }
+  },
+  "packageManager": "gradle",
+  "mutation": {
+    "enabled": true,
+    "tool": "pitest",
+    "threshold": 60,
+    "timeoutMs": 600000,
+    "concurrency": 2
+  }
+}

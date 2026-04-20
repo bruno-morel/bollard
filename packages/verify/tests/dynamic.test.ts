@@ -1,8 +1,42 @@
 import { mkdir, rm, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { describe, expect, it } from "vitest"
-import { createTestRunNode, parseSummary, runTests } from "../src/dynamic.js"
+import { appendTestFileArgs, createTestRunNode, parseSummary, runTests } from "../src/dynamic.js"
+
+const makeJvmProfile = (
+  language: "java" | "kotlin",
+  packageManager: "maven" | "gradle",
+): ToolchainProfile => ({
+  language,
+  packageManager,
+  checks: {},
+  sourcePatterns: [],
+  testPatterns: [],
+  ignorePatterns: [],
+  allowedCommands: [],
+  adversarial: {
+    boundary: {
+      enabled: false,
+      integration: "integrated",
+      lifecycle: "ephemeral",
+      concerns: { correctness: "off", security: "off", performance: "off", resilience: "off" },
+    },
+    contract: {
+      enabled: false,
+      integration: "integrated",
+      lifecycle: "ephemeral",
+      concerns: { correctness: "off", security: "off", performance: "off", resilience: "off" },
+    },
+    behavioral: {
+      enabled: false,
+      integration: "integrated",
+      lifecycle: "ephemeral",
+      concerns: { correctness: "off", security: "off", performance: "off", resilience: "off" },
+    },
+  },
+})
 
 const THIS_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(THIS_DIR, "../../..")
@@ -103,6 +137,67 @@ describe("parseSummary — polyglot", () => {
       expect(result.total).toBe(5)
       expect(result.failedTests).toEqual(["my_mod::test_thing", "my_mod::test_other"])
     })
+  })
+
+  describe("maven surefire", () => {
+    it("parses Tests run summary", () => {
+      const output = "Tests run: 42, Failures: 0, Errors: 0, Skipped: 2"
+      const result = parseSummary(output)
+      expect(result.total).toBe(42)
+      expect(result.failed).toBe(0)
+      expect(result.passed).toBe(40)
+    })
+  })
+
+  describe("gradle test", () => {
+    it("parses tests completed line", () => {
+      const output = "42 tests completed, 2 failed, 1 skipped"
+      const result = parseSummary(output)
+      expect(result.total).toBe(42)
+      expect(result.failed).toBe(2)
+      expect(result.passed).toBe(39)
+    })
+  })
+})
+
+describe("appendTestFileArgs — JVM", () => {
+  it("maven: emits -Dtest=<FQCN> with failIfNoSpecifiedTests=false for multi-module safety", () => {
+    const args: string[] = ["test"]
+    appendTestFileArgs(makeJvmProfile("java", "maven"), args, [
+      "api/src/test/java/com/example/core/CalculatorContractTest.java",
+    ])
+    expect(args).toEqual([
+      "test",
+      "-Dtest=com.example.core.CalculatorContractTest",
+      "-Dsurefire.failIfNoSpecifiedTests=false",
+    ])
+  })
+
+  it("maven: joins multiple FQCNs with '+' separator", () => {
+    const args: string[] = ["test"]
+    appendTestFileArgs(makeJvmProfile("java", "maven"), args, [
+      "core/src/test/java/com/example/core/FooTest.java",
+      "api/src/test/java/com/example/api/BarTest.java",
+    ])
+    expect(args).toEqual([
+      "test",
+      "-Dtest=com.example.core.FooTest+com.example.api.BarTest",
+      "-Dsurefire.failIfNoSpecifiedTests=false",
+    ])
+  })
+
+  it("gradle: uses --tests per FQCN, no failIfNoSpecifiedTests flag", () => {
+    const args: string[] = ["test"]
+    appendTestFileArgs(makeJvmProfile("kotlin", "gradle"), args, [
+      "api/src/test/kotlin/com/example/core/ContractTest.kt",
+    ])
+    expect(args).toEqual(["test", "--tests", "com.example.core.ContractTest"])
+  })
+
+  it("no-op when no test files provided", () => {
+    const args: string[] = ["test"]
+    appendTestFileArgs(makeJvmProfile("java", "maven"), args, undefined)
+    expect(args).toEqual(["test"])
   })
 })
 

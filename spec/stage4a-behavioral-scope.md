@@ -1,6 +1,6 @@
 # Stage 4a — Behavioral-Scope Adversarial Testing
 
-> **Status:** Planning  
+> **Status:** GREEN (validated 2026-04-16)  
 > **Depends on:** Stage 3c (complete)  
 > **Validates:** Behavioral-scope agent, context extraction, Docker execution, blueprint integration  
 > **Prerequisite for:** Stage 4b (production feedback loop), Stage 4c (Java/Kotlin Wave 1)

@@ -190,6 +190,26 @@ describe("scanDiffForExportChanges", () => {
       expect(scanDiffForExportChanges("+pub(crate) fn setup() {", "rust")).toBe(true)
     })
   })
+
+  describe("java", () => {
+    it("detects public class", () => {
+      expect(scanDiffForExportChanges("+public class Foo {", "java")).toBe(true)
+    })
+
+    it("detects public method signature", () => {
+      expect(scanDiffForExportChanges("+  public void run() {", "java")).toBe(true)
+    })
+  })
+
+  describe("kotlin", () => {
+    it("detects fun as export change", () => {
+      expect(scanDiffForExportChanges("+  fun greet(): String {", "kotlin")).toBe(true)
+    })
+
+    it("ignores private fun", () => {
+      expect(scanDiffForExportChanges("+  private fun hidden() {", "kotlin")).toBe(false)
+    })
+  })
 })
 
 describe("assess-contract-risk node", () => {

@@ -3,6 +3,7 @@ import { promisify } from "node:util"
 import { defaultAdversarialConfig } from "./concerns.js"
 import { detect as detectFallback } from "./languages/fallback.js"
 import { detect as detectGo } from "./languages/go.js"
+import { detect as detectJava } from "./languages/java.js"
 import { detect as detectJavascript } from "./languages/javascript.js"
 import { detect as detectPython } from "./languages/python.js"
 import { detect as detectRust } from "./languages/rust.js"
@@ -17,6 +18,7 @@ const detectors = [
   detectPython,
   detectGo,
   detectRust,
+  detectJava,
   detectFallback,
 ]
 
