@@ -32,6 +32,7 @@ export type BollardErrorCode =
   | "DRIFT_DETECTED"
   | "ROLLOUT_BLOCKED"
   | "FLAG_NOT_FOUND"
+  | "IDE_CONFIG_INVALID"
 
 const RETRYABLE_CODES: ReadonlySet<BollardErrorCode> = new Set([
   "LLM_TIMEOUT",

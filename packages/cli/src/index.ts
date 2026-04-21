@@ -21,6 +21,7 @@ import {
   runFlagCommand,
   runProbeCommand,
 } from "./observe-commands.js"
+import { formatQuietVerifyResult } from "./quiet-verify.js"
 import { createAgentSpinner } from "./spinner.js"
 import { BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW } from "./terminal-styles.js"
 
@@ -307,10 +308,20 @@ async function runVerifyCommand(args: string[]): Promise<void> {
     process.exit(0)
   }
 
-  header("verify")
-  log(`${DIM}Running static checks...${RESET}\n`)
+  const quiet = args.includes("--quiet")
 
   const { results, allPassed } = await runStaticChecks(workDir)
+
+  if (quiet) {
+    const payload = formatQuietVerifyResult(results, allPassed)
+    if (payload) {
+      process.stdout.write(`${JSON.stringify(payload)}\n`)
+    }
+    process.exit(allPassed ? 0 : 1)
+  }
+
+  header("verify")
+  log(`${DIM}Running static checks...${RESET}\n`)
 
   for (const r of results) {
     const icon = r.passed ? `${GREEN}✓${RESET}` : `${RED}✗${RESET}`
@@ -711,6 +722,40 @@ async function main(): Promise<void> {
     await writeFs(join(resolve(process.cwd()), ".bollard.yml"), bollardYml, "utf-8")
     log(`${GREEN}✓${RESET} Created .bollard.yml`)
     log("")
+
+    const ideIdx = rest.indexOf("--ide")
+    if (ideIdx !== -1) {
+      const ideFlag = rest[ideIdx + 1]
+      if (!ideFlag) {
+        throw new BollardError({
+          code: "IDE_CONFIG_INVALID",
+          message:
+            "Missing value for --ide. Use: bollard init --ide <platform> (cursor, claude-code, codex, antigravity, or all)",
+        })
+      }
+      const { parseIdePlatform } = await import("./ide-detect.js")
+      const { generateIdeConfigs, writeGeneratedFiles } = await import("./init-ide.js")
+
+      const platforms = parseIdePlatform(ideFlag)
+      const root = resolve(process.cwd())
+      const ideResults = await generateIdeConfigs(root, platforms, profile)
+
+      for (const result of ideResults) {
+        log(`\n${BOLD}${result.platform}:${RESET}`)
+        const { written, skipped } = await writeGeneratedFiles(root, result)
+        for (const f of written) {
+          log(`  ${GREEN}✓${RESET} ${f}`)
+        }
+        for (const f of skipped) {
+          log(`  ${YELLOW}⊘${RESET} ${f} (already exists, skipped)`)
+        }
+        for (const msg of result.messages) {
+          log(`  ${DIM}${msg}${RESET}`)
+        }
+      }
+      log("")
+    }
+
     return
   }
 
@@ -748,7 +793,9 @@ async function main(): Promise<void> {
   log("Commands:\n")
   log(`  ${BOLD}run${RESET} <blueprint> --task <task>   Run a blueprint`)
   log(`  ${BOLD}plan${RESET} --task <task>              Generate a plan without implementing`)
-  log(`  ${BOLD}verify${RESET} [--profile]              Run static checks (or show profile)`)
+  log(
+    `  ${BOLD}verify${RESET} [--profile] [--quiet]   Run static checks (or show profile; --quiet JSON on fail)`,
+  )
   log(
     `  ${BOLD}contract${RESET} [--plan <file>]         Print ContractContext JSON (optional planner plan)`,
   )
@@ -756,7 +803,9 @@ async function main(): Promise<void> {
   log(`  ${BOLD}diff${RESET}                            Compare profile vs hardcoded defaults`)
   log(`  ${BOLD}eval${RESET} [agent]                    Run agent eval sets`)
   log(`  ${BOLD}config show${RESET} [--sources]         Show resolved configuration`)
-  log(`  ${BOLD}init${RESET}                            Detect project configuration`)
+  log(
+    `  ${BOLD}init${RESET} [--ide <platform>]        Detect project configuration + optional IDE configs`,
+  )
   log(
     `  ${BOLD}promote-test${RESET} <path>             Promote adversarial test to project test dir`,
   )
