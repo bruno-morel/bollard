@@ -28,6 +28,16 @@ export function registerIdeGenerator(platform: IdePlatform, generator: IdeGenera
   generators.set(platform, generator)
 }
 
+let builtinsLoaded = false
+
+export async function loadBuiltinGenerators(): Promise<void> {
+  if (builtinsLoaded) return
+  builtinsLoaded = true
+
+  const { generateCursorConfig } = await import("./generators/cursor.js")
+  registerIdeGenerator("cursor", generateCursorConfig)
+}
+
 /** Merge a JSON object into an existing JSON file, or write fresh if no file exists. */
 export async function mergeJsonFile(
   filePath: string,
@@ -106,6 +116,7 @@ export async function generateIdeConfigs(
   platforms: IdePlatform[],
   profile: ToolchainProfile,
 ): Promise<IdeGeneratorResult[]> {
+  await loadBuiltinGenerators()
   const results: IdeGeneratorResult[] = []
   for (const platform of platforms) {
     const gen = generators.get(platform)

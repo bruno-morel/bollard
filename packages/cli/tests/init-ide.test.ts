@@ -106,9 +106,9 @@ describe("writeGeneratedFiles", () => {
 describe("generateIdeConfigs", () => {
   it("returns coming soon message for unregistered platforms", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "init-ide-"))
-    const results = await generateIdeConfigs(tempDir, ["cursor"], minimalProfile())
+    const results = await generateIdeConfigs(tempDir, ["claude-code"], minimalProfile())
     expect(results).toHaveLength(1)
-    expect(results[0]?.platform).toBe("cursor")
+    expect(results[0]?.platform).toBe("claude-code")
     expect(results[0]?.files).toEqual([])
     expect(results[0]?.messages.some((m) => m.includes("coming soon"))).toBe(true)
   })
