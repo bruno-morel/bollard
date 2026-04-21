@@ -26,6 +26,37 @@ const execFileAsync = promisify(execFile)
 const MAX_PRELOAD_CHARS_PER_FILE = 10_000
 const MAX_PRELOAD_FILES = 10
 
+type VerificationCheck = { label: string; cmd: string; args: string[] }
+
+async function commandOnPath(cmd: string): Promise<boolean> {
+  try {
+    await execFileAsync("which", [cmd], { timeout: 5_000 })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function buildFallbackVerificationChecks(): Promise<VerificationCheck[]> {
+  const base: VerificationCheck[] = [
+    { label: "typecheck", cmd: "pnpm", args: ["run", "typecheck"] },
+    { label: "lint", cmd: "pnpm", args: ["run", "lint"] },
+    { label: "test", cmd: "pnpm", args: ["run", "test"] },
+  ]
+  const extra: VerificationCheck[] = []
+  if (await commandOnPath("pnpm")) {
+    extra.push({ label: "audit", cmd: "pnpm", args: ["audit", "--audit-level=high"] })
+  }
+  if (await commandOnPath("gitleaks")) {
+    extra.push({
+      label: "secretScan",
+      cmd: "gitleaks",
+      args: ["detect", "--no-banner", "--source", "."],
+    })
+  }
+  return [...base, ...extra]
+}
+
 function buildFileFilter(profile?: ToolchainProfile): (entry: string) => boolean {
   if (profile) {
     const ignores = new Set(profile.ignorePatterns)
@@ -125,7 +156,7 @@ function createVerificationHook(
   profile?: ToolchainProfile,
 ): (text: string) => Promise<string | null> {
   return async (): Promise<string | null> => {
-    const checks = profile
+    const checks: VerificationCheck[] = profile
       ? [
           ...(profile.checks.typecheck
             ? [
@@ -154,12 +185,26 @@ function createVerificationHook(
                 },
               ]
             : []),
+          ...(profile.checks.audit
+            ? [
+                {
+                  label: "audit",
+                  cmd: profile.checks.audit.cmd,
+                  args: profile.checks.audit.args,
+                },
+              ]
+            : []),
+          ...(profile.checks.secretScan
+            ? [
+                {
+                  label: "secretScan",
+                  cmd: profile.checks.secretScan.cmd,
+                  args: profile.checks.secretScan.args,
+                },
+              ]
+            : []),
         ]
-      : [
-          { label: "typecheck", cmd: "pnpm", args: ["run", "typecheck"] },
-          { label: "lint", cmd: "pnpm", args: ["run", "lint"] },
-          { label: "test", cmd: "pnpm", args: ["run", "test"] },
-        ]
+      : await buildFallbackVerificationChecks()
 
     const failures: string[] = []
 
@@ -470,10 +515,28 @@ export async function createAgenticHandler(
       userMessage = buildSemanticReviewerMessage(ctx)
     }
 
+    const rollbackSha = agentRole === "coder" ? ctx.rollbackSha : undefined
+    const onBollardBranch = ctx.gitBranch !== undefined
+
     const startMs = Date.now()
     let result: AgentResult
     try {
       result = await executeAgent(agent, userMessage, provider, model, agentCtx, executorOptions)
+    } catch (err: unknown) {
+      if (rollbackSha && onBollardBranch) {
+        try {
+          await execFileAsync("git", ["checkout", "--", "."], { cwd: workDir })
+          await execFileAsync("git", ["clean", "-fd"], { cwd: workDir })
+          await execFileAsync("git", ["reset", "--hard", rollbackSha], { cwd: workDir })
+          process.stderr.write(
+            `\x1b[33m  [rollback] Reset to ${rollbackSha.slice(0, 8)} after coder failure\x1b[0m\n`,
+          )
+        } catch (rollbackErr: unknown) {
+          const msg = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)
+          process.stderr.write(`\x1b[31m  [rollback] Failed: ${msg}\x1b[0m\n`)
+        }
+      }
+      throw err
     } finally {
       spinner.finalize()
     }

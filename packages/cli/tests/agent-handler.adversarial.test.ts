@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process"
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import * as fc from "fast-check"
 import { buildProjectTree, createAgenticHandler } from "../src/agent-handler.js"
@@ -82,6 +83,8 @@ const baseConfig: BollardConfig = {
   agent: { max_cost_usd: 10, max_duration_minutes: 30 },
 }
 
+const cmdSource = "default" as const
+
 function makeProfile(overrides?: Partial<ToolchainProfile>): ToolchainProfile {
   return {
     language: "typescript",
@@ -94,6 +97,43 @@ function makeProfile(overrides?: Partial<ToolchainProfile>): ToolchainProfile {
     adversarial: defaultAdversarialConfig({ language: "typescript" }),
     ...overrides,
   }
+}
+
+function profileWithAuditAndSecretScan(): ToolchainProfile {
+  return makeProfile({
+    checks: {
+      typecheck: {
+        label: "tsc",
+        cmd: "pnpm",
+        args: ["run", "typecheck"],
+        source: cmdSource,
+      },
+      lint: {
+        label: "Biome",
+        cmd: "pnpm",
+        args: ["run", "lint"],
+        source: cmdSource,
+      },
+      test: {
+        label: "Vitest",
+        cmd: "pnpm",
+        args: ["run", "test"],
+        source: cmdSource,
+      },
+      audit: {
+        label: "pnpm audit",
+        cmd: "pnpm",
+        args: ["audit", "--audit-level=high"],
+        source: cmdSource,
+      },
+      secretScan: {
+        label: "gitleaks",
+        cmd: "gitleaks",
+        args: ["detect", "--no-banner", "--source", "."],
+        source: cmdSource,
+      },
+    },
+  })
 }
 
 describe("buildProjectTree", () => {
@@ -158,6 +198,44 @@ describe("createAgenticHandler", () => {
     expect(executeAgent).toHaveBeenCalled()
   })
 
+  it("coder postCompletionHook runs audit and secretScan when profile includes them", async () => {
+    const execFileMock = vi.mocked(execFile)
+    execFileMock.mockImplementation((...args: unknown[]) => {
+      const last = args[args.length - 1]
+      if (typeof last === "function") {
+        const cb = last as (err: NodeJS.ErrnoException | null, stdout: string, stderr: string) => void
+        cb(null, "", "")
+      }
+      return undefined as never
+    })
+
+    const profile = profileWithAuditAndSecretScan()
+    const { handler } = await createAgenticHandler(baseConfig, "/tmp/w", profile)
+    ctx.toolchainProfile = profile
+    ctx.plan = { summary: "x", affected_files: { modify: [] } }
+
+    const node: BlueprintNode = {
+      id: "implement",
+      name: "Implement",
+      type: "agentic",
+      agent: "coder",
+    }
+    await handler(node, ctx)
+
+    const execAgent = vi.mocked(executeAgent)
+    const opts = execAgent.mock.calls[0]?.[5]
+    expect(opts?.postCompletionHook).toBeDefined()
+    const feedback = await opts?.postCompletionHook?.("")
+    expect(feedback).toBeNull()
+
+    const auditRan = execFileMock.mock.calls.some(
+      (c) => c[0] === "pnpm" && Array.isArray(c[1]) && (c[1] as string[]).includes("audit"),
+    )
+    const gitleaksRan = execFileMock.mock.calls.some((c) => c[0] === "gitleaks")
+    expect(auditRan).toBe(true)
+    expect(gitleaksRan).toBe(true)
+  })
+
   it("contract-tester skips when risk gate requests skip", async () => {
     const profile = makeProfile()
     const { handler } = await createAgenticHandler(baseConfig, "/tmp/w", profile)
@@ -176,5 +254,109 @@ describe("createAgenticHandler", () => {
     const r = await handler(node, ctx)
     expect(r).toEqual({ status: "ok", data: "", cost_usd: 0, duration_ms: 0 })
     expect(executeAgent).not.toHaveBeenCalled()
+  })
+
+  it("runs git reset to rollbackSha after coder failure when on bollard branch", async () => {
+    const execFileMock = vi.mocked(execFile)
+    const sha = "deadbeefcafebabecafebabecafebabe12345678"
+    let sawReset = false
+    execFileMock.mockImplementation((cmd: string, args?: readonly string[], _opts?: unknown, cb?: unknown) => {
+      const callback =
+        typeof cb === "function"
+          ? cb
+          : typeof _opts === "function"
+            ? (_opts as (err: NodeJS.ErrnoException | null, stdout: string, stderr: string) => void)
+            : undefined
+      if (!callback) return undefined as never
+      if (cmd === "git" && args?.[0] === "reset" && args?.[1] === "--hard" && args?.[2] === sha) {
+        sawReset = true
+      }
+      callback(null, "", "")
+      return undefined as never
+    })
+
+    vi.mocked(executeAgent).mockRejectedValueOnce(new Error("max turns"))
+
+    const { handler } = await createAgenticHandler(baseConfig, "/tmp/w", makeProfile())
+    ctx.plan = { summary: "x", affected_files: { modify: [] } }
+    ctx.gitBranch = "bollard/run-1"
+    ctx.rollbackSha = sha
+
+    const coderNode: BlueprintNode = {
+      id: "implement",
+      name: "Implement",
+      type: "agentic",
+      agent: "coder",
+    }
+
+    await expect(handler(coderNode, ctx)).rejects.toThrow("max turns")
+    expect(sawReset).toBe(true)
+  })
+
+  it("rollback git failure is non-fatal and original coder error propagates", async () => {
+    const execFileMock = vi.mocked(execFile)
+    execFileMock.mockImplementation((cmd: string, args?: readonly string[], _opts?: unknown, cb?: unknown) => {
+      const callback =
+        typeof cb === "function"
+          ? cb
+          : typeof _opts === "function"
+            ? (_opts as (err: NodeJS.ErrnoException | null, stdout: string, stderr: string) => void)
+            : undefined
+      if (!callback) return undefined as never
+      if (cmd === "git" && args?.includes("reset")) {
+        callback(new Error("git reset refused") as NodeJS.ErrnoException, "", "")
+      } else {
+        callback(null, "", "")
+      }
+      return undefined as never
+    })
+
+    vi.mocked(executeAgent).mockRejectedValueOnce(new Error("coder exhausted"))
+
+    const { handler } = await createAgenticHandler(baseConfig, "/tmp/w", makeProfile())
+    ctx.plan = { summary: "x", affected_files: { modify: [] } }
+    ctx.gitBranch = "bollard/x"
+    ctx.rollbackSha = "abc123"
+
+    await expect(
+      handler(
+        { id: "implement", name: "Implement", type: "agentic", agent: "coder" },
+        ctx,
+      ),
+    ).rejects.toThrow("coder exhausted")
+  })
+
+  it("does not run git rollback when planner fails even if rollbackSha is set", async () => {
+    const execFileMock = vi.mocked(execFile)
+    let resetHardCalls = 0
+    execFileMock.mockImplementation((cmd: string, args?: readonly string[], _opts?: unknown, cb?: unknown) => {
+      const callback =
+        typeof cb === "function"
+          ? cb
+          : typeof _opts === "function"
+            ? (_opts as (err: NodeJS.ErrnoException | null, stdout: string, stderr: string) => void)
+            : undefined
+      if (!callback) return undefined as never
+      if (cmd === "git" && args?.[0] === "reset" && args?.[1] === "--hard") {
+        resetHardCalls++
+      }
+      callback(null, "", "")
+      return undefined as never
+    })
+
+    vi.mocked(executeAgent).mockRejectedValueOnce(new Error("planner failed"))
+
+    const { handler } = await createAgenticHandler(baseConfig, "/tmp/w", makeProfile())
+    ctx.rollbackSha = "should-not-use"
+    ctx.gitBranch = "bollard/x"
+
+    await expect(
+      handler(
+        { id: "generate-plan", name: "Plan", type: "agentic", agent: "planner" },
+        ctx,
+      ),
+    ).rejects.toThrow("planner failed")
+
+    expect(resetHardCalls).toBe(0)
   })
 })

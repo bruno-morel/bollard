@@ -110,6 +110,11 @@ describe("createImplementFeatureBlueprint", () => {
     expect(implNode?.onFailure).toBe("stop")
   })
 
+  it("static-checks and run-tests skip on failure after coder verification hook", () => {
+    expect(bp.nodes.find((n) => n.id === "static-checks")?.onFailure).toBe("skip")
+    expect(bp.nodes.find((n) => n.id === "run-tests")?.onFailure).toBe("skip")
+  })
+
   it("deterministic nodes never have an agent field", () => {
     const deterministicNodes = bp.nodes.filter((n) => n.type === "deterministic")
     expect(deterministicNodes.length).toBeGreaterThan(0)

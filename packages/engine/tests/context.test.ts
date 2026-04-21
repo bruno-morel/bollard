@@ -21,6 +21,13 @@ describe("createContext", () => {
     expect(ctx.changedFiles).toEqual([])
   })
 
+  it("starts without rollbackSha and can record branch creation SHA", () => {
+    const ctx = createContext("task", "bp", TEST_CONFIG)
+    expect(ctx.rollbackSha).toBeUndefined()
+    ctx.rollbackSha = "deadbeefcafebabe"
+    expect(ctx.rollbackSha).toBe("deadbeefcafebabe")
+  })
+
   it("creates a CostTracker with the configured limit", () => {
     const ctx = createContext("task", "bp", TEST_CONFIG)
     expect(ctx.costTracker.remaining()).toBe(5.0)

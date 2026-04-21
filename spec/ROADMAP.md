@@ -20,6 +20,8 @@ Features deferred from v0.1 spec to keep scope tight. These are all good ideas �
 
 **Stage 4c Part 2** — Java/Kotlin Wave 1 — automated baseline **validated 2026-04-17** (744 pass / 4 skip; adversarial 331 pass). **2026-04-19:** Full validation re-run under Docker: Phase 0–2 GREEN (753 pass / 4 skip; adversarial 331). Phase 3 Bollard-on-bollard reached 14/28 nodes, surfaced cross-module contract-test placement bug. **2026-04-20 (Wave 1.1 fix):** `resolveContractTestModulePrefix` places cross-module contract tests in consumer module; conditional OWASP audit detection. **769 pass / 4 skip**. Phase 3 re-run: node 15 `run-contract-tests` now compiles and executes (2 tests, 1 pass, 1 runtime error from LLM test-design assumption — not infrastructure). Phase 4 Gradle detection GREEN (live pipeline deferred). Status **GREEN** (infrastructure validated). See [stage4c-validation-results.md](./stage4c-validation-results.md). Design: [stage4c-java-kotlin-wave1.md](./stage4c-java-kotlin-wave1.md).
 
+**Stage 4c cleanup (DONE):** Coder verification hook includes `audit` + `secretScan` (aligned with `runStaticChecks`); no-profile fallback adds them when `pnpm`/`gitleaks` are on PATH. **`static-checks`** and **`run-tests`** blueprint nodes use `onFailure: "skip"` so the pipeline does not stop there after the coder’s batched verification retries. **`ctx.rollbackSha`** records HEAD after branch creation; on coder agent failure, CLI resets the working tree to that SHA when `ctx.gitBranch` is set.
+
 **Stage 4d** — DX & Agent Integrations: planned. See [stage4d-dx-agent-integrations.md](./stage4d-dx-agent-integrations.md).
 
 ## Stage 3c — shipped (validated GREEN 2026-04-16)
@@ -35,8 +37,8 @@ These items were originally tracked under Stage 3c but have been rescheduled thr
 
 - **Java/Kotlin language expansion (Wave 1)** — originally Stage 3c per [07-adversarial-scopes.md §12.1](07-adversarial-scopes.md). Moved to Stage 4c because the mutation-testing integration pattern needed to stabilize on TS/Python/Rust first.
 - ~~**OpenAI / Google streaming parity**~~ — **Done (Stage 4c Part 1, 2026-04-16).** See [stage4c-streaming-parity.md](./stage4c-streaming-parity.md).
-- **Verification summary batching** — replace per-check retry loops with a single consolidated feedback message. Stage 4c.
-- **Git rollback on coder max-turns failure** — partially-written files remain on disk today. Needs a worktree/branch strategy. Stage 4c.
+- ~~**Verification summary batching**~~ — **Done (Stage 4c cleanup).** Coder post-completion hook runs typecheck, lint, test, audit, secretScan in one pass with batched failure output (up to 3 retries).
+- ~~**Git rollback on coder max-turns failure**~~ — **Done (Stage 4c cleanup).** `rollbackSha` + `git reset --hard` in CLI agent-handler when coder throws; only on `bollard/*` branch (`ctx.gitBranch` set).
 
 ---
 

@@ -42,7 +42,8 @@ docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan 
 - **LLM streaming:** Anthropic, OpenAI, and Google all implement `chatStream`; the executor uses the streaming path whenever `provider.chatStream` is present.
 - **Kotlin source extraction** in the helper is regex-based (no compiler); bytecode path for compiled `.class` is best-effort.
 - **Mutation testing:** TS/JS (Stryker), Python (mutmut), Rust (cargo-mutants), Java/Kotlin (PIT). Go mutation testing deferred — no maintained upstream tool (`go-mutesting` is unmaintained). `MutationToolId` reserves `"go-mutesting"` for future use.
-- No rollback on coder max-turns failure — partially-written files remain on disk — Stage 4c.
+- **Coder rollback:** After `create-branch`, `ctx.rollbackSha` stores the branch HEAD. If the **coder** agent throws (e.g. max turns), the CLI runs `git checkout -- .`, `git clean -fd`, `git reset --hard` to that SHA when `ctx.gitBranch` is set. Rollback errors are logged; the original error still stops the pipeline.
+- **Static-checks / run-tests:** Both use `onFailure: "skip"` — the coder verification hook already ran the same checks (typecheck, lint, test, audit, secretScan) with batched feedback up to 3 retries, so redundant failures there do not halt the rest of the pipeline (contract, behavioral, mutation, review).
 - **Observe providers:** `@bollard/observe` ships built-in providers only (HTTP fetch, JSON files, git). External providers (Datadog, Flagsmith, Cloud Run, ArgoCD) are 4b+ — interfaces exist, implementations come when needed.
 - **Advanced fault injection:** Only `service_stop` implemented; network_delay/resource_limit are future work.
 - **`runBlueprint` signature:** takes an optional trailing `toolchainProfile` — omitting it silently disables contract nodes. Any new entry point that constructs a blueprint run must thread the profile through (see CLI `implement-feature` for the pattern).
@@ -319,8 +320,8 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** 9 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`, `behavioral-tester.md`
-- **Latest count (authoritative, 2026-04-20, Stage 4c Wave 1.1 fix):** `769` passed, `4` skipped (773 total, 60 files). Skips: 4 LLM live smoke tests (no key). Wave 1.1 adds cross-module contract-test placement fix (`resolveContractTestModulePrefix`), conditional OWASP audit detection, and associated tests (+16 vs pre-fix baseline).
-- **Adversarial suite** (`vitest.adversarial.config.ts`): `331` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c).
+- **Latest count (authoritative, 2026-04-21, Stage 4c cleanup):** `771` passed, `4` skipped (775 total, 60 files). Skips: 4 LLM live smoke tests (no key). Stage 4c cleanup adds verification hook audit/secretScan coverage, coder rollback tests, and `onFailure: "skip"` for static-checks/run-tests (+2 vs Wave 1.1 baseline).
+- **Adversarial suite** (`vitest.adversarial.config.ts`): `335` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c). +4 from cleanup (audit/secretScan hook, rollback paths).
 - **Vitest + Vite 8:** you may see `esbuild` option deprecated in favor of `oxc` — harmless until Vitest defaults align; pin Vite 7.x if you need a silent log.
 
 ### Mutation Testing (Stage 3c)
@@ -458,7 +459,7 @@ All Stage 3 work (3a, 3b, 3c) is complete. Items 1–8 shipped; items 9–10 and
 7. ~~**Streaming LLM responses**~~ — **Done (Stage 3c Anthropic + Stage 4c Part 1 OpenAI/Google).** All three providers implement `chatStream`; executor + `stream_delta` events.
 8. ~~**`detectToolchain` for `go.work`-only layouts**~~ — **Done (Stage 3c).** `parseGoWorkUses` in `go.ts`.
 
-**Moved to Stage 4c:** Java/Kotlin language expansion (Wave 1), verification summary batching, git rollback on coder max-turns failure. See [spec/ROADMAP.md](../spec/ROADMAP.md).
+**Moved to Stage 4c:** Java/Kotlin language expansion (Wave 1). Verification summary batching + coder git rollback are **done** (Stage 4c cleanup). See [spec/ROADMAP.md](../spec/ROADMAP.md).
 
 ## Key Types (Source of Truth)
 
@@ -488,7 +489,7 @@ All Stage 3 work (3a, 3b, 3c) is complete. Items 1–8 shipped; items 9–10 and
 ### PipelineContext (packages/engine/src/context.ts)
 
 - Single source of truth for a run. Flat type with optional fields that grow across stages.
-- Fields: `runId, task, blueprintId, config, currentNode, results, changedFiles, gitBranch?, plan?: unknown, mutationScore?, generatedProbes?, deploymentManifest?, toolchainProfile?: ToolchainProfile, costTracker, log, upgradeRunId(taskSlug)`.
+- Fields: `runId, task, blueprintId, config, currentNode, results, changedFiles, gitBranch?, rollbackSha?` (HEAD at branch creation, for coder failure rollback), `plan?: unknown, mutationScore?, generatedProbes?, deploymentManifest?, toolchainProfile?: ToolchainProfile, costTracker, log, upgradeRunId(taskSlug)`.
 - `plan` is typed as `unknown` — the planner agent stores parsed JSON here, the coder agent reads it.
 - `toolchainProfile` is set by the CLI from auto-detection; used by blueprint nodes for profile-driven verification.
 
@@ -560,15 +561,15 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 
 28-node pipeline:
 
-1. **create-branch** (deterministic) — `git checkout -b bollard/{runId}`
+1. **create-branch** (deterministic) — `git checkout -b bollard/{runId}`; sets `ctx.rollbackSha` (`git rev-parse HEAD`) best-effort
 2. **generate-plan** (agentic/planner) — planner agent explores codebase, produces JSON plan
 3. **approve-plan** (human_gate) — shows plan, waits for human approval
 4. **implement** (agentic/coder) — coder agent implements plan with full toolset
-5. **static-checks** (deterministic) — profile-driven typecheck + lint + audit + secretScan
+5. **static-checks** (deterministic) — profile-driven typecheck + lint + audit + secretScan; `onFailure: "skip"` (trust-but-verify after coder hook; failure is logged, pipeline continues)
 6. **extract-signatures** (deterministic) — extract signatures + types (TS + deterministic Python/Go/Rust extractors; LLM fallback only for unknown languages when a provider is configured)
 7. **generate-tests** (agentic/boundary-tester) — boundary-scope adversarial tests
 8. **write-tests** (deterministic) — strip fences, `deriveAdversarialTestPath(..., "boundary")`, leak scan
-9. **run-tests** (deterministic) — profile-driven test execution
+9. **run-tests** (deterministic) — profile-driven test execution; `onFailure: "skip"` (coder hook already ran tests; e.g. boundary test bugs should not block downstream scopes)
 10. **assess-contract-risk** (deterministic) — emits `contract_scope_decision` event; skips downstream contract nodes when risk is low and no exported symbols changed
 11. **extract-contracts** (deterministic) — `buildContractContext` (skipped when `!profile.adversarial.contract.enabled` or risk-gate says skip)
 12. **generate-contract-tests** (agentic/contract-tester) — emits JSON claims document (skipped in agent-handler when contract disabled)
@@ -771,8 +772,6 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - **External observe providers** — Datadog, Flagsmith, LaunchDarkly, Cloud Run, ArgoCD implementations. Interfaces exist in `@bollard/observe`; implementations are 4b+.
 - **Advanced fault injection** — network_delay, resource_limit via `tc`/`iptables`. `FaultInjector` interface is extensible; only `service_stop` is implemented.
 - **Library-mode behavioral testing** — agent prompt has `{{#if hasPublicApi}}` ready; implementation deferred.
-- Git rollback on coder max-turns failure — Stage 4c
-- Verification summary batching (single feedback message instead of per-check retries) — Stage 4c
 - CI integration, run history, self-improvement — Stage 5
 
 ### Size (current):

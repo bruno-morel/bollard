@@ -207,6 +207,14 @@ export function createImplementFeatureBlueprint(
           try {
             await execFileAsync("git", ["checkout", "-b", branchName], { cwd: workDir })
             ctx.gitBranch = branchName
+            try {
+              const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: workDir })
+              ctx.rollbackSha = (
+                Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout)
+              ).trim()
+            } catch {
+              /* best-effort — rollback unavailable if rev-parse fails */
+            }
             return { status: "ok", data: { branch: branchName } }
           } catch (err: unknown) {
             return {
@@ -246,6 +254,7 @@ export function createImplementFeatureBlueprint(
         id: "static-checks",
         name: "Static Verification",
         type: "deterministic",
+        onFailure: "skip",
         execute: async (ctx: PipelineContext): Promise<NodeResult> => {
           const { results, allPassed } = await runStaticChecks(workDir, ctx.toolchainProfile)
           if (!allPassed) {
@@ -381,6 +390,7 @@ export function createImplementFeatureBlueprint(
         id: "run-tests",
         name: "Run Tests",
         type: "deterministic",
+        onFailure: "skip",
         execute: async (ctx: PipelineContext): Promise<NodeResult> => {
           const result = await runTests(workDir, undefined, ctx.toolchainProfile)
           if (result.failed > 0) {

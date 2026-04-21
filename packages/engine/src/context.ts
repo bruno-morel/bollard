@@ -34,6 +34,8 @@ export interface PipelineContext {
   results: Record<string, NodeResult>
   changedFiles: string[]
   gitBranch?: string
+  /** SHA of HEAD at branch creation — rollback target on coder failure. */
+  rollbackSha?: string
   plan?: unknown
   mutationScore?: number
   generatedProbes?: unknown[]
