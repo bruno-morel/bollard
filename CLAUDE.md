@@ -6,10 +6,11 @@
 
 Bollard is an **artifact integrity framework** for AI-assisted software development. It ensures every artifact (code, tests, docs, infra) is produced, adversarially verified, and mechanically proven sound before shipping. The core innovation: separate the producer from the verifier, then prove the verification itself is meaningful (via mutation testing).
 
-Bollard has completed **Stage 2** (adversarial verification infrastructure), **Stage 3a** (contract-scope adversarial testing — **validated GREEN on 2026-04-08**), **Stage 3b** (multi-language contract graph + dev ergonomics — **validated GREEN on 2026-04-09** — see [spec/stage3b-validation-results.md](../spec/stage3b-validation-results.md)), the **Stage 3c remainder** (polyglot mutation providers, semantic review + grounding, Anthropic response streaming, `go.work`-only Go detection — see the Remainder section in [spec/stage3c-validation-results.md](../spec/stage3c-validation-results.md)), **Stage 4a** (behavioral-scope adversarial testing — **validated GREEN on 2026-04-16** — see [spec/stage4a-validation-results.md](../spec/stage4a-validation-results.md)), and **Stage 4b** (production feedback loop — **validated GREEN on 2026-04-16** — see [spec/stage4b-validation-results.md](../spec/stage4b-validation-results.md)). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, boundary tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 (first half) fixed critical agent infrastructure issues: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. Stage 2 (second half) added Docker-isolated verification containers, LLM fallback signature extraction for edge languages, in-language adversarial test generation, adversarial test lifecycle (ephemeral + persistent-native), MCP server (`@bollard/mcp`), and OpenAI + Google LLM providers. **Stage 3a** adds per-scope `AdversarialConfig` with concern weights, `boundary-tester` + `contract-tester` agents, deterministic extractors for Python/Go/Rust, TypeScript contract graph (`buildContractContext`), four contract blueprint nodes, and `bollard contract` / MCP `bollard_contract`. **Stage 3b** adds polyglot dev image with pre-built Go/Rust extractor helpers, `dev-full` image with full Go/Rust/Python toolchains, `ContractGraphProvider` interface with Python/Go/Rust providers, polyglot risk gate (`scanDiffForExportChanges`), polyglot test summary parsers, and ADR-0002 for the syn-based Rust extractor helper. **Stage 4a** adds behavioral-scope adversarial testing: `buildBehavioralContext` (endpoints, config, deps, failure modes), `behavioral-tester` agent, behavioral grounding, coarse fault injection (`service_stop`), behavioral compose generator, 5 behavioral pipeline nodes. **Stage 4b** adds the production feedback loop: `@bollard/observe` package (probe extraction, HTTP probe runner, metrics store, deployment tracker, drift detector, flag manager, progressive rollout, probe scheduler), `extract-probes` blueprint node, CLI `probe`/`deploy`/`flag`/`drift` commands, 4 MCP tools, provider-based architecture with fully standalone built-in implementations.
+Bollard has completed **Stage 2** (adversarial verification infrastructure), **Stage 3a** (contract-scope adversarial testing — **validated GREEN on 2026-04-08**), **Stage 3b** (multi-language contract graph + dev ergonomics — **validated GREEN on 2026-04-09** — see [spec/stage3b-validation-results.md](../spec/stage3b-validation-results.md)), the **Stage 3c remainder** (polyglot mutation providers, semantic review + grounding, Anthropic response streaming, `go.work`-only Go detection — see the Remainder section in [spec/stage3c-validation-results.md](../spec/stage3c-validation-results.md)), **Stage 4a** (behavioral-scope adversarial testing — **validated GREEN on 2026-04-16** — see [spec/stage4a-validation-results.md](../spec/stage4a-validation-results.md)), and **Stage 4b** (production feedback loop — **validated GREEN on 2026-04-16** — see [spec/stage4b-validation-results.md](../spec/stage4b-validation-results.md)). The kernel (Stage 0) executes blueprints — sequences of deterministic and agentic nodes. Stage 1 added multi-turn agents (planner, coder, boundary tester), filesystem tools, static verification, the `implement-feature` blueprint, eval sets, and adversarial test generation. Stage 1.5 added language-agnostic toolchain detection (`@bollard/detect`, `ToolchainProfile`), templatized agent prompts, and profile-driven verification. Stage 2 (first half) fixed critical agent infrastructure issues: `edit_file` tool for surgical edits, deeper type extraction with reference resolution, correct test placement, markdown fence stripping, and coder turn budget management. Stage 2 (second half) added Docker-isolated verification containers, LLM fallback signature extraction for edge languages, in-language adversarial test generation, adversarial test lifecycle (ephemeral + persistent-native), MCP server (`@bollard/mcp`), and OpenAI + Google LLM providers. **Stage 3a** adds per-scope `AdversarialConfig` with concern weights, `boundary-tester` + `contract-tester` agents, deterministic extractors for Python/Go/Rust, TypeScript contract graph (`buildContractContext`), four contract blueprint nodes, and `bollard contract` / MCP `bollard_contract`. **Stage 3b** adds polyglot dev image with pre-built Go/Rust extractor helpers, `dev-full` image with full Go/Rust/Python toolchains, `ContractGraphProvider` interface with Python/Go/Rust providers, polyglot risk gate (`scanDiffForExportChanges`), polyglot test summary parsers, and ADR-0002 for the syn-based Rust extractor helper. **Stage 4a** adds behavioral-scope adversarial testing: `buildBehavioralContext` (endpoints, config, deps, failure modes), `behavioral-tester` agent, behavioral grounding, coarse fault injection (`service_stop`), behavioral compose generator, 5 behavioral pipeline nodes. **Stage 4b** adds the production feedback loop: `@bollard/observe` package (probe extraction, HTTP probe runner, metrics store, deployment tracker, drift detector, flag manager, progressive rollout, probe scheduler), `extract-probes` blueprint node, CLI `probe`/`deploy`/`flag`/`drift` commands, 4 MCP tools, provider-based architecture with fully standalone built-in implementations. **Stage 4c** completes Java/Kotlin Wave 1 (detector, `bollard-extract-java`, contract graph, PIT, JVM compose). **Stage 4d** adds DX and agent integrations: `bollard init --ide` (Cursor, Claude Code, Codex, Antigravity), MCP v2 (enriched tool descriptions, 6 resources, 3 prompts), `bollard watch`, and `verify --quiet`.
 
 The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md)):
 - **Stage 4c:** Java/Kotlin Wave 1 shipped (Part 2 — detector, `bollard-extract-java`, contract graph, PIT, JVM compose, prompts). (OpenAI + Google `chatStream` parity was Part 1.)
+- **Stage 4d:** DX & Agent Integrations: `bollard init --ide` generates platform-specific config for Cursor (rules, hooks, commands), Claude Code (commands, agents, hooks, CLAUDE.md augmentation), Codex, and Antigravity. MCP server v2 adds enriched tool descriptions, 6 resource endpoints (`bollard://profile`, etc.), and 3 prompt templates. `bollard watch` provides continuous verification with file watching. `--quiet` flag on `verify` enables machine-readable JSON output for hooks.
 - **Stage 5:** Self-hosting + self-improvement.
 
 Stage 2's single adversarial tester (now called the **boundary-scope** tester) is the first of three adversarial scopes. Each scope has its own agent, context, and execution mode, probing four cross-cutting concerns (correctness, security, performance, resilience) with per-scope weights.
@@ -31,6 +32,17 @@ docker compose run --rm dev --filter @bollard/cli run start -- eval planner
 
 # Print contract graph JSON (optional planner JSON for affected file paths)
 docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan plan.json]
+
+# Generate platform-specific IDE integration config
+docker compose run --rm dev --filter @bollard/cli run start -- init --ide cursor
+docker compose run --rm dev --filter @bollard/cli run start -- init --ide claude-code
+docker compose run --rm dev --filter @bollard/cli run start -- init --ide all
+
+# Continuous verification (file watcher)
+docker compose run --rm dev --filter @bollard/cli run start -- watch
+
+# Machine-readable verification (for hooks)
+docker compose run --rm dev --filter @bollard/cli run start -- verify --quiet
 ```
 
 ### Known limitations (Stage 4c JVM Wave 1)
@@ -50,6 +62,8 @@ docker compose run --rm dev --filter @bollard/cli run start -- contract [--plan 
 - **Vitest discovery of `.bollard/`:** `runTests` branches on paths containing `.bollard/` and uses `vitest.contract.config.ts`. Any new "write test to `.bollard/` then run it" flow must go through `runTests(profile, testFiles)` rather than invoking `pnpm run test` directly.
 - **JVM cross-module contract tests:** `resolveContractTestModulePrefix` places contract tests in the consumer module (from `affectedEdges[0].from`). If the contract-tester agent generates assertions that assume the consumer has been extended (e.g., new dispatch cases), those tests may fail at runtime — this is an LLM test-design issue, not infrastructure.
 - **JVM audit detection:** OWASP dependency-check commands are only emitted when the plugin is declared in `pom.xml` / `build.gradle(.kts)`. Projects without the plugin get no `audit` check (previously caused hard failures).
+- **`bollard watch`** uses `fs.watch` with `recursive: true` — supported on macOS and Windows but not on Linux. Falls back to non-recursive top-level watch on Linux.
+- **Claude Code plugin packaging** under `plugin/claude-code/` is a scaffold only — npm publishing and `claude plugin add` registration are future work.
 
 ## Tech Stack (Non-Negotiable)
 
@@ -278,7 +292,7 @@ bollard/
 │   │       ├── implement-feature.test.ts  # node order, types, structure
 │   │       └── write-tests-helpers.test.ts  # test path derivation, fence stripping
 │   │
-│   ├── cli/                      ← CLI (Stage 0 + Stage 1 + Stage 1.5 + Stage 2)
+│   ├── cli/                      ← CLI (Stage 0 + Stage 1 + Stage 1.5 + Stage 2 + Stage 4d)
 │   │   ├── src/
 │   │   │   ├── index.ts          # Entry: parse args, route commands, progress output
 │   │   │   ├── config.ts         # detectToolchain + .bollard.yml overrides + ToolchainProfile
@@ -286,7 +300,17 @@ bollard/
 │   │   │   ├── contract-plan.ts # collectAffectedPathsFromPlan
 │   │   │   ├── agent-handler.ts  # Multi-turn agentic handler (threads profile to agents)
 │   │   │   ├── diff.ts           # diffToolchainProfile — compare profile vs Stage 1 defaults
-│   │   │   └── human-gate.ts     # Interactive human approval via stdin
+│   │   │   ├── human-gate.ts     # Interactive human approval via stdin
+│   │   │   ├── template-renderer.ts  # renderTemplate — profile-driven config file generation
+│   │   │   ├── ide-detect.ts     # parseIdePlatform — cursor, claude-code, codex, antigravity, all
+│   │   │   ├── init-ide.ts       # generateIdeConfigs, writeGeneratedFiles, mergeJsonFile
+│   │   │   ├── watch.ts          # bollard watch — fs.watch + debounced runStaticChecks
+│   │   │   ├── quiet-verify.ts   # formatQuietVerifyResult — JSON shape for verify --quiet
+│   │   │   └── generators/
+│   │   │       ├── cursor.ts
+│   │   │       ├── claude-code.ts
+│   │   │       ├── antigravity.ts
+│   │   │       └── codex.ts
 │   │   └── tests/
 │   │       ├── config.test.ts    # 10 tests — defaults, detection, YAML, profile
 │   │       ├── profile-flag.test.ts  # 2 tests — verify --profile flag
@@ -307,10 +331,12 @@ bollard/
 │   │   │   └── rollout.ts
 │   │   └── tests/
 │   │
-│   └── mcp/                      ← MCP SERVER (Stage 2 + 4b)
+│   └── mcp/                      ← MCP SERVER (Stage 2 + 4b + Stage 4d)
 │       ├── src/
 │       │   ├── server.ts         # MCP server entry point (stdio transport)
-│       │   └── tools.ts          # 12 MCP tools (+ probe_run, deploy_record, flag_set, drift_check)
+│       │   ├── tools.ts          # MCP tools (enriched descriptions in Stage 4d)
+│       │   ├── resources.ts      # 6 resource endpoints (bollard://profile, etc.)
+│       │   └── prompts.ts        # 3 prompt templates
 │       └── tests/
 │           └── tools.test.ts     # tool definitions, schemas, handlers
 ```
@@ -321,6 +347,7 @@ bollard/
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** 9 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`, `behavioral-tester.md`
 - **Latest count (authoritative, 2026-04-21, Stage 4c cleanup):** `771` passed, `4` skipped (775 total, 60 files). Skips: 4 LLM live smoke tests (no key). Stage 4c cleanup adds verification hook audit/secretScan coverage, coder rollback tests, and `onFailure: "skip"` for static-checks/run-tests (+2 vs Wave 1.1 baseline).
+- **Stage 4d** adds new tests (watch helpers, plugin manifest, init-ide generators, MCP prompts/resources, etc.) — run `docker compose run --rm dev run test` for the authoritative total after Stage 4d lands.
 - **Adversarial suite** (`vitest.adversarial.config.ts`): `335` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c). +4 from cleanup (audit/secretScan hook, rollback paths).
 - **Vitest + Vite 8:** you may see `esbuild` option deprecated in favor of `oxc` — harmless until Vitest defaults align; pin Vite 7.x if you need a silent log.
 
@@ -597,13 +624,16 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 | `run demo --task "..."` | Stage 0 demo blueprint (1 deterministic + 1 agentic node) |
 | `run implement-feature --task "..." [--work-dir <path>]` | Full Stage 1 pipeline with human gates (optional work dir override) |
 | `plan --task "..." [--work-dir <path>]` | Standalone planner agent (no implementation) |
-| `verify [--profile] [--work-dir <path>]` | Run static checks (or show detected profile as JSON) |
+| `verify [--profile] [--work-dir <path>] [--quiet]` | Run static checks (or show detected profile as JSON); `--quiet` emits JSON on failure (hooks) |
+| `init --ide <platform>` | Generate platform-specific config (`cursor`, `claude-code`, `codex`, `antigravity`, `all`) |
+| `watch [--quiet] [--debounce N]` | Continuous verification — re-verify on file changes |
+| `verify --quiet` | Machine-readable JSON verification output (for hooks) |
 | `contract [--plan <file>] [--work-dir <path>]` | Print `ContractContext` JSON (optional planner JSON for affected paths) |
 | `behavioral [--work-dir <path>]` | Print `BehavioralContext` JSON |
 | `diff` | Compare detected profile vs hardcoded Stage 1 defaults |
 | `eval [agent]` | Run eval sets (planner, coder, boundary-tester, contract-tester, behavioral-tester; `tester` aliases boundary) |
 | `config show [--sources]` | Show resolved configuration |
-| `init [--mode=...] [--persist]` | Detect project configuration, generate .bollard.yml |
+| `init [--mode=...] [--persist] [--ide <platform>]` | Detect project configuration, generate `.bollard.yml` (+ optional IDE integration files) |
 | `promote-test <path>` | Promote adversarial test to project test directory |
 | `probe` (`run`, `watch`, `list`) | HTTP probes from `.bollard/probes/` (`--url` / `observe.baseUrl`) |
 | `deploy` (`record`, `list`, `current`) | Built-in deployment tracker (`.bollard/observe/deployments.json`) |
@@ -765,6 +795,17 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 ### Stage 4c (Part 2) (DONE) — Java/Kotlin Wave 1
 - `detectToolchain` JVM detector (Maven/Gradle), `MutationToolId` `"pitest"`, `scripts/extract_java` + Graal `bollard-extract-java`, `JavaParserExtractor`, `JavaContractProvider`, `PitestProvider`, Surefire/Gradle `parseSummary`, `docker/Dockerfile.verify-jvm`, `DEFAULT_IMAGES` Temurin 21 for java/kotlin, behavioral compose JVM start commands.
 - **Validation (2026-04-20, Wave 1.1 fix):** 769 pass / 4 skip; adversarial 331 pass. Phase 0–2 GREEN; Phase 3 Bollard-on-bollard reached node 15 `run-contract-tests` (cross-module test now placed in consumer module `api/`, compiles and runs). Wave 1.1 fixes: `resolveContractTestModulePrefix` for cross-module JVM contract-test placement, conditional OWASP audit detection (`hasOwaspMavenPlugin`/`hasOwaspGradlePlugin`). Phase 4 Gradle detection GREEN (live pipeline deferred). See [spec/stage4c-validation-results.md](../spec/stage4c-validation-results.md).
+
+### Stage 4d (DONE) — DX & Agent Integrations:
+- `bollard init --ide <platform>` with platform detection and config generation
+- Template rendering engine (`renderTemplate`) for profile-driven config files
+- Cursor integration: `.cursor/rules/bollard.mdc`, `.cursor/hooks.json`, 4 slash commands, MCP config, automations guide
+- Claude Code integration: `.claude/commands/`, `.claude/agents/bollard-verifier.md`, hooks in `.claude/settings.json`, CLAUDE.md augmentation, `.mcp.json`
+- Secondary platforms: Antigravity (`mcp_config.json`), Codex (`.codex/config.toml`)
+- MCP server v2: enriched tool descriptions, 6 resource endpoints, 3 prompt templates
+- `bollard watch` — continuous verification with file watching, debounce, quiet mode
+- `--quiet` flag on `verify` — JSON output for hooks
+- Plugin packaging scaffold for Claude Code
 
 ### DO NOT build yet:
 - **New languages outside the current seven (TS/JS/Python/Go/Rust/Java/Kotlin)** — C#/.NET, Ruby, PHP, and further waves are sequenced (Stage 4c+ → 5+). Full design in [spec/07-adversarial-scopes.md §12.1](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md). Do not add language detectors, extractors, or verify images for any of these languages ad-hoc — each wave is coordinated so the dev image, `dev-full` image, mutation testing pattern, and contract graph all land together. Swift, Scala, Elixir, F#, Clojure, Haskell, OCaml, Nim, and Zig are explicit non-goals with no near-term timeline.
