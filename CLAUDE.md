@@ -346,7 +346,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** 9 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`, `behavioral-tester.md`
-- **Latest count (authoritative, 2026-04-22, Stage 4d hardening):** `860` passed, `4` skipped (864 total). Skips: 4 LLM live smoke tests (no key). Stage 4d adds init-ide generators, MCP prompts/resources, watch helpers, plugin manifest, doctor command. Stage 4d hardening adds MCP verify structured output test and config workDir test.
+- **Latest count (authoritative, 2026-04-22, Stage 4d hardening):** `862` passed, `4` skipped (866 total). Skips: 4 LLM live smoke tests (no key). Stage 4d adds init-ide generators, MCP prompts/resources, watch helpers, plugin manifest, doctor command. Stage 4d hardening adds MCP verify structured output test, config workDir test, and bollard_watch_status tool (14 MCP tools total).
 - **Adversarial suite** (`vitest.adversarial.config.ts`): `335` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c). +4 from cleanup (audit/secretScan hook, rollback paths).
 - **Vitest + Vite 8:** you may see `esbuild` option deprecated in favor of `oxc` — harmless until Vitest defaults align; pin Vite 7.x if you need a silent log.
 
