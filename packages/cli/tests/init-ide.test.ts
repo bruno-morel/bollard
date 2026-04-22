@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { afterEach, describe, expect, it } from "vitest"
+import { ALL_IDE_PLATFORMS } from "../src/ide-detect.js"
 import { generateIdeConfigs, mergeJsonFile, writeGeneratedFiles } from "../src/init-ide.js"
 
 let tempDir: string | undefined
@@ -101,15 +102,41 @@ describe("writeGeneratedFiles", () => {
     }
     expect(parsed).toEqual({ a: 1, b: 2 })
   })
+
+  it("appends text when appendText is true and file exists", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "init-ide-"))
+    const rel = "notes.md"
+    await writeFile(join(tempDir, rel), "line one\n\n", "utf-8")
+    const { written } = await writeGeneratedFiles(tempDir, {
+      platform: "cursor",
+      files: [{ path: rel, content: "line two", appendText: true }],
+      messages: [],
+    })
+    expect(written).toEqual([rel])
+    expect(await readFile(join(tempDir, rel), "utf-8")).toBe("line one\n\nline two")
+  })
+
+  it("creates file when appendText is true and file does not exist", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "init-ide-"))
+    const rel = "new-append.txt"
+    const { written, skipped } = await writeGeneratedFiles(tempDir, {
+      platform: "cursor",
+      files: [{ path: rel, content: "fresh", appendText: true }],
+      messages: [],
+    })
+    expect(written).toEqual([rel])
+    expect(skipped).toEqual([])
+    expect(await readFile(join(tempDir, rel), "utf-8")).toBe("fresh")
+  })
 })
 
 describe("generateIdeConfigs", () => {
-  it("returns coming soon message for unregistered platforms", async () => {
+  it("returns non-empty files for every built-in IDE platform", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "init-ide-"))
-    const results = await generateIdeConfigs(tempDir, ["claude-code"], minimalProfile())
-    expect(results).toHaveLength(1)
-    expect(results[0]?.platform).toBe("claude-code")
-    expect(results[0]?.files).toEqual([])
-    expect(results[0]?.messages.some((m) => m.includes("coming soon"))).toBe(true)
+    const results = await generateIdeConfigs(tempDir, [...ALL_IDE_PLATFORMS], minimalProfile())
+    expect(results).toHaveLength(ALL_IDE_PLATFORMS.length)
+    for (const r of results) {
+      expect(r.files.length).toBeGreaterThan(0)
+    }
   })
 })

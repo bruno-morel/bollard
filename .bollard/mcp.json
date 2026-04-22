@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "bollard": {
+      "command": "pnpm",
+      "args": [
+        "--filter",
+        "@bollard/mcp",
+        "run",
+        "start"
+      ],
+      "env": {
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
+      }
+    }
+  }
+}

@@ -11,6 +11,8 @@ export interface WatchOptions {
   checks?: string[]
   debounceMs?: number
   quiet?: boolean
+  /** Emit one ndjson line per verify run on stdout (pass, fail, or error). When set with --quiet, the quiet fail-only JSON is skipped to avoid duplicate stdout. */
+  json?: boolean
 }
 
 function log(msg: string): void {
@@ -93,8 +95,36 @@ export function buildQuietWatchOutput(results: StaticCheckResult[]): QuietWatchF
   }
 }
 
+export interface WatchJsonPayload {
+  status: "pass" | "fail" | "error"
+  allPassed?: boolean
+  checks?: StaticCheckResult[]
+  error?: string
+  timestamp: number
+}
+
+export function buildJsonWatchOutput(
+  results: StaticCheckResult[],
+  allPassed: boolean,
+): WatchJsonPayload {
+  return {
+    status: allPassed ? "pass" : "fail",
+    allPassed,
+    checks: results,
+    timestamp: Date.now(),
+  }
+}
+
+export function buildJsonWatchErrorOutput(err: unknown): WatchJsonPayload {
+  return {
+    status: "error",
+    error: err instanceof Error ? err.message : String(err),
+    timestamp: Date.now(),
+  }
+}
+
 export async function runWatch(options: WatchOptions): Promise<void> {
-  const { workDir, profile, checks, debounceMs: debounceOpt, quiet = false } = options
+  const { workDir, profile, checks, debounceMs: debounceOpt, quiet = false, json = false } = options
   const debounceMs = debounceOpt ?? 1500
 
   const resolvedDir = resolve(workDir)
@@ -114,12 +144,16 @@ export async function runWatch(options: WatchOptions): Promise<void> {
         checks !== undefined && checks.length > 0 ? { onlyChecks: checks } : undefined
       const { results, allPassed } = await runStaticChecks(resolvedDir, profile, staticOpts)
 
-      if (quiet) {
-        if (!allPassed) {
-          const payload = buildQuietWatchOutput(results)
-          process.stdout.write(`${JSON.stringify(payload)}\n`)
-        }
-      } else {
+      if (json) {
+        process.stdout.write(`${JSON.stringify(buildJsonWatchOutput(results, allPassed))}\n`)
+      }
+
+      if (quiet && !json && !allPassed) {
+        const payload = buildQuietWatchOutput(results)
+        process.stdout.write(`${JSON.stringify(payload)}\n`)
+      }
+
+      if (!quiet) {
         for (const r of results) {
           const icon = r.passed ? `${GREEN}✓${RESET}` : `${RED}✗${RESET}`
           log(`  ${icon} ${r.check}`)
@@ -134,6 +168,9 @@ export async function runWatch(options: WatchOptions): Promise<void> {
     } catch (err) {
       if (!quiet) {
         log(`${RED}Verification error: ${err instanceof Error ? err.message : String(err)}${RESET}`)
+      }
+      if (json) {
+        process.stdout.write(`${JSON.stringify(buildJsonWatchErrorOutput(err))}\n`)
       }
     } finally {
       running = false

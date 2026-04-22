@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs"
-import { mkdir, writeFile } from "node:fs/promises"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { IdePlatform } from "./ide-detect.js"
@@ -11,6 +11,8 @@ export interface GeneratedFile {
   content: string
   /** If true, merge into existing file rather than overwriting */
   merge?: boolean
+  /** If true, append content to an existing text file (trimEnd + blank lines); create if missing */
+  appendText?: boolean
 }
 
 export interface IdeGeneratorResult {
@@ -36,6 +38,15 @@ export async function loadBuiltinGenerators(): Promise<void> {
 
   const { generateCursorConfig } = await import("./generators/cursor.js")
   registerIdeGenerator("cursor", generateCursorConfig)
+
+  const { generateClaudeCodeConfig } = await import("./generators/claude-code.js")
+  registerIdeGenerator("claude-code", generateClaudeCodeConfig)
+
+  const { generateAntigravityConfig } = await import("./generators/antigravity.js")
+  registerIdeGenerator("antigravity", generateAntigravityConfig)
+
+  const { generateCodexConfig } = await import("./generators/codex.js")
+  registerIdeGenerator("codex", generateCodexConfig)
 }
 
 /** Merge a JSON object into an existing JSON file, or write fresh if no file exists. */
@@ -92,7 +103,16 @@ export async function writeGeneratedFiles(
     const fullPath = join(cwd, file.path)
     await mkdir(dirname(fullPath), { recursive: true })
 
-    if (file.merge && existsSync(fullPath)) {
+    if (file.appendText) {
+      if (existsSync(fullPath)) {
+        const existing = await readFile(fullPath, "utf-8")
+        await writeFile(fullPath, `${existing.trimEnd()}\n\n${file.content}`, "utf-8")
+        written.push(file.path)
+      } else {
+        await writeFile(fullPath, file.content, "utf-8")
+        written.push(file.path)
+      }
+    } else if (file.merge && existsSync(fullPath)) {
       const merged = await mergeJsonFile(
         fullPath,
         JSON.parse(file.content) as Record<string, unknown>,

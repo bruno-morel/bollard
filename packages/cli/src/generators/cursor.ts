@@ -102,22 +102,38 @@ Do NOT write boundary, contract, or behavioral edge-case tests — Bollard handl
 | \`bollard_implement\` | To run the full 28-node pipeline for a task |
 `
 
-const CURSOR_CMD_VERIFY = `Run Bollard verification on the current workspace. Use the \`bollard_verify\` MCP tool
+const CURSOR_CMD_VERIFY = `---
+description: Run Bollard static verification (typecheck, lint, audit)
+---
+
+Run Bollard verification on the current workspace. Use the \`bollard_verify\` MCP tool
 to check typecheck, lint, and audit status. If any check fails, explain what went wrong
 and suggest fixes.
 `
 
-const CURSOR_CMD_IMPLEMENT = `Run the full Bollard implement-feature pipeline. Ask the user for a task description,
+const CURSOR_CMD_IMPLEMENT = `---
+description: Run full Bollard implement-feature pipeline (28 nodes)
+---
+
+Run the full Bollard implement-feature pipeline. Ask the user for a task description,
 then use \`bollard_implement\` with the task. Monitor progress and report the outcome
 of each pipeline node.
 `
 
-const CURSOR_CMD_CONTRACT = `Inspect the contract-scope module graph using \`bollard_contract\`. Show the module
+const CURSOR_CMD_CONTRACT = `---
+description: Inspect module dependency graph and contract edges
+---
+
+Inspect the contract-scope module graph using \`bollard_contract\`. Show the module
 dependency structure, highlight any affected edges from recent changes, and identify
 potential contract violations.
 `
 
-const CURSOR_CMD_DRIFT = `Check for code drift since the last verified deployment using \`bollard_drift_check\`.
+const CURSOR_CMD_DRIFT = `---
+description: Check for code drift since last verification
+---
+
+Check for code drift since the last verified deployment using \`bollard_drift_check\`.
 If drift is detected, recommend running verification before the next deployment.
 `
 
@@ -199,6 +215,10 @@ export async function generateCursorConfig(
     "Slash commands: /bollard-verify, /bollard-implement, /bollard-contract, /bollard-drift",
     "Verification protocol: agent verifies at logical checkpoints (see rules file)",
     "See .cursor/bollard-automations-guide.md for scheduled automation setup",
+    "",
+    "⚠ ACTION REQUIRED: Enable the Bollard MCP server in Cursor:",
+    "  Cursor Settings → Tools → bollard tab → toggle ON under Workspace MCP Servers",
+    "  (Cursor disables new workspace MCP servers by default for security)",
   )
 
   return { platform: "cursor", files, messages }
