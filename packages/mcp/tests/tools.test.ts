@@ -19,6 +19,19 @@ describe("MCP tool definitions", () => {
     }
   })
 
+  it("every tool description is at least 50 characters long", () => {
+    for (const tool of tools) {
+      expect(tool.description.length).toBeGreaterThanOrEqual(50)
+    }
+  })
+
+  it("every tool description starts with an action verb", () => {
+    const verb = /^(Run|Generate|Analyze|Show|Detect|Build|Execute|Record|Set)\b/
+    for (const tool of tools) {
+      expect(verb.test(tool.description)).toBe(true)
+    }
+  })
+
   it("includes bollard_verify tool", () => {
     const tool = tools.find((t) => t.name === "bollard_verify")
     expect(tool).toBeDefined()

@@ -263,74 +263,85 @@ function zodToJsonSchema(schema: z.ZodObject<z.ZodRawShape>): Record<string, unk
 export const tools: McpToolDefinition[] = [
   {
     name: "bollard_verify",
-    description: "Run static verification (typecheck, lint, audit) on the workspace",
+    description:
+      "Run static verification checks — typecheck, lint, audit, and secret scanning. Returns structured results with pass/fail per check, affected files, and specific error messages. Run this after every code change to catch issues early.",
     inputSchema: zodToJsonSchema(verifyInputSchema),
     handler: handleVerify,
   },
   {
     name: "bollard_plan",
-    description: "Generate a plan for a task using the planner agent",
+    description:
+      "Generate a structured implementation plan for a task using Bollard's planner agent. Returns a JSON plan with summary, acceptance criteria, affected files, risk assessment, and implementation steps. Requires ANTHROPIC_API_KEY.",
     inputSchema: zodToJsonSchema(planInputSchema),
     handler: handlePlan,
   },
   {
     name: "bollard_implement",
-    description: "Run the full implement-feature pipeline (plan, code, verify, test)",
+    description:
+      "Run the full 28-node implement-feature pipeline: plan → approve → code → verify → adversarial test → contract test → behavioral test → mutation test → review. Requires an API key and runs interactively via the CLI.",
     inputSchema: zodToJsonSchema(implementInputSchema),
     handler: handleImplement,
   },
   {
     name: "bollard_eval",
-    description: "Run agent eval sets to measure prompt quality",
+    description:
+      "Run evaluation sets against Bollard's agents (planner, coder, boundary-tester, contract-tester, behavioral-tester). Returns pass/fail counts and identifies prompt regressions. Use to validate prompt changes.",
     inputSchema: zodToJsonSchema(evalInputSchema),
     handler: handleEval,
   },
   {
     name: "bollard_config",
-    description: "Show resolved Bollard configuration",
+    description:
+      "Show the fully resolved Bollard configuration after merging defaults, auto-detection, environment variables, and .bollard.yml overrides. Optionally include source annotations showing where each value came from.",
     inputSchema: zodToJsonSchema(configInputSchema),
     handler: handleConfig,
   },
   {
     name: "bollard_profile",
-    description: "Resolve toolchain profile for the workspace (detection + .bollard.yml)",
+    description:
+      "Detect the project's toolchain profile — language, package manager, type checker, linter, test framework, audit tool, and adversarial configuration. Returns the full ToolchainProfile JSON. Use before modifying verification workflows.",
     inputSchema: zodToJsonSchema(profileInputSchema),
     handler: handleProfile,
   },
   {
     name: "bollard_contract",
-    description: "Build contract-scope context (module graph + edges) as JSON",
+    description:
+      "Analyze the contract graph — module dependency graph with public exports, edges between modules (who imports what from whom), and which edges are affected by recent changes. Use before modifying cross-module interfaces to understand impact.",
     inputSchema: zodToJsonSchema(contractInputSchema),
     handler: handleContract,
   },
   {
     name: "bollard_behavioral",
     description:
-      "Build behavioral-scope context (endpoints, config, dependencies, failure modes) as JSON",
+      "Build a behavioral context catalog — HTTP endpoints, configuration surface, external dependencies, and failure modes discovered from the codebase. Use to understand the system's observable behavior and identify gaps in behavioral test coverage.",
     inputSchema: zodToJsonSchema(behavioralInputSchema),
     handler: handleBehavioral,
   },
   {
     name: "bollard_probe_run",
-    description: "Execute stored HTTP probes against a base URL and record metrics",
+    description:
+      "Execute stored HTTP probes against a live service URL. Probes assert on status codes, response times, response bodies, and headers. Returns per-probe pass/fail with detailed assertion results. Use to verify deployed services.",
     inputSchema: zodToJsonSchema(probeRunInputSchema),
     handler: handleProbeRun,
   },
   {
     name: "bollard_deploy_record",
-    description: "Append a deployment record to the built-in deployment tracker",
+    description:
+      "Record a deployment event (SHA, timestamp, environment, risk tier) in Bollard's deployment tracker. Use after deploying to update the last-known-good state for drift detection and probe scheduling.",
     inputSchema: zodToJsonSchema(deployRecordInputSchema),
     handler: handleDeployRecord,
   },
   {
     name: "bollard_flag_set",
-    description: "Set a feature flag in the built-in file provider (on|off|percent)",
+    description:
+      "Set a feature flag in Bollard's file-based flag provider. Supports on/off toggles and percentage-based rollout values. Use for progressive rollout control — flags integrate with the risk-gated rollout state machine.",
     inputSchema: zodToJsonSchema(flagSetInputSchema),
     handler: handleFlagSet,
   },
   {
     name: "bollard_drift_check",
-    description: "Run git-based drift detection vs last verified SHA",
+    description:
+      "Detect code drift since the last verified deployment. Compares current git state against the last-verified SHA and classifies changes by severity (test-only = low, source = medium, config/infra = high). Run before deploying to catch unverified changes.",
     inputSchema: zodToJsonSchema(driftCheckInputSchema),
     handler: handleDriftCheck,
   },

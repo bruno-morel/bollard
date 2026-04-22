@@ -1,9 +1,21 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
+import {
+  CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  ReadResourceRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js"
+import { prompts } from "./prompts.js"
+import { resources } from "./resources.js"
 import { tools } from "./tools.js"
 
-const server = new Server({ name: "bollard", version: "0.1.0" }, { capabilities: { tools: {} } })
+const server = new Server(
+  { name: "bollard", version: "0.1.0" },
+  { capabilities: { tools: {}, resources: {}, prompts: {} } },
+)
 
 const workDir = process.cwd()
 
@@ -53,6 +65,59 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ],
       isError: true,
     }
+  }
+})
+
+server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+  resources: resources.map((r) => ({
+    uri: r.uri,
+    name: r.name,
+    description: r.description,
+    mimeType: r.mimeType,
+  })),
+}))
+
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const resource = resources.find((r) => r.uri === request.params.uri)
+  if (!resource) {
+    throw new Error(`Unknown resource: ${request.params.uri}`)
+  }
+  const content = await resource.handler(workDir)
+  return {
+    contents: [
+      {
+        uri: resource.uri,
+        mimeType: resource.mimeType,
+        text: content,
+      },
+    ],
+  }
+})
+
+server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+  prompts: prompts.map((p) => ({
+    name: p.name,
+    description: p.description,
+    ...(p.arguments ? { arguments: p.arguments } : {}),
+  })),
+}))
+
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const prompt = prompts.find((p) => p.name === request.params.name)
+  if (!prompt) {
+    throw new Error(`Unknown prompt: ${request.params.name}`)
+  }
+  return {
+    description: prompt.description,
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: prompt.template,
+        },
+      },
+    ],
   }
 })
 
