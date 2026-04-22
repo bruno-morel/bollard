@@ -1,3 +1,4 @@
+import { findWorkspaceRoot } from "@bollard/cli/src/workspace-root.js"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
@@ -17,7 +18,7 @@ const server = new Server(
   { capabilities: { tools: {}, resources: {}, prompts: {} } },
 )
 
-const workDir = process.cwd()
+const workDir = findWorkspaceRoot(process.cwd())
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: tools.map((t) => ({

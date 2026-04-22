@@ -36,8 +36,33 @@ const profileInputSchema = z.object({
 async function handleVerify(input: Record<string, unknown>, workDir: string): Promise<unknown> {
   const parsed = verifyInputSchema.parse(input)
   const dir = parsed.workDir ?? workDir
+  const { resolveConfig } = await import("@bollard/cli/src/config.js")
   const { runStaticChecks } = await import("@bollard/verify/src/static.js")
-  return runStaticChecks(dir)
+  const { profile } = await resolveConfig(undefined, dir)
+  const { results, allPassed } = await runStaticChecks(dir, profile)
+
+  const summary = allPassed
+    ? `All ${results.length} checks passed`
+    : `${results.filter((r) => r.passed).length}/${results.length} checks passed — ${results
+        .filter((r) => !r.passed)
+        .map((r) => r.check)
+        .join(", ")} failed`
+
+  return {
+    allPassed,
+    summary,
+    checks: results.map((r) => ({
+      name: r.check,
+      passed: r.passed,
+      output: r.output,
+      durationMs: r.durationMs,
+    })),
+    ...(allPassed
+      ? {}
+      : {
+          suggestion: "Fix the failing checks above, then call bollard_verify again to confirm.",
+        }),
+  }
 }
 
 async function handlePlan(input: Record<string, unknown>, _workDir: string): Promise<unknown> {
@@ -69,11 +94,11 @@ async function handleEval(input: Record<string, unknown>, _workDir: string): Pro
   }
 }
 
-async function handleConfig(input: Record<string, unknown>, _workDir: string): Promise<unknown> {
+async function handleConfig(input: Record<string, unknown>, workDir: string): Promise<unknown> {
   const parsed = configInputSchema.parse(input)
   const { resolveConfig } = await import("@bollard/cli/src/config.js")
   try {
-    const { config, profile, sources } = await resolveConfig()
+    const { config, profile, sources } = await resolveConfig(undefined, workDir)
     return parsed.showSources ? { config, profile, sources } : config
   } catch (err: unknown) {
     return { error: err instanceof Error ? err.message : String(err) }

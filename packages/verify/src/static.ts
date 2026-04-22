@@ -104,10 +104,16 @@ export async function runStaticChecks(
         durationMs: Date.now() - startMs,
       })
     } catch (err: unknown) {
-      const output =
-        err && typeof err === "object" && "stderr" in err
-          ? String((err as { stderr: string }).stderr)
-          : String(err)
+      let output = ""
+      if (err && typeof err === "object") {
+        const e = err as { stdout?: string; stderr?: string }
+        const parts: string[] = []
+        if (e.stderr) parts.push(e.stderr)
+        if (e.stdout) parts.push(e.stdout)
+        output = parts.length > 0 ? parts.join("\n") : String(err)
+      } else {
+        output = String(err)
+      }
       results.push({
         check: check.name,
         passed: false,
