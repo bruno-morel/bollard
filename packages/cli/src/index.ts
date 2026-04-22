@@ -759,6 +759,24 @@ async function main(): Promise<void> {
     return
   }
 
+  if (command === "watch") {
+    const workDir = resolveWorkspaceDirFromArgs(rest)
+    const { profile } = await resolveConfig(undefined, workDir)
+    const quiet = rest.includes("--quiet")
+    const debounceIdx = rest.indexOf("--debounce")
+    const debounceMs =
+      debounceIdx !== -1 ? Number.parseInt(rest[debounceIdx + 1] ?? "1500", 10) : undefined
+
+    const { runWatch } = await import("./watch.js")
+    await runWatch({
+      workDir,
+      profile,
+      quiet,
+      ...(debounceMs !== undefined ? { debounceMs } : {}),
+    })
+    return
+  }
+
   if (command === "eval") {
     await runEvalCommand(rest)
     return
@@ -806,6 +824,7 @@ async function main(): Promise<void> {
   log(
     `  ${BOLD}init${RESET} [--ide <platform>]        Detect project configuration + optional IDE configs`,
   )
+  log(`  ${BOLD}watch${RESET} [--quiet] [--debounce N] Continuous verification on file changes`)
   log(
     `  ${BOLD}promote-test${RESET} <path>             Promote adversarial test to project test dir`,
   )

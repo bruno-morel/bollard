@@ -14,6 +14,7 @@ export interface StaticCheckResult {
 
 function buildChecksFromProfile(
   profile: ToolchainProfile,
+  onlyNames?: string[],
 ): { name: string; cmd: string; args: string[] }[] {
   const checks: { name: string; cmd: string; args: string[] }[] = []
   if (profile.checks.typecheck) {
@@ -44,6 +45,10 @@ function buildChecksFromProfile(
       args: profile.checks.secretScan.args,
     })
   }
+  if (onlyNames !== undefined && onlyNames.length > 0) {
+    const allow = new Set(onlyNames)
+    return checks.filter((c) => allow.has(c.name))
+  }
   return checks
 }
 
@@ -73,11 +78,14 @@ async function buildDefaultChecks(
 export async function runStaticChecks(
   workDir: string,
   profile?: ToolchainProfile,
+  options?: { onlyChecks?: string[] },
 ): Promise<{
   results: StaticCheckResult[]
   allPassed: boolean
 }> {
-  const checks = profile ? buildChecksFromProfile(profile) : await buildDefaultChecks(workDir)
+  const checks = profile
+    ? buildChecksFromProfile(profile, options?.onlyChecks)
+    : await buildDefaultChecks(workDir)
 
   const results: StaticCheckResult[] = []
 
