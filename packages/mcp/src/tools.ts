@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises"
+import { join } from "node:path"
 import { z } from "zod"
 
 export interface McpToolDefinition {
@@ -264,6 +266,50 @@ async function handleDoctor(input: Record<string, unknown>, workDir: string): Pr
   return runDoctor(dir)
 }
 
+const watchStatusInputSchema = z.object({
+  workDir: z.string().optional(),
+})
+
+async function handleWatchStatus(
+  input: Record<string, unknown>,
+  workDir: string,
+): Promise<unknown> {
+  const parsed = watchStatusInputSchema.parse(input)
+  const dir = parsed.workDir ?? workDir
+  const statePath = join(dir, ".bollard", "watch-state.json")
+  try {
+    const raw = await readFile(statePath, "utf8")
+    let data: unknown
+    try {
+      data = JSON.parse(raw) as unknown
+    } catch {
+      return {
+        active: false,
+        message: "bollard watch is not running",
+        error: "invalid JSON in .bollard/watch-state.json",
+      }
+    }
+    if (data !== null && typeof data === "object" && !Array.isArray(data)) {
+      return { ...data, active: true }
+    }
+    return { value: data, active: true }
+  } catch (err: unknown) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return { active: false, message: "bollard watch is not running" }
+    }
+    return {
+      active: false,
+      message: "bollard watch is not running",
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
 function zodToJsonSchema(schema: z.ZodObject<z.ZodRawShape>): Record<string, unknown> {
   const shape = schema.shape
   const properties: Record<string, unknown> = {}
@@ -387,5 +433,12 @@ export const tools: McpToolDefinition[] = [
       "Run an environment health check — verifies Docker availability (`docker compose version`), at least one LLM API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY), and toolchain detection (language + at least one verification check). Returns structured pass/fail per check and whether `.bollard.yml` exists (custom config vs using defaults).",
     inputSchema: zodToJsonSchema(doctorInputSchema),
     handler: handleDoctor,
+  },
+  {
+    name: "bollard_watch_status",
+    description:
+      "Check the status of Bollard's continuous verification watcher — whether it's running, what files changed since last verify, and when verification last ran.",
+    inputSchema: zodToJsonSchema(watchStatusInputSchema),
+    handler: handleWatchStatus,
   },
 ]

@@ -1,4 +1,6 @@
-import { dirname, resolve } from "node:path"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { tools } from "../src/tools.js"
@@ -6,8 +8,8 @@ import { tools } from "../src/tools.js"
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 
 describe("MCP tool definitions", () => {
-  it("registers exactly 13 tools", () => {
-    expect(tools).toHaveLength(13)
+  it("registers exactly 14 tools", () => {
+    expect(tools).toHaveLength(14)
   })
 
   it("all tools have name, description, inputSchema, and handler", () => {
@@ -84,6 +86,12 @@ describe("MCP tool definitions", () => {
     const tool = tools.find((t) => t.name === "bollard_doctor")
     expect(tool).toBeDefined()
     expect(tool?.description.toLowerCase()).toMatch(/health|doctor/)
+  })
+
+  it("includes bollard_watch_status tool", () => {
+    const tool = tools.find((t) => t.name === "bollard_watch_status")
+    expect(tool).toBeDefined()
+    expect(tool?.description.toLowerCase()).toMatch(/watch|watcher|verification/)
   })
 
   it("bollard_plan requires task parameter", () => {
@@ -170,5 +178,19 @@ describe("MCP tool definitions", () => {
     const tool = tools.find((t) => t.name === "bollard_config")
     const result = (await tool?.handler({}, REPO_ROOT)) as Record<string, unknown>
     expect(result.error).toBeUndefined()
+  })
+
+  it("bollard_watch_status returns not running when no watch state file exists", async () => {
+    const emptyDir = await mkdtemp(join(tmpdir(), "bollard-mcp-watch-"))
+    try {
+      const tool = tools.find((t) => t.name === "bollard_watch_status")
+      const result = (await tool?.handler({}, emptyDir)) as {
+        active: boolean
+        message: string
+      }
+      expect(result).toEqual({ active: false, message: "bollard watch is not running" })
+    } finally {
+      await rm(emptyDir, { recursive: true })
+    }
   })
 })
