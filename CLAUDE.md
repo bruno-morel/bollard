@@ -346,8 +346,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** 9 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`, `behavioral-tester.md`
-- **Latest count (authoritative, 2026-04-21, Stage 4c cleanup):** `771` passed, `4` skipped (775 total, 60 files). Skips: 4 LLM live smoke tests (no key). Stage 4c cleanup adds verification hook audit/secretScan coverage, coder rollback tests, and `onFailure: "skip"` for static-checks/run-tests (+2 vs Wave 1.1 baseline).
-- **Stage 4d** adds new tests (watch helpers, plugin manifest, init-ide generators, MCP prompts/resources, etc.) — run `docker compose run --rm dev run test` for the authoritative total after Stage 4d lands.
+- **Latest count (authoritative, 2026-04-22, Stage 4d hardening):** `860` passed, `4` skipped (864 total). Skips: 4 LLM live smoke tests (no key). Stage 4d adds init-ide generators, MCP prompts/resources, watch helpers, plugin manifest, doctor command. Stage 4d hardening adds MCP verify structured output test and config workDir test.
 - **Adversarial suite** (`vitest.adversarial.config.ts`): `335` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c). +4 from cleanup (audit/secretScan hook, rollback paths).
 - **Vitest + Vite 8:** you may see `esbuild` option deprecated in favor of `oxc` — harmless until Vitest defaults align; pin Vite 7.x if you need a silent log.
 
@@ -806,6 +805,19 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - `bollard watch` — continuous verification with file watching, debounce, quiet mode
 - `--quiet` flag on `verify` — JSON output for hooks
 - Plugin packaging scaffold for Claude Code
+
+### Stage 4d hardening (DONE):
+- MCP `handleVerify` resolves `ToolchainProfile` via `resolveConfig` — no more hardcoded pnpm fallback
+- MCP verify returns structured output (`allPassed`, `summary`, `checks[]`, `suggestion`)
+- MCP `handleConfig` passes `workDir` correctly (was defaulting to `process.cwd()`)
+- MCP `server.ts` uses `findWorkspaceRoot(process.cwd())` for resilient cwd resolution
+- `runStaticChecks` error handler captures both stdout and stderr (tsc/biome write errors to stdout)
+- Verification protocol rewritten: WHY-first, explicit negative examples (DO NOT run raw commands), BEFORE REPORTING COMPLETION self-check checklist — applied to both Cursor and Claude Code generators
+- `.bollard.yml` removed from workspace root markers
+- Dockerfile `packages/observe/package.json` COPY fix committed
+- `bollard init` cwd resolution fixed (`resolveWorkspaceDirFromArgs` replaces raw `process.cwd()`)
+- Cursor command frontmatter descriptions added
+- MCP enable warning (yellow) in `bollard init --ide cursor` output
 
 ### DO NOT build yet:
 - **New languages outside the current seven (TS/JS/Python/Go/Rust/Java/Kotlin)** — C#/.NET, Ruby, PHP, and further waves are sequenced (Stage 4c+ → 5+). Full design in [spec/07-adversarial-scopes.md §12.1](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md). Do not add language detectors, extractors, or verify images for any of these languages ad-hoc — each wave is coordinated so the dev image, `dev-full` image, mutation testing pattern, and contract graph all land together. Swift, Scala, Elixir, F#, Clojure, Haskell, OCaml, Nim, and Zig are explicit non-goals with no near-term timeline.
