@@ -101,15 +101,24 @@ describe("generateCursorConfig", () => {
     expect(content).not.toContain("named exports only")
   })
 
-  it("rules file contains mandatory verification protocol", async () => {
+  it("rules file contains mandatory verification protocol with WHY section and self-check", async () => {
     const result = await generateCursorConfig("/tmp", makeProfile())
     const rules = result.files.find((f) => f.path === ".cursor/rules/bollard.mdc")
     const content = rules?.content ?? ""
+    // WHY section exists and comes before protocol
+    expect(content).toContain("WHY USE BOLLARD MCP TOOLS")
+    // Negative examples section exists
+    expect(content).toContain("CRITICAL: DO NOT RUN VERIFICATION COMMANDS DIRECTLY")
+    expect(content).toContain("pnpm run typecheck")
+    // Protocol still has the core rules
     expect(content).toContain("VERIFICATION PROTOCOL (MANDATORY)")
     expect(content).toContain("you MUST call `bollard_verify`")
     expect(content).toContain("Before running `git commit`")
     expect(content).toContain("bollard_contract")
     expect(content).toContain("DO NOT call `bollard_verify` after every individual file edit")
+    // Self-check section exists
+    expect(content).toContain("BEFORE REPORTING COMPLETION")
+    expect(content).toContain("Did you call `bollard_verify` after implementation")
   })
 
   it("does not generate hooks.json", async () => {

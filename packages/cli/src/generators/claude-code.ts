@@ -92,6 +92,12 @@ const CLAUDE_MD_SECTION = `
 This project uses Bollard for adversarial verification. You have access to Bollard MCP tools.
 Follow the verification protocol below. These rules are mandatory.
 
+### WHY USE BOLLARD MCP TOOLS
+
+Bollard MCP tools understand this project's toolchain. They auto-detect the language,
+framework, and run the correct checks. Do NOT run \`pnpm run typecheck\`, \`pnpm run lint\`,
+\`docker compose run ... test\`, or any raw verification commands — use \`bollard_verify\` instead.
+
 ### VERIFICATION PROTOCOL
 
 **AFTER completing implementation:** Call \`bollard_verify\`. Fix all failures before continuing.
@@ -107,6 +113,16 @@ to see what Bollard knows about the system's observable behavior.
 
 **DO NOT verify after every small edit.** Verify at logical checkpoints: implementation
 complete, before commit, after refactor, when the user asks.
+
+### BEFORE REPORTING COMPLETION
+
+Review your actions:
+- Did you call \`bollard_verify\` after implementation?
+- Did all checks pass?
+- If you changed exports, did you call \`bollard_contract\` first?
+- Did you avoid running raw shell verification commands?
+
+If you skipped any step, go back and complete it now.
 
 ### Available tools
 - \`bollard_verify\` — static checks (typecheck, lint, audit, secrets)

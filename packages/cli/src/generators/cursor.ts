@@ -8,16 +8,45 @@ rule-type: Always
 
 # Bollard — Artifact Integrity Framework
 
-This project uses Bollard for adversarial verification. You have access to Bollard MCP tools.
-Follow the verification protocol below exactly. Violations risk shipping broken code.
+This project uses Bollard for adversarial verification. You have Bollard MCP tools available.
+
+## WHY USE BOLLARD MCP TOOLS
+
+Bollard MCP tools understand this project's language, framework, test runner, linter, and
+verification layers. They auto-detect the toolchain and run the correct checks. Raw shell
+commands (\`pnpm run lint\`, \`docker compose run ... test\`, \`npx tsc\`) do NOT — they may use
+wrong config, miss checks, or produce unstructured output you cannot act on.
+
+**\`bollard_verify\` returns structured results:** each check (typecheck, lint, audit, secrets)
+reports pass/fail with the specific error output. When checks fail, you get actionable
+diagnostics. Raw commands give you a wall of text.
+
+**Use the MCP tools. Do not bypass them.**
+
+## CRITICAL: DO NOT RUN VERIFICATION COMMANDS DIRECTLY
+
+Do NOT run any of the following commands yourself. Use \`bollard_verify\` instead:
+
+- ❌ \`pnpm run typecheck\` / \`pnpm exec tsc\` / \`npx tsc\`
+- ❌ \`pnpm run lint\` / \`pnpm exec biome\` / \`npx biome\`
+- ❌ \`pnpm audit\`
+- ❌ \`docker compose run --rm dev run typecheck\`
+- ❌ \`docker compose run --rm dev run lint\`
+- ❌ \`docker compose run --rm dev run test\`
+
+✅ Instead, call \`bollard_verify\`. It runs ALL of these checks with the correct toolchain
+profile and returns structured, actionable results.
+
+The only exception: \`pnpm run test\` or \`pnpm exec vitest\` for running tests during
+implementation (the coder workflow). Verification checks go through \`bollard_verify\`.
 
 ## VERIFICATION PROTOCOL (MANDATORY)
 
-These rules are non-negotiable. You MUST follow them in every task.
+You MUST follow these rules in every task. They are non-negotiable.
 
 ### 1. AFTER COMPLETING IMPLEMENTATION — ALWAYS VERIFY
 
-When you have finished implementing a logical unit of work (a feature, a fix, a refactor),
+When you finish implementing a logical unit of work (a feature, a fix, a refactor),
 you MUST call \`bollard_verify\` before doing anything else. This is not optional.
 
 - If \`bollard_verify\` reports failures: fix every failure before continuing.
@@ -41,18 +70,15 @@ Before changing any export, public API, or cross-module interface, you MUST:
 2. Identify which modules depend on the interface you are changing.
 3. After the change: call \`bollard_verify\` to confirm nothing broke downstream.
 
-If you skip this step and break a downstream consumer, the adversarial test pipeline
-will catch it — but you will have wasted time. Check first.
-
 ### 4. WHEN TOUCHING ENDPOINTS, CONFIG, OR EXTERNAL INTEGRATIONS — CHECK BEHAVIORAL
 
 When modifying HTTP endpoints, configuration surfaces, external service calls,
 or failure handling, call \`bollard_behavioral\` to see what Bollard knows about
-the system's observable behavior. Use this to guide your implementation.
+the system's observable behavior.
 
 ### 5. DO NOT VERIFY ON EVERY SMALL EDIT
 
-Verification is expensive (runs typecheck, lint, audit, and secret scanning).
+Verification is expensive (typecheck + lint + audit + secret scanning).
 Call it at logical checkpoints:
 - Implementation of a task complete
 - Before committing
@@ -60,6 +86,17 @@ Call it at logical checkpoints:
 - When the user asks
 
 DO NOT call \`bollard_verify\` after every individual file edit. That wastes resources.
+
+## BEFORE REPORTING COMPLETION — SELF-CHECK
+
+Before telling the user you are done, review your actions:
+
+- [ ] Did you call \`bollard_verify\` after implementation? If not, do it now.
+- [ ] Did all checks pass? If not, fix the failures first.
+- [ ] If you changed exports or cross-module interfaces, did you call \`bollard_contract\` first?
+- [ ] Did you avoid running raw shell verification commands (tsc, biome, pnpm audit)?
+
+If you skipped any step, go back and complete it before reporting done.
 
 ## Coding Standards ({{language}})
 

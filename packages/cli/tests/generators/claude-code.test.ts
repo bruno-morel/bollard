@@ -87,7 +87,9 @@ describe("generateClaudeCodeConfig", () => {
     const result = await generateClaudeCodeConfig("/tmp", minimalProfile())
     const claude = result.files.find((f) => f.path === "CLAUDE.md")
     expect(claude?.content).toContain("## Bollard Integration")
+    expect(claude?.content).toContain("WHY USE BOLLARD MCP TOOLS")
     expect(claude?.content).toContain("VERIFICATION PROTOCOL")
+    expect(claude?.content).toContain("BEFORE REPORTING COMPLETION")
     expect(claude?.content).toContain("bollard_verify")
   })
 
