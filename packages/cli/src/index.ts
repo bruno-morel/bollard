@@ -1,6 +1,5 @@
-import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
-import { dirname, join, resolve } from "node:path"
+import { join, resolve } from "node:path"
 import type { AgentResult } from "@bollard/agents/src/types.js"
 import { createImplementFeatureBlueprint } from "@bollard/blueprints/src/implement-feature.js"
 import type { Blueprint, BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
@@ -14,6 +13,7 @@ import { buildProjectTree, createAgenticHandler } from "./agent-handler.js"
 import { resolveConfig } from "./config.js"
 import { collectAffectedPathsFromPlan } from "./contract-plan.js"
 import { diffToolchainProfile } from "./diff.js"
+import { formatDoctorReport, runDoctor } from "./doctor.js"
 import { humanGateHandler } from "./human-gate.js"
 import {
   runDeployCommand,
@@ -24,6 +24,7 @@ import {
 import { formatQuietVerifyResult } from "./quiet-verify.js"
 import { createAgentSpinner } from "./spinner.js"
 import { BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW } from "./terminal-styles.js"
+import { findWorkspaceRoot } from "./workspace-root.js"
 
 function log(msg: string): void {
   process.stderr.write(`${msg}\n`)
@@ -159,15 +160,6 @@ function getWorkDirFlag(args: string[]): string | undefined {
 function resolveWorkspaceDirFromArgs(args: string[]): string {
   const explicit = getWorkDirFlag(args)
   return explicit ? resolve(explicit) : findWorkspaceRoot(process.cwd())
-}
-
-function findWorkspaceRoot(start: string): string {
-  let dir = resolve(start)
-  while (dir !== dirname(dir)) {
-    if (existsSync(join(dir, "pnpm-workspace.yaml"))) return dir
-    dir = dirname(dir)
-  }
-  return start
 }
 
 function printRunSummary(result: {
@@ -605,7 +597,8 @@ async function main(): Promise<void> {
 
   if (command === "init") {
     header("init")
-    const { profile, sources } = await resolveConfig()
+    const workDir = resolveWorkspaceDirFromArgs(rest)
+    const { profile, sources } = await resolveConfig(undefined, workDir)
     log("Detected project configuration:\n")
     log(`  ${BOLD}Language:${RESET}         ${profile.language}`)
     if (profile.packageManager) {
@@ -699,7 +692,7 @@ async function main(): Promise<void> {
     }
 
     const { mkdir: mkdirFs, writeFile: writeFs } = await import("node:fs/promises")
-    const bollardDir = join(resolve(process.cwd()), ".bollard")
+    const bollardDir = join(workDir, ".bollard")
     await mkdirFs(bollardDir, { recursive: true })
     await writeFs(join(bollardDir, "mcp.json"), JSON.stringify(mcpManifest, null, 2), "utf-8")
     log(`${GREEN}✓${RESET} Created .bollard/mcp.json`)
@@ -719,7 +712,7 @@ async function main(): Promise<void> {
       "",
     ].join("\n")
 
-    await writeFs(join(resolve(process.cwd()), ".bollard.yml"), bollardYml, "utf-8")
+    await writeFs(join(workDir, ".bollard.yml"), bollardYml, "utf-8")
     log(`${GREEN}✓${RESET} Created .bollard.yml`)
     log("")
 
@@ -737,7 +730,7 @@ async function main(): Promise<void> {
       const { generateIdeConfigs, writeGeneratedFiles } = await import("./init-ide.js")
 
       const platforms = parseIdePlatform(ideFlag)
-      const root = resolve(process.cwd())
+      const root = workDir
       const ideResults = await generateIdeConfigs(root, platforms, profile)
 
       for (const result of ideResults) {
@@ -775,6 +768,14 @@ async function main(): Promise<void> {
       ...(debounceMs !== undefined ? { debounceMs } : {}),
     })
     return
+  }
+
+  if (command === "doctor") {
+    const workDir = resolveWorkspaceDirFromArgs(rest)
+    header("doctor")
+    const report = await runDoctor(workDir)
+    log(formatDoctorReport(report))
+    process.exit(report.allPassed ? 0 : 1)
   }
 
   if (command === "eval") {
@@ -825,6 +826,9 @@ async function main(): Promise<void> {
     `  ${BOLD}init${RESET} [--ide <platform>]        Detect project configuration + optional IDE configs`,
   )
   log(`  ${BOLD}watch${RESET} [--quiet] [--debounce N] Continuous verification on file changes`)
+  log(
+    `  ${BOLD}doctor${RESET}                          Check environment health (docker, LLM key, toolchain)`,
+  )
   log(
     `  ${BOLD}promote-test${RESET} <path>             Promote adversarial test to project test dir`,
   )

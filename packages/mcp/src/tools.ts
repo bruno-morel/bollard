@@ -228,6 +228,17 @@ async function handleDriftCheck(input: Record<string, unknown>, workDir: string)
   return driftDetector.check()
 }
 
+const doctorInputSchema = z.object({
+  workDir: z.string().optional(),
+})
+
+async function handleDoctor(input: Record<string, unknown>, workDir: string): Promise<unknown> {
+  const parsed = doctorInputSchema.parse(input)
+  const dir = parsed.workDir ?? workDir
+  const { runDoctor } = await import("@bollard/cli/src/doctor.js")
+  return runDoctor(dir)
+}
+
 function zodToJsonSchema(schema: z.ZodObject<z.ZodRawShape>): Record<string, unknown> {
   const shape = schema.shape
   const properties: Record<string, unknown> = {}
@@ -344,5 +355,12 @@ export const tools: McpToolDefinition[] = [
       "Detect code drift since the last verified deployment. Compares current git state against the last-verified SHA and classifies changes by severity (test-only = low, source = medium, config/infra = high). Run before deploying to catch unverified changes.",
     inputSchema: zodToJsonSchema(driftCheckInputSchema),
     handler: handleDriftCheck,
+  },
+  {
+    name: "bollard_doctor",
+    description:
+      "Run an environment health check — verifies Docker availability (`docker compose version`), at least one LLM API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY), and toolchain detection (language + at least one verification check). Returns structured pass/fail per check and whether `.bollard.yml` exists (custom config vs using defaults).",
+    inputSchema: zodToJsonSchema(doctorInputSchema),
+    handler: handleDoctor,
   },
 ]

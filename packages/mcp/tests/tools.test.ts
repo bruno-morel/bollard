@@ -6,8 +6,8 @@ import { tools } from "../src/tools.js"
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 
 describe("MCP tool definitions", () => {
-  it("registers exactly 12 tools", () => {
-    expect(tools).toHaveLength(12)
+  it("registers exactly 13 tools", () => {
+    expect(tools).toHaveLength(13)
   })
 
   it("all tools have name, description, inputSchema, and handler", () => {
@@ -26,7 +26,7 @@ describe("MCP tool definitions", () => {
   })
 
   it("every tool description starts with an action verb", () => {
-    const verb = /^(Run|Generate|Analyze|Show|Detect|Build|Execute|Record|Set)\b/
+    const verb = /^(Run|Generate|Analyze|Show|Detect|Build|Execute|Record|Set|Check)\b/
     for (const tool of tools) {
       expect(verb.test(tool.description)).toBe(true)
     }
@@ -80,6 +80,12 @@ describe("MCP tool definitions", () => {
     expect(tool?.description).toContain("behavioral")
   })
 
+  it("includes bollard_doctor tool", () => {
+    const tool = tools.find((t) => t.name === "bollard_doctor")
+    expect(tool).toBeDefined()
+    expect(tool?.description.toLowerCase()).toMatch(/health|doctor/)
+  })
+
   it("bollard_plan requires task parameter", () => {
     const tool = tools.find((t) => t.name === "bollard_plan")
     const schema = tool?.inputSchema as { required?: string[] }
@@ -118,6 +124,21 @@ describe("MCP tool definitions", () => {
     const tool = tools.find((t) => t.name === "bollard_plan")
     const result = (await tool?.handler({ task: "test task" }, "/app")) as { status: string }
     expect(result.status).toBe("ok")
+  })
+
+  it("bollard_doctor handler returns report with three checks and config note", async () => {
+    const tool = tools.find((t) => t.name === "bollard_doctor")
+    const result = (await tool?.handler({}, REPO_ROOT)) as {
+      allPassed: boolean
+      checks: Array<{ id: string }>
+      configNote: string
+    }
+    expect(result.checks).toHaveLength(3)
+    expect(result.checks.map((c) => c.id).sort()).toEqual(["docker", "llm-key", "toolchain"])
+    expect(result.configNote === "custom config" || result.configNote === "using defaults").toBe(
+      true,
+    )
+    expect(typeof result.allPassed).toBe("boolean")
   })
 
   it("tool input schemas have correct structure", () => {
