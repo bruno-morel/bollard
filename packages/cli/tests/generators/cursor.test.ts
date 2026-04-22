@@ -101,13 +101,21 @@ describe("generateCursorConfig", () => {
     expect(content).not.toContain("named exports only")
   })
 
-  it("hooks file contains afterFileEdit with verify --quiet", async () => {
+  it("rules file contains mandatory verification protocol", async () => {
+    const result = await generateCursorConfig("/tmp", makeProfile())
+    const rules = result.files.find((f) => f.path === ".cursor/rules/bollard.mdc")
+    const content = rules?.content ?? ""
+    expect(content).toContain("VERIFICATION PROTOCOL (MANDATORY)")
+    expect(content).toContain("you MUST call `bollard_verify`")
+    expect(content).toContain("Before running `git commit`")
+    expect(content).toContain("bollard_contract")
+    expect(content).toContain("DO NOT call `bollard_verify` after every individual file edit")
+  })
+
+  it("does not generate hooks.json", async () => {
     const result = await generateCursorConfig("/tmp", makeProfile())
     const hooks = result.files.find((f) => f.path === ".cursor/hooks.json")
-    const parsed = JSON.parse(hooks?.content ?? "{}") as {
-      hooks: { afterFileEdit: Array<{ command: string }> }
-    }
-    expect(parsed.hooks.afterFileEdit[0]?.command).toContain("verify --quiet")
+    expect(hooks).toBeUndefined()
   })
 
   it("generates four slash command files with expected paths", async () => {

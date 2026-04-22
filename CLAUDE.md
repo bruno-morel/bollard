@@ -799,8 +799,8 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 ### Stage 4d (DONE) — DX & Agent Integrations:
 - `bollard init --ide <platform>` with platform detection and config generation
 - Template rendering engine (`renderTemplate`) for profile-driven config files
-- Cursor integration: `.cursor/rules/bollard.mdc`, `.cursor/hooks.json`, 4 slash commands, MCP config, automations guide
-- Claude Code integration: `.claude/commands/`, `.claude/agents/bollard-verifier.md`, hooks in `.claude/settings.json`, CLAUDE.md augmentation, `.mcp.json`
+- Cursor integration: `.cursor/rules/bollard.mdc` (Always-on verification protocol; no `hooks.json` per-edit verify), 4 slash commands, MCP config, automations guide
+- Claude Code integration: `.claude/commands/`, `.claude/agents/bollard-verifier.md`, blocking pre-commit verify hook in `.claude/settings.json` (no per-edit verify), CLAUDE.md augmentation, `.mcp.json`
 - Secondary platforms: Antigravity (`mcp_config.json`), Codex (`.codex/config.toml`)
 - MCP server v2: enriched tool descriptions, 6 resource endpoints, 3 prompt templates
 - `bollard watch` — continuous verification with file watching, debounce, quiet mode

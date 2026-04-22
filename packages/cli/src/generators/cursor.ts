@@ -8,14 +8,58 @@ rule-type: Always
 
 # Bollard — Artifact Integrity Framework
 
-This project uses Bollard for adversarial verification. Every code change must pass boundary, contract, and behavioral verification.
+This project uses Bollard for adversarial verification. You have access to Bollard MCP tools.
+Follow the verification protocol below exactly. Violations risk shipping broken code.
 
-## Verification Commands
+## VERIFICATION PROTOCOL (MANDATORY)
 
-Before submitting any code change, run:
-- \`bollard_verify\` — static checks (typecheck, lint, audit)
-- \`bollard_contract\` — inspect module dependency graph
-- \`bollard_behavioral\` — inspect endpoint and failure mode catalog
+These rules are non-negotiable. You MUST follow them in every task.
+
+### 1. AFTER COMPLETING IMPLEMENTATION — ALWAYS VERIFY
+
+When you have finished implementing a logical unit of work (a feature, a fix, a refactor),
+you MUST call \`bollard_verify\` before doing anything else. This is not optional.
+
+- If \`bollard_verify\` reports failures: fix every failure before continuing.
+- Do NOT tell the user "verification failed, you can fix it" — fix it yourself.
+- Do NOT skip verification because "it's a small change." Small changes break builds.
+- Do NOT move to the next task until \`bollard_verify\` passes.
+
+### 2. BEFORE ANY GIT COMMIT — VERIFY AND DRIFT-CHECK
+
+Before running \`git commit\`, you MUST:
+1. Call \`bollard_verify\` — if it fails, fix and re-verify.
+2. Call \`bollard_drift_check\` — if drift is detected, report it to the user.
+3. Only after both pass: proceed with the commit.
+
+Never commit unverified code. Never skip drift check.
+
+### 3. BEFORE MODIFYING CROSS-MODULE INTERFACES — CHECK CONTRACTS
+
+Before changing any export, public API, or cross-module interface, you MUST:
+1. Call \`bollard_contract\` to see the module dependency graph.
+2. Identify which modules depend on the interface you are changing.
+3. After the change: call \`bollard_verify\` to confirm nothing broke downstream.
+
+If you skip this step and break a downstream consumer, the adversarial test pipeline
+will catch it — but you will have wasted time. Check first.
+
+### 4. WHEN TOUCHING ENDPOINTS, CONFIG, OR EXTERNAL INTEGRATIONS — CHECK BEHAVIORAL
+
+When modifying HTTP endpoints, configuration surfaces, external service calls,
+or failure handling, call \`bollard_behavioral\` to see what Bollard knows about
+the system's observable behavior. Use this to guide your implementation.
+
+### 5. DO NOT VERIFY ON EVERY SMALL EDIT
+
+Verification is expensive (runs typecheck, lint, audit, and secret scanning).
+Call it at logical checkpoints:
+- Implementation of a task complete
+- Before committing
+- After a refactor that touches multiple files
+- When the user asks
+
+DO NOT call \`bollard_verify\` after every individual file edit. That wastes resources.
 
 ## Coding Standards ({{language}})
 
@@ -36,17 +80,26 @@ Before submitting any code change, run:
 - Use sealed classes for error hierarchies
 - Test files in \`src/test/kotlin/\` mirroring source{{/if}}
 
-## When Writing Tests
+## Adversarial Testing
 
-Bollard generates adversarial tests automatically. Your tests should focus on:
-- Happy-path behavior and integration scenarios
-- Bollard handles: boundary edge cases, contract assumptions, behavioral failure modes
+Bollard generates adversarial tests automatically across three scopes:
+- **Boundary** — edge cases, invalid inputs, error paths
+- **Contract** — cross-module assumptions, interface compliance
+- **Behavioral** — endpoint behavior, failure modes, config surface
 
-## Available Bollard MCP Tools
+Your tests should focus on happy-path behavior and integration scenarios.
+Do NOT write boundary, contract, or behavioral edge-case tests — Bollard handles those.
 
-Use \`bollard_verify\` to check code, \`bollard_contract\` to inspect module graph,
-\`bollard_behavioral\` to inspect endpoints and failure modes, \`bollard_probe_run\`
-to test live endpoints, \`bollard_drift_check\` to detect code drift.
+## Available MCP Tools
+
+| Tool | When to use |
+|------|------------|
+| \`bollard_verify\` | After implementation, before commit, after refactor |
+| \`bollard_contract\` | Before changing exports or cross-module interfaces |
+| \`bollard_behavioral\` | When touching endpoints, config, or failure handling |
+| \`bollard_probe_run\` | To test live deployed endpoints |
+| \`bollard_drift_check\` | Before committing — detect unverified changes |
+| \`bollard_implement\` | To run the full 28-node pipeline for a task |
 `
 
 const CURSOR_CMD_VERIFY = `Run Bollard verification on the current workspace. Use the \`bollard_verify\` MCP tool
@@ -129,26 +182,6 @@ export async function generateCursorConfig(
     content: renderTemplate(CURSOR_RULES_TEMPLATE, profile),
   })
 
-  files.push({
-    path: ".cursor/hooks.json",
-    content: JSON.stringify(
-      {
-        version: 1,
-        hooks: {
-          afterFileEdit: [
-            {
-              command:
-                "docker compose run --rm -T dev --filter @bollard/cli run start -- verify --quiet",
-              description: "Bollard: verify after edit",
-            },
-          ],
-        },
-      },
-      null,
-      2,
-    ),
-  })
-
   files.push(
     { path: ".cursor/commands/bollard-verify.md", content: CURSOR_CMD_VERIFY },
     { path: ".cursor/commands/bollard-implement.md", content: CURSOR_CMD_IMPLEMENT },
@@ -164,7 +197,7 @@ export async function generateCursorConfig(
   messages.push(
     "MCP tools available: bollard_verify, bollard_contract, bollard_behavioral, bollard_probe_run, bollard_drift_check",
     "Slash commands: /bollard-verify, /bollard-implement, /bollard-contract, /bollard-drift",
-    "Hooks: afterFileEdit runs bollard verify --quiet automatically",
+    "Verification protocol: agent verifies at logical checkpoints (see rules file)",
     "See .cursor/bollard-automations-guide.md for scheduled automation setup",
   )
 
