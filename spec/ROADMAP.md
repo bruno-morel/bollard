@@ -24,6 +24,59 @@ Features deferred from v0.1 spec to keep scope tight. These are all good ideas �
 
 **Stage 4d** — DX & Agent Integrations: `bollard init --ide` with Cursor/Claude Code/Codex/Antigravity generators, MCP v2 (enriched descriptions, 6 resources, 3 prompts), `bollard watch`, `--quiet` verify. See [stage4d-validation-results.md](./stage4d-validation-results.md). Design: [stage4d-dx-agent-integrations.md](./stage4d-dx-agent-integrations.md).
 
+**Stage 4d hardening (DONE, 2026-04-22):** Self-test validation (Bollard-on-Bollard) using `bollard_watch_status` MCP tool task. 862 pass / 4 skip. Protocol compliance: 5/5 checklist items passed. Key findings and fixes:
+
+- **MCP profile resolution:** `handleVerify` now calls `resolveConfig(undefined, dir)` for proper `ToolchainProfile` — was falling back to hardcoded pnpm defaults
+- **MCP structured output:** `bollard_verify` returns `{ allPassed, summary, checks[], suggestion }` — agents can act on failures without parsing raw JSON
+- **MCP workspace root:** `server.ts` uses `findWorkspaceRoot(process.cwd())` for resilient cwd resolution
+- **Static check error capture:** `runStaticChecks` error handler captures both stdout and stderr (tsc/biome write errors to stdout)
+- **Protocol compliance finding:** "you MUST" language in rules files is advisory to LLMs. Fixed via WHY-first explanation, explicit DO NOT list with specific command examples, and BEFORE REPORTING COMPLETION self-check checklist. See [ADR-0003](./adr/0003-agent-protocol-compliance.md).
+- **Bollard-on-Bollard validation pattern:** Formalized as: give the model a real implementation task → observe whether it follows the verification protocol → measure with checklist. Three rounds validated (Stage 2, 4c, 4d). All infrastructure issues found this way were invisible to unit tests.
+
+---
+
+## Stage 5 — Self-Hosting + Self-Improvement
+
+Bollard has all three adversarial scopes, four concern lenses, mutation testing, semantic review, production observability, and IDE integrations. Stage 5 turns Bollard inward: it builds and verifies itself.
+
+### 5a: Self-Hosting
+
+Bollard runs its own `implement-feature` pipeline on Bollard changes. Every PR to Bollard goes through boundary + contract + behavioral adversarial testing, mutation testing, and semantic review — using Bollard itself.
+
+- **Bollard-on-Bollard CI:** GitHub Actions workflow runs `bollard run implement-feature` on PR branches. The pipeline verifies the change with the *current* Bollard (not the changed one) to avoid bootstrap paradox.
+- **Run history:** Persist pipeline run results (cost, duration, node outcomes, test counts, mutation scores) to `.bollard/runs/` or an external store. Enables trend analysis and regression detection.
+- **Protocol compliance CI:** Automated validation that generated IDE configs (Cursor rules, Claude Code CLAUDE.md sections) actually produce protocol-compliant agent behavior. Uses the Bollard-on-Bollard self-test pattern: generate config → give agent a task → check 5-point compliance checklist programmatically.
+- **Cost tracking dashboard:** Aggregate `CostTracker` data across runs for budget monitoring and per-stage cost trends.
+
+### 5b: Self-Improvement
+
+- **Prompt regression gating:** `bollard eval` runs before and after prompt changes; new prompts must match or exceed baseline scores. Eval sets already exist for planner, coder, boundary-tester, contract-tester.
+- **Meta-verification:** Risk score auditing — confusion matrix of agent assessments vs. actual outcomes over N runs. `bollard doctor --risk-audit` for calibration quality.
+- **Adaptive concern weights:** Analyze which concern lenses find real bugs most often per project. Suggest weight adjustments in `bollard doctor` output based on historical probe hit rates.
+- **Protocol audit command:** `bollard audit-protocol` — run a synthetic task through the MCP tools and verify the agent followed the verification protocol. Extends the manual Bollard-on-Bollard pattern into an automated, repeatable check.
+
+### 5c: Agent Intelligence Upgrades
+
+- **MCP client for agents:** Bollard's planner/coder agents consume external MCP tools (GitHub, Slack, Jira). Agent tool list = built-in tools + available MCP servers, with allowlist/denylist in `.bollard.yml`.
+- **Parallel scope execution:** Boundary, contract, and behavioral agents run concurrently after context extraction (they see different context and produce different outputs). Blueprint engine needs parallel node support.
+- **Agent memory across runs:** Agents learn from previous runs on the same project — which probes found real bugs, which test patterns were most effective, which concerns had the highest yield.
+
+### Lessons from Stage 4d that shape Stage 5
+
+These findings are architectural — they affect how every future stage is designed:
+
+1. **Advisory ≠ enforced.** Rules files and system prompts that say "you MUST" are suggestions to LLMs, not constraints. Any protocol that must be followed needs three structural elements: WHY the protocol exists (so the model can reason about it), explicit DO NOT section with concrete negative examples, and a self-check checklist the model runs before declaring completion. See [ADR-0003](./adr/0003-agent-protocol-compliance.md).
+
+2. **Self-tests find what unit tests can't.** All three Bollard-on-Bollard rounds (Stage 2, 4c, 4d) surfaced issues invisible to the 862-test suite. The pattern: give a real model a real task through real infrastructure, observe what breaks. This is not a substitute for unit tests — it's a different verification layer that catches integration-level and protocol-level failures.
+
+3. **MCP tools need structured output from day one.** Raw JSON dumps force the consuming agent to parse and interpret. Structured output with `allPassed`, `summary`, `suggestion` fields lets the agent act immediately. Every new MCP tool should return an actionable shape, not a data dump.
+
+4. **Workspace resolution is never simple.** `process.cwd()` is wrong in containers, wrong under `pnpm --filter`, wrong when MCP servers are spawned from different directories. Always use `findWorkspaceRoot()` or equivalent. Any new entry point (CLI command, MCP handler, hook) must thread workspace resolution through.
+
+5. **Error output goes to unexpected places.** TypeScript compiler and Biome write errors to stdout, not stderr. Any error-capture code must collect both streams. This is a general principle: don't assume tools follow Unix conventions.
+
+---
+
 ## Stage 3c — shipped (validated GREEN 2026-04-16)
 
 - ~~**Per-language mutation testing**~~ — Stryker (JS/TS), `MutmutProvider` (Python), `CargoMutantsProvider` (Rust). Go mutation testing deferred (no maintained upstream tool). Scope-aware targeting via `mutateFiles` reduces pipeline runs from full-repo to coder-changed files only.
@@ -178,37 +231,28 @@ Waves run in sequence, not parallel, so each wave re-validates the four-integrat
 
 ---
 
-## Stage 2+: Agent Intelligence
+## Stage 5+: Agent Intelligence
 
-### MCP Client for Agents
+### ~~MCP Client for Agents~~ — MOVED TO Stage 5c
 
-- Bollard's agents consume external MCP tools (GitHub, Slack, Jira, Confluence)
-- Agent tool list = Bollard built-in tools + available MCP servers
-- MCP tool allowlist/denylist in .bollard.yml
-- **Why deferred:** Agents don't exist yet. Add when planner/coder agents need external context.
+See Stage 5c above.
 
 ### Prompt Evaluation Framework (Full)
 
-- Eval sets per agent: (input, expected behavior) pairs
-- `bollard eval [agent]` command
-- Assertion types: contains, not_contains, json_field, risk_tier, review_verdict, test_catches_bug, no_implementation_leak
-- Prompt change gating: new prompt must pass ≥ baseline evals
-- Prompt regression detection over N runs
-- **Currently in spec:** One-paragraph note in 02-bootstrap.md. Full framework specced when prompts exist (Stage 1).
+- ~~Eval sets per agent~~ — **Done (Stage 1).** Planner (4 cases), coder (2), boundary-tester, contract-tester eval sets exist. `bollard eval [agent]` command works.
+- Prompt change gating: new prompt must pass ≥ baseline evals — **Stage 5b**
+- Prompt regression detection over N runs — **Stage 5b**
+- Additional assertion types: test_catches_bug, no_implementation_leak — **Stage 5b**
 
-### Information Isolation Verification
+### ~~Information Isolation Verification~~ — DONE (Stage 3a)
 
-- TypeScript compiler API to extract identifiers from test agent output
-- Diff against public API surface to detect leaked implementation details
-- Postcondition check on test agent node
-- **Why deferred:** Stage 3 optimization. Mutation testing (Stage 3) catches the same class of bugs from a different angle.
+- Contract context re-export closure limits `publicExports` to entry-export paths — private internals no longer leak into adversarial agent prompts
+- Regression test added in Stage 3a validation
+- Leak scan in `write-tests` / `write-contract-tests` / `write-behavioral-tests` nodes
 
-### Meta-Verification
+### ~~Meta-Verification~~ — MOVED TO Stage 5b
 
-- Risk score auditing: confusion matrix of agent assessments vs. outcomes
-- `bollard doctor --risk-audit` for calibration quality
-- Under/over-assessment detection and warnings
-- **Why deferred:** Needs hundreds of runs of calibration data. Stage 4+ concern.
+See Stage 5b above. Needs hundreds of runs of calibration data.
 
 ---
 

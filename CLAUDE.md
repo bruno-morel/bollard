@@ -11,7 +11,7 @@ Bollard has completed **Stage 2** (adversarial verification infrastructure), **S
 The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md)):
 - **Stage 4c:** Java/Kotlin Wave 1 shipped (Part 2 — detector, `bollard-extract-java`, contract graph, PIT, JVM compose, prompts). (OpenAI + Google `chatStream` parity was Part 1.)
 - **Stage 4d:** DX & Agent Integrations: `bollard init --ide` generates platform-specific config for Cursor (rules, hooks, commands), Claude Code (commands, agents, hooks, CLAUDE.md augmentation), Codex, and Antigravity. MCP server v2 adds enriched tool descriptions, 6 resource endpoints (`bollard://profile`, etc.), and 3 prompt templates. `bollard watch` provides continuous verification with file watching. `--quiet` flag on `verify` enables machine-readable JSON output for hooks.
-- **Stage 5:** Self-hosting + self-improvement.
+- **Stage 5:** Self-hosting (5a: Bollard-on-Bollard CI, run history, protocol compliance CI), self-improvement (5b: prompt regression gating, meta-verification, adaptive concern weights), agent intelligence (5c: MCP client for agents, parallel scope execution, agent memory). See [spec/ROADMAP.md](../spec/ROADMAP.md).
 
 Stage 2's single adversarial tester (now called the **boundary-scope** tester) is the first of three adversarial scopes. Each scope has its own agent, context, and execution mode, probing four cross-cutting concerns (correctness, security, performance, resilience) with per-scope weights.
 
@@ -825,7 +825,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - **External observe providers** — Datadog, Flagsmith, LaunchDarkly, Cloud Run, ArgoCD implementations. Interfaces exist in `@bollard/observe`; implementations are 4b+.
 - **Advanced fault injection** — network_delay, resource_limit via `tc`/`iptables`. `FaultInjector` interface is extensible; only `service_stop` is implemented.
 - **Library-mode behavioral testing** — agent prompt has `{{#if hasPublicApi}}` ready; implementation deferred.
-- CI integration, run history, self-improvement — Stage 5
+- CI integration, run history, self-improvement, protocol compliance CI, prompt regression gating, parallel scope execution — Stage 5 (see [spec/ROADMAP.md](../spec/ROADMAP.md))
 
 ### Size (current):
 - Run `cloc` or similar inside Docker if you need exact LOC; structure is 9 packages as listed above.
@@ -846,6 +846,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 12. **Bollard guarantees coverage, not the developer.** (from 07-adversarial-scopes) Missing test infrastructure → Bollard provides its own.
 13. **Scope is about the defect class, not the technology.** (from 07-adversarial-scopes) "Boundary" ≠ "unit test." "Behavioral" ≠ "e2e test."
 14. **Concerns are lenses, not scopes.** (from 07-adversarial-scopes) Security, performance, resilience don't change what the agent sees — they change what it looks for, with per-scope weights.
+15. **Protocols need structure, not emphasis.** (from [ADR-0003](../spec/adr/0003-agent-protocol-compliance.md)) "you MUST" is advisory to LLMs. Any protocol that must be followed needs WHY (motivation), DO NOT (concrete negative examples), and SELF-CHECK (pre-completion checklist). Applies to rules files, MCP tool descriptions, and agent system prompts.
 
 ## Git Conventions
 

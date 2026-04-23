@@ -930,21 +930,25 @@ Adversarial verification plan:
 
 ## 15. Open Questions
 
-1. **Should scopes be independently disableable per run?** E.g., `bollard run implement-feature --scopes boundary,contract` to skip behavioral during development iteration. Likely yes, with all scopes enabled by default.
+### Resolved
 
-2. **How does mutation testing interact with scopes?** Currently, mutation testing runs against "both test suites" (Layer 1 + Layer 2). With three scopes, mutation testing should run against Layer 1 + all adversarial scope outputs. A mutation that survives all four test suites is a genuine coverage gap.
+1. **~~Should scopes be independently disableable per run?~~** **Yes — implemented.** Each scope has `enabled: boolean` in `AdversarialScopeConfig`. Pipeline nodes check `profile.adversarial.{scope}.enabled` and skip when false. No `--scopes` CLI flag yet, but the infrastructure supports it.
 
-3. **Should the contract-scope agent see the boundary-scope test results?** There's an argument for cascading: if boundary tests found an edge case, the contract agent should know so it doesn't redundantly test the same thing at a higher scope. Counter-argument: independence between scopes prevents anchoring. Leaning toward independence.
+2. **~~How does mutation testing interact with scopes?~~** **Resolved (Stage 3c).** `run-mutation-testing` node runs after all adversarial scope test nodes. `mutateFiles` targets only coder-changed files. Mutation testing runs against Layer 1 + all adversarial scope outputs combined.
 
-4. **Cost management with three scopes.** Three adversarial agents per pipeline run approximately triples the LLM cost. This needs careful budgeting — possibly with scope-level cost caps that are deducted from the overall `maxCostUsd` budget. Boundary scope gets the smallest budget (simplest reasoning), behavioral gets the largest.
+3. **~~Should the contract-scope agent see the boundary-scope test results?~~** **No — independence confirmed.** The 28-node pipeline runs scopes sequentially but independently. No information flows between scope agents. Three self-test rounds showed no quality degradation from independence.
 
-5. **Incremental scope adoption.** Projects adopting Bollard should be able to start with boundary scope only and add contract + behavioral as they gain confidence. The `.bollard.yml` scope enables/disables make this straightforward, but the UX of "you're not using all scopes" needs to be informative, not nagging.
+5. **~~Incremental scope adoption.~~** **Resolved via `.bollard.yml`.** Each scope defaults to `enabled: true` but can be set to `false`. `bollard init` shows detected scope configuration without nagging.
 
-6. **When to split behavioral sub-agents.** The spec allows the behavioral scope to split into sub-agents (correctness+resilience, security, performance) when probe quality degrades. What's the metric for "degraded"? Likely: mutation survival rate per concern, or human review of probe quality during early runs. This needs empirical data before we can set a threshold.
+### Still Open
 
-7. **Concern-specific tooling at behavioral scope.** Security behavioral tests may benefit from specialized tools (OWASP ZAP, fuzzing frameworks). Performance behavioral tests may need load generators (k6, wrk, vegeta). Should these be detected/configured in the ToolchainProfile, or are they always Bollard-provided? Leaning toward Bollard-provided initially, with detection for project-installed tools as an optimization.
+4. **Cost management with three scopes.** Empirical data from self-tests: boundary ~$0.10, contract ~$0.30, behavioral ~$0.50 per run (against Bollard itself — larger projects will cost more). Per-scope cost caps deducted from `maxCostUsd` are not yet implemented. The `CostTracker` tracks aggregate cost; per-scope attribution is a Stage 5 enhancement.
 
-8. **Concern weighting in mutation testing.** Should mutation testing score be broken down per concern? E.g., "80% overall mutation score, but only 40% of security-relevant mutations caught" would be more actionable than a single number. This requires classifying mutations by concern — possible but adds complexity.
+6. **When to split behavioral sub-agents.** No empirical evidence yet that the single behavioral agent produces shallow probes. The current behavioral-tester (temp 0.5, maxTurns 15) generates reasonable probes across all concern lenses. Revisit when Bollard is used on projects with complex behavioral surfaces. Metric: mutation survival rate per concern or human review.
+
+7. **Concern-specific tooling at behavioral scope.** Confirmed Bollard-provided initially by Stage 4a/4b: only `service_stop` fault injection is implemented via Docker Compose. Advanced fault injection (network_delay, resource_limit) and load generators deferred. Detection for project-installed tools is a natural `ToolchainProfile` extension when demand appears.
+
+8. **Concern weighting in mutation testing.** Per-concern mutation scores require classifying mutations by concern type — feasible for Stryker (reports mutant operator type) but harder for mutmut/cargo-mutants. Deferred to Stage 5b.
 
 ---
 
@@ -979,6 +983,14 @@ Adversarial verification plan:
 **Landed in Stage 3c:** Per-language mutation testing (Stryker TS/JS, `MutmutProvider` Python, `CargoMutantsProvider` Rust), scope-aware mutation targeting (`mutateFiles`), semantic review agent with claims+grounding (advisory), Anthropic `chatStream` streaming (OpenAI/Google stubs), `go.work`-only workspace detection. 22-node `implement-feature` blueprint.
 
 **Moved from Stage 3 to Stage 4:** Java/Kotlin language expansion (Wave 1), OpenAI/Google streaming parity, verification summary batching, git rollback on coder max-turns failure.
+
+**Landed in Stage 4a:** Behavioral-scope adversarial testing — `buildBehavioralContext` (endpoints, config, deps, failure modes), `behavioral-tester` agent, behavioral grounding via `behavioralContextToCorpus`, coarse fault injection (`service_stop`), behavioral compose generator, 5 behavioral pipeline nodes. 27-node pipeline.
+
+**Landed in Stage 4b:** `@bollard/observe` package — probe extraction, HTTP probe runner, metrics store, deployment tracker, drift detector, flag manager, progressive rollout, probe scheduler. `extract-probes` blueprint node. CLI `probe`/`deploy`/`flag`/`drift` commands. 4 MCP tools. 28-node pipeline.
+
+**Landed in Stage 4c:** OpenAI/Google `chatStream` parity (Part 1). Java/Kotlin Wave 1 — detector, `bollard-extract-java` (GraalVM native), `JavaContractProvider`, PIT mutation, JVM compose (Part 2). Coder rollback, verification summary batching, `onFailure: "skip"` for static-checks/run-tests (cleanup).
+
+**Landed in Stage 4d:** `bollard init --ide` (Cursor, Claude Code, Codex, Antigravity), MCP v2 (enriched descriptions, 6 resources, 3 prompts, 14 tools), `bollard watch`, `verify --quiet`. Verification protocol rewrite (WHY + DO NOT + SELF-CHECK) — see [ADR-0003](./adr/0003-agent-protocol-compliance.md). MCP structured output, profile resolution, workspace root fixes. 862 pass / 4 skip.
 
 ---
 
