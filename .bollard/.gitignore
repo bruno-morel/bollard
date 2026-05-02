@@ -1,4 +1,6 @@
-runs/
+runs/history.db
+runs/.history.lock
+runs/.history.lock.*
 smoke.log
 compose.verify.yml
 validation-fake-plan.json
