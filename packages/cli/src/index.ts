@@ -5,7 +5,8 @@ import { createImplementFeatureBlueprint } from "@bollard/blueprints/src/impleme
 import type { Blueprint, BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
-import type { ProgressEvent } from "@bollard/engine/src/runner.js"
+import { FileRunHistoryStore } from "@bollard/engine/src/run-history.js"
+import type { ProgressEvent, RunBlueprintCompleteCallback } from "@bollard/engine/src/runner.js"
 import { runBlueprint } from "@bollard/engine/src/runner.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
@@ -14,6 +15,9 @@ import { resolveConfig } from "./config.js"
 import { collectAffectedPathsFromPlan } from "./contract-plan.js"
 import { diffToolchainProfile } from "./diff.js"
 import { formatDoctorReport, runDoctor } from "./doctor.js"
+import { getHeadSha } from "./git-utils.js"
+import { buildRunRecord, buildVerifyRecord } from "./history-record.js"
+import { runHistoryCommand } from "./history.js"
 import { humanGateHandler } from "./human-gate.js"
 import {
   runDeployCommand,
@@ -301,8 +305,20 @@ async function runVerifyCommand(args: string[]): Promise<void> {
   }
 
   const quiet = args.includes("--quiet")
-
-  const { results, allPassed } = await runStaticChecks(workDir)
+  const startedAt = Date.now()
+  const { profile } = await resolveConfig(undefined, workDir)
+  const { results, allPassed } = await runStaticChecks(workDir, profile)
+  const gitSha = await getHeadSha(workDir)
+  const verifyRecord = buildVerifyRecord({
+    workDir,
+    profile,
+    results,
+    allPassed,
+    startedAt,
+    ...(gitSha !== undefined ? { gitSha } : {}),
+  })
+  const historyStore = new FileRunHistoryStore(workDir)
+  await historyStore.record(verifyRecord)
 
   if (quiet) {
     const payload = formatQuietVerifyResult(results, allPassed)
@@ -416,12 +432,28 @@ async function runRunCommand(args: string[]): Promise<void> {
   const configCwd = resolveWorkspaceDirFromArgs(args)
   const { config, profile } = await resolveConfig(undefined, configCwd)
 
+  const persistRunHistory: RunBlueprintCompleteCallback = async (ctx, result, bp) => {
+    const sha = await getHeadSha(configCwd)
+    const record = buildRunRecord(ctx, result, bp, sha)
+    const store = new FileRunHistoryStore(configCwd)
+    await store.record(record)
+  }
+
   if (blueprintName === "demo") {
     header("run demo")
     log(`${DIM}Task:${RESET} ${task}\n`)
 
     const handler = createSimpleAgenticHandler(config)
-    const result = await runBlueprint(demoBlueprint, task, config, handler, undefined, cliProgress)
+    const result = await runBlueprint(
+      demoBlueprint,
+      task,
+      config,
+      handler,
+      undefined,
+      cliProgress,
+      undefined,
+      persistRunHistory,
+    )
     printRunSummary(result)
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
     process.exit(result.status === "success" ? 0 : 1)
@@ -452,6 +484,7 @@ async function runRunCommand(args: string[]): Promise<void> {
       humanGateHandler,
       cliProgress,
       profile,
+      persistRunHistory,
     )
     printRunSummary(result)
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
@@ -775,6 +808,12 @@ async function main(): Promise<void> {
     return
   }
 
+  if (command === "history") {
+    const workDir = resolveWorkspaceDirFromArgs(rest)
+    await runHistoryCommand(rest, workDir)
+    return
+  }
+
   if (command === "doctor") {
     const workDir = resolveWorkspaceDirFromArgs(rest)
     const jsonMode = rest.includes("--json")
@@ -824,6 +863,9 @@ async function main(): Promise<void> {
   log(`  ${BOLD}plan${RESET} --task <task>              Generate a plan without implementing`)
   log(
     `  ${BOLD}verify${RESET} [--profile] [--quiet]   Run static checks (or show profile; --quiet JSON on fail)`,
+  )
+  log(
+    `  ${BOLD}history${RESET} [show|compare]       List / show / compare run history (--json, filters)`,
   )
   log(
     `  ${BOLD}contract${RESET} [--plan <file>]         Print ContractContext JSON (optional planner plan)`,

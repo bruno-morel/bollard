@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { Blueprint, BlueprintNode, NodeResult } from "../src/blueprint.js"
 import type { BollardConfig } from "../src/context.js"
 import { BollardError } from "../src/errors.js"
-import { runBlueprint } from "../src/runner.js"
+import { type RunBlueprintCompleteCallback, runBlueprint } from "../src/runner.js"
 
 const TEST_CONFIG: BollardConfig = {
   llm: { default: { provider: "mock", model: "test" } },
@@ -249,6 +249,24 @@ describe("runBlueprint", () => {
     expect(result.status).toBe("success")
     expect(Object.keys(result.nodeResults)).toHaveLength(0)
     expect(result.error).toBeUndefined()
+  })
+
+  it("does not fail the pipeline when onRunComplete throws", async () => {
+    const bp = makeBlueprint([okNode("n1")])
+    const throwing: RunBlueprintCompleteCallback = async () => {
+      throw new Error("disk full")
+    }
+    const result = await runBlueprint(
+      bp,
+      "task",
+      TEST_CONFIG,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      throwing,
+    )
+    expect(result.status).toBe("success")
   })
 })
 

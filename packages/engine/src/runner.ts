@@ -34,6 +34,12 @@ export interface ProgressEvent {
 
 export type ProgressCallback = (event: ProgressEvent) => void
 
+export type RunBlueprintCompleteCallback = (
+  ctx: PipelineContext,
+  result: RunResult,
+  blueprint: Blueprint,
+) => Promise<void>
+
 function executeNode(
   node: BlueprintNode,
   ctx: PipelineContext,
@@ -100,6 +106,7 @@ export async function runBlueprint(
   humanGateHandler?: HumanGateHandler,
   onProgress?: ProgressCallback,
   toolchainProfile?: ToolchainProfile,
+  onRunComplete?: RunBlueprintCompleteCallback,
 ): Promise<RunResult> {
   const ctx = createContext(task, blueprint.id, config)
   if (toolchainProfile !== undefined) {
@@ -226,8 +233,17 @@ export async function runBlueprint(
     status,
   }
 
-  if (error !== undefined) {
-    return { ...base, error }
+  const result: RunResult = error !== undefined ? { ...base, error } : base
+
+  if (onRunComplete !== undefined) {
+    try {
+      await onRunComplete(ctx, result, blueprint)
+    } catch (err: unknown) {
+      ctx.log.warn("onRunComplete callback failed (run history may not be persisted)", {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
-  return base
+
+  return result
 }

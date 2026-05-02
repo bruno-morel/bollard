@@ -4,7 +4,9 @@ dist/
 .DS_Store
 .env
 .pnpm-store/
-.bollard/runs/
+.bollard/runs/history.db
+.bollard/runs/.history.lock
+.bollard/runs/.history.lock.*
 _tmp_*/
 .cursor/
 .vscode/

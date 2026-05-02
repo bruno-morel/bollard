@@ -23,8 +23,21 @@ export type {
   HumanGateHandler,
   ProgressEvent,
   ProgressCallback,
+  RunBlueprintCompleteCallback,
 } from "./runner.js"
 export { runBlueprint } from "./runner.js"
+export type {
+  NodeSummary,
+  ScopeResult,
+  RunRecord,
+  VerifyRecordSource,
+  VerifyRecord,
+  HistoryRecord,
+  HistoryFilter,
+  RunComparison,
+  RunHistoryStore,
+} from "./run-history.js"
+export { RUN_HISTORY_SCHEMA_VERSION, parseHistoryLine, FileRunHistoryStore } from "./run-history.js"
 export type {
   EvalCase,
   EvalAssertion,

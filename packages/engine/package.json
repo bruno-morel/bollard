@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@bollard/detect": "workspace:*",
+    "proper-lockfile": "^4.0.2",
     "zod": "^3.24.2"
   }
 }
