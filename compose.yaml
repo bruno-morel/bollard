@@ -18,11 +18,10 @@ services:
       - observe_modules:/app/packages/observe/node_modules
       - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /app
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
-      - BOLLARD_AUTO_APPROVE=${BOLLARD_AUTO_APPROVE:-}
       - NODE_OPTIONS=--disable-warning=DEP0040
     entrypoint: ["pnpm"]
 
@@ -48,11 +47,10 @@ services:
       - go_cache:/root/.cache/go-build
       - cargo_cache:/root/.cargo/registry
     working_dir: /app
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
-      - BOLLARD_AUTO_APPROVE=${BOLLARD_AUTO_APPROVE:-}
       - NODE_OPTIONS=--disable-warning=DEP0040
     entrypoint: ["pnpm"]
 
