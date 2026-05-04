@@ -204,4 +204,84 @@ describe("FileRunHistoryStore", () => {
     await store.record({ ...v, runId: "v2" })
     await expect(store.compare("v1", "v2")).rejects.toThrow(/pipeline run/)
   })
+
+  it("summary returns correct aggregates for multiple runs", async () => {
+    const store = new FileRunHistoryStore(dir)
+    await store.record(
+      minimalRun({
+        runId: "sum-1",
+        timestamp: 1,
+        status: "success",
+        totalCostUsd: 2,
+        totalDurationMs: 200,
+        testCount: { passed: 10, skipped: 0, failed: 0 },
+        mutationScore: 60,
+      }),
+    )
+    await store.record(
+      minimalRun({
+        runId: "sum-2",
+        timestamp: 2,
+        blueprintId: "other-bp",
+        status: "failure",
+        totalCostUsd: 4,
+        totalDurationMs: 400,
+        testCount: { passed: 1, skipped: 1, failed: 1 },
+        mutationScore: 80,
+      }),
+    )
+    const s = await store.summary()
+    expect(s.totalRuns).toBe(2)
+    expect(s.successRate).toBe(0.5)
+    expect(s.avgCostUsd).toBe(3)
+    expect(s.avgDurationMs).toBe(300)
+    expect(s.avgMutationScore).toBe(70)
+    expect(Object.keys(s.byBlueprint).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it("summary with since only includes recent runs", async () => {
+    const store = new FileRunHistoryStore(dir)
+    await store.record(minimalRun({ runId: "old", timestamp: 10, totalCostUsd: 1 }))
+    await store.record(minimalRun({ runId: "new", timestamp: 1000, totalCostUsd: 9 }))
+    const s = await store.summary(100)
+    expect(s.totalRuns).toBe(1)
+    expect(s.avgCostUsd).toBe(9)
+  })
+
+  it("summary with no run records returns zeroed summary", async () => {
+    const store = new FileRunHistoryStore(dir)
+    const v = {
+      type: "verify" as const,
+      schemaVersion: RUN_HISTORY_SCHEMA_VERSION,
+      runId: "only-verify",
+      timestamp: 1,
+      workDir: dir,
+      source: "cli" as const,
+      checks: [],
+      allPassed: true,
+      totalDurationMs: 0,
+    }
+    await store.record(v)
+    const s = await store.summary()
+    expect(s.totalRuns).toBe(0)
+    expect(s.successRate).toBe(0)
+    expect(s.avgCostUsd).toBe(0)
+  })
+
+  it("rebuild returns record count after inserts", async () => {
+    const store = new FileRunHistoryStore(dir)
+    await store.record(minimalRun({ runId: "rb1", timestamp: 1 }))
+    await store.record(minimalRun({ runId: "rb2", timestamp: 2 }))
+    const out = await store.rebuild()
+    expect(out.runCount).toBe(2)
+    expect(out.durationMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it("summary returns valid data without db file (first query builds or JSONL fallback)", async () => {
+    const store = new FileRunHistoryStore(dir)
+    await store.record(minimalRun({ runId: "solo", timestamp: 1, totalCostUsd: 0.5 }))
+    const s = await store.summary()
+    expect(s.totalRuns).toBe(1)
+    expect(s.avgCostUsd).toBe(0.5)
+  })
 })

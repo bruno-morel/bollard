@@ -601,14 +601,28 @@ The SQLite layer is imported dynamically (`await import("./run-history-db.js")`)
 2. Wire `bollard watch` verify completions into history (source: "watch")
 3. Wire MCP `handleVerify` completions into history (source: "mcp")
 
-### Phase 4: CI workflow (Bollard-on-Bollard)
+### Phase 4: CI-aware verification + test promotion
+
+1. Implement `detectCIEnvironment` — env var detection for GitHub Actions, GitLab CI, CircleCI, Jenkins, Buildkite
+2. JUnit XML reader — parse standard test result artifacts
+3. Local build cache staleness detection (tsbuildinfo, biome cache, vitest cache)
+4. `--ci-passed` flag on `verify` and `run` commands (explicit injection escape hatch)
+5. `skipChecks` parameter on `runStaticChecks`
+6. Test fingerprinting — `TestFingerprint` type, SHA-256 hash of normalized assertion structure
+7. Store fingerprints in `RunRecord.scopes[].testFingerprints`
+8. Promotion candidate detection: bug-catcher (test failed → code fixed → test passed) + repeated generation (3+ runs with same fingerprint)
+9. Promotion flow at `approve-pr` gate: present candidates, user selects, `rewriteImportsForPromotion`, strip markers, update `.bollard/promoted.json`
+10. Skip regeneration of promoted tests during adversarial pass
+11. Tests: CI detection for each provider, JUnit XML parsing, fingerprint stability, promotion import rewriting
+
+### Phase 5: CI workflow (Bollard-on-Bollard)
 
 1. Add `.github/workflows/bollard-verify.yml`
 2. `bollard verify --quiet` already exists — CI uses its exit code
 3. Run history artifact upload for cross-run trend tracking
 4. Optional: `bollard history compare --ci` that compares against `main` branch baseline
 
-### Phase 5: Protocol compliance CI
+### Phase 6: Protocol compliance CI
 
 1. Add `bollard audit-protocol` CLI command
 2. Implement synthetic task runner (sends task + rules to LLM, captures tool calls)
@@ -664,17 +678,219 @@ Run history is entirely local. No network calls, no cloud storage, no API keys. 
 
 ---
 
-## 12. Non-Goals (This Stage)
+## 12. CI-Aware Verification
+
+### 12.1 Problem
+
+When Bollard runs inside an existing CI pipeline (GitHub Actions, GitLab CI, local dev loop), it re-runs checks that another step already completed — typecheck, lint, audit. This wastes time and compute. Bollard should be smart enough to detect what already ran and skip redundant work, focusing on its unique value: adversarial testing.
+
+### 12.2 Detection hierarchy
+
+Bollard detects its environment and available results in three tiers, always degrading toward *more* verification (never less):
+
+**Tier 1 — CI artifact ingestion (strongest signal).** Bollard detects it's running in CI via well-known environment variables (`GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `JENKINS_URL`, `BUILDKITE`). It then looks for standard result artifacts:
+
+- **JUnit XML** — the de facto cross-ecosystem standard. Vitest (`--reporter=junit`), pytest (`--junitxml`), `go test` (via `gotestsum`), Maven Surefire, Gradle all produce it. Bollard reads the XML, extracts pass/fail/skip counts and individual test names.
+- **CI step metadata** — GitHub Actions exposes step outcomes in `$GITHUB_STEP_SUMMARY` and check annotations. Bollard can infer which checks passed from the workflow run context.
+
+If Bollard finds results for typecheck/lint/audit/test that already passed, it skips those checks and jumps to adversarial scopes.
+
+**Tier 2 — Bollard's own `last-verified.json` (local dev).** For local developers, Bollard tracks its own verification state rather than sniffing tool-specific cache files (which are fragile and tool-version-dependent). Every successful `bollard verify` writes `.bollard/observe/last-verified.json` (already used by the drift detector):
+
+```json
+{
+  "gitSha": "adfad44",
+  "timestamp": 1714567890123,
+  "checks": {
+    "typecheck": { "passed": true, "durationMs": 2100 },
+    "lint": { "passed": true, "durationMs": 1400 },
+    "test": { "passed": true, "durationMs": 8200 },
+    "audit": { "passed": true, "durationMs": 900 }
+  }
+}
+```
+
+On the next run, Bollard compares `last-verified.json` against `HEAD`:
+- **Same SHA** → all recorded checks are skippable (nothing changed since last verify)
+- **Different SHA** → run everything (source changed, prior results are stale)
+
+This is simpler and more reliable than sniffing `tsconfig.tsbuildinfo` or `.eslintcache` timestamps. Bollard controls the data format, the staleness logic is trivial (SHA match = fresh), and it works identically regardless of the user's toolchain.
+
+**Integration model: Bollard as smart observer, not script injector.** Bollard does NOT modify `package.json` scripts, inject `posttest` hooks, or chain itself into the user's existing commands. Instead:
+
+- `bollard watch` observes file changes and verifies continuously — if the user ran `pnpm test` themselves, `watch` sees the resulting file changes and updates `last-verified.json` on its next verify cycle.
+- `bollard verify` checks `last-verified.json` before running checks — if they already passed at the current SHA, it skips them.
+- **Optional pre-commit hook** (via `bollard init`): the one enforcement point where Bollard insists on verification before code leaves the working tree. `bollard init` can offer to install a git pre-commit hook that calls `bollard verify --quiet`. This is opt-in, non-destructive, and runs at a natural boundary (commit time). It coexists cleanly with Cursor (which verifies during editing), Docker (the hook can detect Docker availability and route accordingly), and CI (which has its own checks).
+
+This approach avoids coupling with any specific tool, framework, or IDE. Bollard benefits from what already happened without injecting itself into the user's workflow.
+
+**Tier 3 — Run everything (fallback).** No CI detected, no `last-verified.json`, or SHA mismatch → Bollard runs all checks itself, making its own opinionated choices based on `ToolchainProfile`. This is the current behavior and remains the default for projects with no CI.
+
+### 12.3 Implementation: `detectCIEnvironment`
+
+Extends the `detectToolchain` pattern — deterministic, file/env-based, no LLM:
+
+```typescript
+interface CIEnvironment {
+  provider: "github-actions" | "gitlab-ci" | "circleci" | "jenkins" | "buildkite" | "local" | "unknown"
+  priorResults: PriorCheckResult[]
+  artifactPaths: string[]           // where to find JUnit XML, etc.
+}
+
+interface PriorCheckResult {
+  check: "typecheck" | "lint" | "test" | "audit" | "secretScan"
+  source: "junit-xml" | "ci-step" | "cache-timestamp" | "injected"
+  passed: boolean
+  timestamp: number
+  detail?: string                    // e.g. "12 passed, 0 failed" from JUnit
+}
+```
+
+The `runStaticChecks` function gains an optional `skipChecks` parameter:
+
+```typescript
+// Before (current)
+runStaticChecks(workDir, profile?)
+
+// After
+runStaticChecks(workDir, profile?, skipChecks?: string[])
+```
+
+Checks in `skipChecks` emit a `skipped (prior CI pass)` result instead of running.
+
+### 12.4 Explicit injection (escape hatch)
+
+For CI setups where artifact detection doesn't work, Bollard accepts explicit injection:
+
+```bash
+bollard verify --ci-passed typecheck,lint,audit
+bollard run implement-feature --task "..." --ci-passed typecheck,lint
+```
+
+This is the simplest integration path: the CI workflow knows what it already ran and tells Bollard directly.
+
+### 12.5 What Bollard NEVER skips
+
+Regardless of CI context, Bollard always runs:
+
+- **Adversarial scope agents** (boundary, contract, behavioral) — this is Bollard's unique value
+- **Grounding verification** — deterministic, never redundant
+- **Mutation testing** (when enabled) — not run by conventional CI
+- **Semantic review** — not run by conventional CI
+- **Test execution of Bollard-generated tests** — even if prior tests passed, adversarial tests are new
+
+The principle: Bollard skips what any CI can do, keeps what only Bollard can do.
+
+---
+
+## 13. Adversarial Test Promotion
+
+### 13.1 Problem
+
+Bollard currently regenerates adversarial tests from scratch every pipeline run. This is expensive (LLM calls) and wasteful when the same tests keep being generated for the same gaps. Tests that catch real bugs or are repeatedly generated should become permanent — but only with user approval.
+
+### 13.2 Promotion criteria
+
+Two signals trigger automatic promotion candidacy:
+
+**Signal 1 — Bug catcher (strongest).** An adversarial test *failed* during the pipeline, the coder fixed the code, and the test *passed* on re-run. This test is now a regression guard — it found a real defect that was fixed. Bollard flags it immediately.
+
+**Signal 2 — Repeated generation.** The same test (by assertion fingerprint) has been generated in 3+ pipeline runs. The LLM keeps producing it because the gap is real and persistent. This requires run history (Stage 5a Phase 1) to detect — Bollard compares test fingerprints across `RunRecord`s.
+
+Everything else (tests that pass on first run, tests generated only once) is left to the user's discretion. `bollard promote-test <path>` already exists for manual promotion.
+
+### 13.3 Test fingerprinting
+
+To detect repeated generation, Bollard needs a stable fingerprint for adversarial tests that's invariant to variable naming and formatting:
+
+```typescript
+interface TestFingerprint {
+  scope: "boundary" | "contract" | "behavioral"
+  targetModule: string              // which module the test targets
+  assertionTypes: string[]          // sorted: ["rejects", "throws", "toBe", ...]
+  inputPatterns: string[]           // normalized: ["null", "empty-string", "negative-number", ...]
+  hash: string                     // SHA-256 of the above, for fast comparison
+}
+```
+
+The fingerprint captures *what* the test checks (assertion types, input patterns) without being sensitive to *how* it's written (variable names, formatting, comments). Two tests that both check "null input to `processOrder` throws `TypeError`" produce the same fingerprint even if the code differs.
+
+Fingerprints are stored in `RunRecord` as an optional field:
+
+```typescript
+interface ScopeResult {
+  // ... existing fields ...
+  testFingerprints?: TestFingerprint[]   // for promotion candidate detection
+}
+```
+
+### 13.4 Promotion flow
+
+At the `approve-pr` human gate (node 28 in `implement-feature`), Bollard presents promotion candidates alongside the diff summary and review findings:
+
+```
+Promotion candidates (3 tests):
+
+  🔴 Bug catcher — boundary test caught null-input crash in processOrder()
+     .bollard/tests/boundary/process-order.boundary.test.ts
+     → Recommend: tests/process-order.test.ts
+
+  🔁 Repeated (4 runs) — contract test validates UserService.getById return type
+     .bollard/tests/contract/user-service.contract.test.ts
+     → Recommend: tests/user-service.contract.test.ts
+
+  🔁 Repeated (3 runs) — boundary test checks empty-array edge case in aggregate()
+     .bollard/tests/boundary/aggregate.boundary.test.ts
+     → Recommend: tests/aggregate.test.ts
+
+Promote? [y/n/select]
+```
+
+The user can:
+- `y` — promote all candidates
+- `n` — skip all
+- `select` — choose individually
+
+### 13.5 What promotion does
+
+1. **Copy** the test file from `.bollard/tests/` to the project's test directory
+2. **Rewrite imports** — `rewriteImportsForPromotion(content, fromPath, toPath, profile)` adjusts relative import paths based on the new location. This is deterministic — TS `import from`, Python `from X import`, Go package paths are all string transforms
+3. **Strip markers** — remove `@bollard-generated` comments
+4. **Register** — add the promoted test's fingerprint to a `.bollard/promoted.json` manifest so Bollard knows not to regenerate it
+
+### 13.6 What is NOT promotable
+
+A test is excluded from promotion candidacy if it:
+
+- **Depends on Bollard infrastructure** — uses `generateBehavioralCompose`, Docker fault injection, or other Bollard-specific setup. Most behavioral tests with fault injection fall here.
+- **Is not self-contained** — requires external services, fixtures, or state that only exists during the Bollard pipeline run.
+- **Duplicates an existing project test** — Bollard checks the project's test directory for tests covering the same assertion fingerprint before proposing promotion.
+
+Boundary and contract tests almost always qualify. Behavioral tests qualify only when they're pure HTTP assertion tests without fault injection.
+
+### 13.7 Relationship to run history
+
+Test promotion depends on Stage 5a Phase 1 (run history) for:
+- **Signal 2 detection** — fingerprint comparison across runs requires `RunRecord.scopes[].testFingerprints`
+- **Promotion tracking** — `promoted.json` is referenced during test generation to avoid regenerating promoted tests
+- **Trend analysis** — `bollard history summary` can report promotion rate (what fraction of adversarial tests become permanent)
+
+---
+
+## 14. Non-Goals (This Stage)
 
 - **Cross-machine run history sync** — history is per-repo, per-machine. Sync is a future concern.
 - **Run history UI** — CLI and MCP are sufficient. A web dashboard is Stage 5b+.
 - **Run replay** — re-running a historical run with the same inputs. Interesting but requires snapshotting the entire codebase state.
 - **Automatic regression alerting** — `compare` is manual. Automated "this run is worse than the last 5" is Stage 5b.
 - **Run history pruning** — JSONL files grow linearly. For Bollard's own development cadence (~10 runs/week), a year of history is ~500 KB. Pruning is not needed yet.
+- **Automatic test promotion without user approval** — Bollard always asks before committing candidates to the permanent suite. Fully autonomous promotion is an explicit non-goal.
+- **CI pipeline generation** — Bollard reads CI results and skips redundant checks, but it does not generate CI workflow files (GitHub Actions YAML, etc.). `bollard init --ide` covers IDE config; CI workflow generation is a separate concern.
+- **Cross-CI provider abstraction** — Bollard detects CI environment and reads artifacts, but doesn't provide a unified CI API. Each provider (GitHub Actions, GitLab, etc.) has its own detection logic.
 
 ---
 
-## 13. Design Principles Applied
+## 15. Design Principles Applied
 
 - **Principle 1 (deterministic guardrails):** Run history capture is fully deterministic — no LLM calls, no creative decisions.
 - **Principle 2 (convention over configuration):** Zero config. History is always captured to `.bollard/runs/`. No opt-in, no YAML section.

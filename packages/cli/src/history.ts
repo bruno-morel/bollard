@@ -260,6 +260,55 @@ async function cmdShow(workDir: string, runId: string, json: boolean): Promise<v
   log("")
 }
 
+async function cmdSummary(workDir: string, parsed: ParsedHistoryCli): Promise<void> {
+  const store = new FileRunHistoryStore(workDir)
+  const summary = await store.summary(parsed.sinceMs)
+  if (parsed.json) {
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`)
+    return
+  }
+  header("history summary")
+  if (parsed.sinceMs !== undefined) {
+    log(`${DIM}Since:${RESET} ${new Date(parsed.sinceMs).toISOString().slice(0, 10)}\n`)
+  }
+  log(`${BOLD}Total runs:${RESET}     ${summary.totalRuns}`)
+  log(`${BOLD}Success rate:${RESET}   ${(summary.successRate * 100).toFixed(1)}%`)
+  log(`${BOLD}Avg cost:${RESET}       $${summary.avgCostUsd.toFixed(2)}`)
+  log(`${BOLD}Avg duration:${RESET}   ${formatMs(summary.avgDurationMs)}`)
+  log(`${BOLD}Avg tests:${RESET}      ${Math.round(summary.avgTestCount)}`)
+  if (summary.avgMutationScore !== undefined) {
+    log(`${BOLD}Avg mutation:${RESET}   ${summary.avgMutationScore.toFixed(1)}%`)
+  }
+  const trendIcon =
+    summary.costTrend === "increasing" ? "↑" : summary.costTrend === "decreasing" ? "↓" : "→"
+  log(`${BOLD}Cost trend:${RESET}     ${summary.costTrend} ${trendIcon}`)
+
+  const bpEntries = Object.entries(summary.byBlueprint)
+  if (bpEntries.length > 0) {
+    log(`\n${BOLD}By blueprint:${RESET}`)
+    for (const [bp, stats] of bpEntries) {
+      log(
+        `  ${bp.padEnd(24)} ${String(stats.runs).padEnd(6)} runs  ${(stats.successRate * 100).toFixed(0)}% success  $${stats.avgCostUsd.toFixed(2)} avg`,
+      )
+    }
+  }
+  log("")
+}
+
+async function cmdRebuild(workDir: string, json: boolean): Promise<void> {
+  const store = new FileRunHistoryStore(workDir)
+  const result = await store.rebuild()
+  if (json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+    return
+  }
+  header("history rebuild")
+  log(
+    `${GREEN}Rebuilt SQLite index:${RESET} ${result.runCount} records in ${formatMs(result.durationMs)}`,
+  )
+  log("")
+}
+
 async function cmdCompare(workDir: string, idA: string, idB: string, json: boolean): Promise<void> {
   const store = new FileRunHistoryStore(workDir)
   try {
@@ -322,6 +371,16 @@ export async function runHistoryCommand(rest: string[], workDir: string): Promis
       process.exit(1)
     }
     await cmdCompare(workDir, a, b, parsed.json)
+    return
+  }
+
+  if (pos[0] === "summary") {
+    await cmdSummary(workDir, parsed)
+    return
+  }
+
+  if (pos[0] === "rebuild") {
+    await cmdRebuild(workDir, parsed.json)
     return
   }
 

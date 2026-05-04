@@ -69,6 +69,16 @@ describe("runDoctor", () => {
     const report = await runDoctor(tempDir, envWithoutLlmKeys())
     expect(report.configNote).toBe("custom config")
   })
+
+  it("includes historyHealth when options.history is true", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "bollard-doctor-hist-"))
+    await writeFile(join(tempDir, "tsconfig.json"), '{"compilerOptions":{}}', "utf-8")
+    await writeFile(join(tempDir, "package.json"), "{}", "utf-8")
+    const report = await runDoctor(tempDir, envWithoutLlmKeys(), { history: true })
+    expect(report.historyHealth).toBeDefined()
+    expect(report.historyHealth?.jsonlExists).toBe(false)
+    expect(report.historyHealth?.jsonlRecordCount).toBe(0)
+  })
 })
 
 describe("doctor --json payload", () => {
@@ -137,5 +147,36 @@ describe("formatDoctorReport", () => {
     expect(out).toContain("✗")
     expect(out).toContain("Config:")
     expect(out).toContain("using defaults")
+  })
+
+  it("renders Run history section when historyHealth is present", () => {
+    const report = {
+      allPassed: true,
+      configNote: "using defaults" as const,
+      checks: [
+        { id: "docker" as const, label: "Docker", status: "pass" as const, detail: "ok" },
+        { id: "llm-key" as const, label: "LLM API key", status: "pass" as const, detail: "set: X" },
+        {
+          id: "toolchain" as const,
+          label: "Toolchain",
+          status: "pass" as const,
+          detail: "typescript",
+        },
+      ],
+      historyHealth: {
+        jsonlExists: true,
+        jsonlRecordCount: 2,
+        dbExists: true,
+        dbCurrent: true,
+        dbRecordCount: 2,
+        lastRebuildIso: new Date().toISOString(),
+        costTrend: "stable" as const,
+        recentFailingNodes: [],
+        mutationScoreRange: { min: 68, max: 72 },
+      },
+    }
+    const out = formatDoctorReport(report)
+    expect(out).toContain("Run history")
+    expect(out).toContain("history.jsonl exists (2 records)")
   })
 })

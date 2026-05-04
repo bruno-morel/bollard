@@ -4,6 +4,7 @@ import type { LanguageId, PackageManagerId } from "@bollard/detect/src/types.js"
 import * as lockfile from "proper-lockfile"
 import type { NodeType } from "./blueprint.js"
 import type { BollardErrorCode } from "./errors.js"
+import type { SqliteIndex } from "./run-history-db.js"
 
 export const RUN_HISTORY_SCHEMA_VERSION = 1 as const
 
@@ -96,11 +97,31 @@ export interface RunComparison {
   }
 }
 
+export interface RunSummary {
+  totalRuns: number
+  successRate: number
+  avgCostUsd: number
+  avgDurationMs: number
+  avgTestCount: number
+  avgMutationScore?: number
+  costTrend: "increasing" | "stable" | "decreasing"
+  byBlueprint: Record<
+    string,
+    {
+      runs: number
+      successRate: number
+      avgCostUsd: number
+    }
+  >
+}
+
 export interface RunHistoryStore {
   record(record: HistoryRecord): Promise<void>
   query(filter?: HistoryFilter): Promise<HistoryRecord[]>
   findByRunId(runId: string): Promise<HistoryRecord | undefined>
   compare(runIdA: string, runIdB: string): Promise<RunComparison>
+  summary(since?: number): Promise<RunSummary>
+  rebuild(): Promise<{ runCount: number; durationMs: number }>
 }
 
 function totalTestCount(t: RunRecord["testCount"]): number {
@@ -165,12 +186,114 @@ function matchesFilter(r: HistoryRecord, f?: HistoryFilter): boolean {
   return true
 }
 
+export function computeCostTrend(costs: number[]): "increasing" | "stable" | "decreasing" {
+  if (costs.length < 2) return "stable"
+  const mid = Math.floor(costs.length / 2)
+  const firstHalf = costs.slice(0, mid)
+  const secondHalf = costs.slice(mid)
+  const avgFirst = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length
+  const avgSecond = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length
+  const threshold = 0.1
+  const change = (avgSecond - avgFirst) / (avgFirst || 1)
+  if (change > threshold) return "increasing"
+  if (change < -threshold) return "decreasing"
+  return "stable"
+}
+
+function computeSummaryFromRecords(records: HistoryRecord[], since?: number): RunSummary {
+  const runs = records.filter(
+    (r): r is RunRecord => r.type === "run" && (since === undefined || r.timestamp >= since),
+  )
+  if (runs.length === 0) {
+    return {
+      totalRuns: 0,
+      successRate: 0,
+      avgCostUsd: 0,
+      avgDurationMs: 0,
+      avgTestCount: 0,
+      costTrend: "stable",
+      byBlueprint: {},
+    }
+  }
+  const successes = runs.filter((r) => r.status === "success").length
+  const avgCost = runs.reduce((s, r) => s + r.totalCostUsd, 0) / runs.length
+  const avgDuration = runs.reduce((s, r) => s + r.totalDurationMs, 0) / runs.length
+  const avgTests =
+    runs.reduce((s, r) => s + r.testCount.passed + r.testCount.skipped + r.testCount.failed, 0) /
+    runs.length
+  const mutScores = runs
+    .filter((r) => r.mutationScore !== undefined)
+    .map((r) => r.mutationScore as number)
+  const avgMutation =
+    mutScores.length > 0 ? mutScores.reduce((a, b) => a + b, 0) / mutScores.length : undefined
+
+  const last5 = [...runs].sort((a, b) => a.timestamp - b.timestamp).slice(-5)
+  const costTrend = computeCostTrend(last5.map((r) => r.totalCostUsd))
+
+  const byBlueprint: RunSummary["byBlueprint"] = {}
+  for (const r of runs) {
+    const key = r.blueprintId
+    if (!byBlueprint[key]) {
+      byBlueprint[key] = { runs: 0, successRate: 0, avgCostUsd: 0 }
+    }
+    const bp = byBlueprint[key]
+    if (bp) {
+      bp.runs++
+      if (r.status === "success") bp.successRate++
+      bp.avgCostUsd += r.totalCostUsd
+    }
+  }
+  for (const bp of Object.values(byBlueprint)) {
+    bp.successRate = bp.runs > 0 ? bp.successRate / bp.runs : 0
+    bp.avgCostUsd = bp.runs > 0 ? bp.avgCostUsd / bp.runs : 0
+  }
+
+  const base: RunSummary = {
+    totalRuns: runs.length,
+    successRate: successes / runs.length,
+    avgCostUsd: avgCost,
+    avgDurationMs: avgDuration,
+    avgTestCount: avgTests,
+    costTrend,
+    byBlueprint,
+  }
+  return avgMutation !== undefined ? { ...base, avgMutationScore: avgMutation } : base
+}
+
 export class FileRunHistoryStore implements RunHistoryStore {
   private readonly jsonlPath: string
+  private readonly dbPath: string
   private writeQueue: Promise<void> = Promise.resolve()
+  private sqliteIndex: SqliteIndex | null = null
+  private sqliteLoadAttempted = false
 
   constructor(workDir: string) {
     this.jsonlPath = join(workDir, ".bollard", "runs", "history.jsonl")
+    this.dbPath = join(workDir, ".bollard", "runs", "history.db")
+  }
+
+  private async loadSqliteIndex(): Promise<SqliteIndex | null> {
+    if (this.sqliteLoadAttempted) return this.sqliteIndex
+    this.sqliteLoadAttempted = true
+    try {
+      await mkdir(dirname(this.dbPath), { recursive: true })
+      const mod = await import("./run-history-db.js")
+      this.sqliteIndex = mod.createSqliteIndex(this.dbPath)
+      return this.sqliteIndex
+    } catch {
+      return null
+    }
+  }
+
+  private async ensureDbCurrent(): Promise<SqliteIndex | null> {
+    const idx = await this.loadSqliteIndex()
+    if (!idx) return null
+    const allRecords = await this.readAllRecords()
+    const dbCount = idx.recordCount()
+    if (allRecords.length > dbCount) {
+      idx.rebuild(allRecords)
+    }
+    return idx
   }
 
   private async readAllRecords(): Promise<HistoryRecord[]> {
@@ -210,9 +333,21 @@ export class FileRunHistoryStore implements RunHistoryStore {
     const write = this.writeQueue.then(() => this.appendLocked(record))
     this.writeQueue = write.catch(() => undefined)
     await write
+    const idx = this.sqliteIndex
+    if (idx) {
+      try {
+        idx.insert(record)
+      } catch {
+        // Derived index out of sync — next read will rebuild from JSONL
+      }
+    }
   }
 
   async query(filter?: HistoryFilter): Promise<HistoryRecord[]> {
+    const idx = await this.ensureDbCurrent()
+    if (idx) {
+      return idx.query(filter)
+    }
     const all = await this.readAllRecords()
     const matched = all.filter((r) => matchesFilter(r, filter))
     const newestFirst = [...matched].reverse()
@@ -223,8 +358,31 @@ export class FileRunHistoryStore implements RunHistoryStore {
   }
 
   async findByRunId(runId: string): Promise<HistoryRecord | undefined> {
+    const idx = await this.ensureDbCurrent()
+    if (idx) {
+      const found = idx.findByRunId(runId)
+      if (found !== undefined) return found
+    }
     const all = await this.readAllRecords()
     return all.find((r) => r.runId === runId)
+  }
+
+  async summary(since?: number): Promise<RunSummary> {
+    const idx = await this.ensureDbCurrent()
+    if (idx) {
+      return idx.summary(since)
+    }
+    const all = await this.readAllRecords()
+    return computeSummaryFromRecords(all, since)
+  }
+
+  async rebuild(): Promise<{ runCount: number; durationMs: number }> {
+    const idx = await this.loadSqliteIndex()
+    if (!idx) {
+      return { runCount: 0, durationMs: 0 }
+    }
+    const all = await this.readAllRecords()
+    return idx.rebuild(all)
   }
 
   async compare(runIdA: string, runIdB: string): Promise<RunComparison> {

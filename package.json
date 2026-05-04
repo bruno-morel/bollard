@@ -13,6 +13,7 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "@biomejs/biome",
+      "better-sqlite3",
       "esbuild"
     ],
     "overrides": {
@@ -25,6 +26,7 @@
     "@biomejs/biome": "^1.9.4",
     "@stryker-mutator/core": "^9.6.0",
     "@stryker-mutator/vitest-runner": "^9.6.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.5.0",
     "fast-check": "^3.23.2",
     "tsx": "^4.19.2",

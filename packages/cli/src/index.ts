@@ -817,7 +817,7 @@ async function main(): Promise<void> {
   if (command === "doctor") {
     const workDir = resolveWorkspaceDirFromArgs(rest)
     const jsonMode = rest.includes("--json")
-    const report = await runDoctor(workDir)
+    const report = await runDoctor(workDir, process.env, { history: rest.includes("--history") })
     if (jsonMode) {
       process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
     } else {
@@ -865,7 +865,7 @@ async function main(): Promise<void> {
     `  ${BOLD}verify${RESET} [--profile] [--quiet]   Run static checks (or show profile; --quiet JSON on fail)`,
   )
   log(
-    `  ${BOLD}history${RESET} [show|compare]       List / show / compare run history (--json, filters)`,
+    `  ${BOLD}history${RESET} [list|show|compare|summary|rebuild]  Run history (list/show/compare/summary/rebuild)`,
   )
   log(
     `  ${BOLD}contract${RESET} [--plan <file>]         Print ContractContext JSON (optional planner plan)`,
@@ -884,7 +884,7 @@ async function main(): Promise<void> {
     `    ${DIM}--json: one ndjson line per verify on stdout (pass|fail|error); with --quiet, skips quiet fail-only JSON${RESET}`,
   )
   log(
-    `  ${BOLD}doctor${RESET} [--json]                  Check environment health (docker, LLM key, toolchain)`,
+    `  ${BOLD}doctor${RESET} [--json] [--history]      Check environment health (docker, LLM key, toolchain; --history adds run history)`,
   )
   log(
     `  ${BOLD}promote-test${RESET} <path>             Promote adversarial test to project test dir`,

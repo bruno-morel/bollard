@@ -30,6 +30,7 @@ export type {
   NodeSummary,
   ScopeResult,
   RunRecord,
+  RunSummary,
   VerifyRecordSource,
   VerifyRecord,
   HistoryRecord,

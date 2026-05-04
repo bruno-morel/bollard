@@ -11,7 +11,7 @@ Bollard has completed **Stage 2** (adversarial verification infrastructure), **S
 The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md)):
 - **Stage 4c:** Java/Kotlin Wave 1 shipped (Part 2 — detector, `bollard-extract-java`, contract graph, PIT, JVM compose, prompts). (OpenAI + Google `chatStream` parity was Part 1.)
 - **Stage 4d:** DX & Agent Integrations: `bollard init --ide` generates platform-specific config for Cursor (rules, hooks, commands), Claude Code (commands, agents, hooks, CLAUDE.md augmentation), Codex, and Antigravity. MCP server v2 adds enriched tool descriptions, 6 resource endpoints (`bollard://profile`, etc.), and 3 prompt templates. `bollard watch` provides continuous verification with file watching. `--quiet` flag on `verify` enables machine-readable JSON output for hooks.
-- **Stage 5:** Self-hosting (5a: Bollard-on-Bollard CI, run history, protocol compliance CI), self-improvement (5b: prompt regression gating, meta-verification, adaptive concern weights), agent intelligence (5c: MCP client for agents, parallel scope execution, agent memory). See [spec/ROADMAP.md](../spec/ROADMAP.md).
+- **Stage 5:** Self-hosting (5a: run history [Phase 1 DONE], CI-aware verification, adversarial test promotion, Bollard-on-Bollard CI, protocol compliance CI), self-improvement (5b: prompt regression gating, meta-verification, adaptive concern weights), agent intelligence (5c: MCP client for agents, parallel scope execution, agent memory). See [spec/ROADMAP.md](../spec/ROADMAP.md).
 
 Stage 2's single adversarial tester (now called the **boundary-scope** tester) is the first of three adversarial scopes. Each scope has its own agent, context, and execution mode, probing four cross-cutting concerns (correctness, security, performance, resilience) with per-scope weights.
 
@@ -69,6 +69,8 @@ docker compose run --rm dev --filter @bollard/cli run start -- history compare <
 - **JVM audit detection:** OWASP dependency-check commands are only emitted when the plugin is declared in `pom.xml` / `build.gradle(.kts)`. Projects without the plugin get no `audit` check (previously caused hard failures).
 - **`bollard watch`** uses `fs.watch` with `recursive: true` — supported on macOS and Windows but not on Linux. Falls back to non-recursive top-level watch on Linux.
 - **Claude Code plugin packaging** under `plugin/claude-code/` is a scaffold only — npm publishing and `claude plugin add` registration are future work.
+- **CI-aware verification:** Not yet implemented. Bollard re-runs all static checks even when a prior CI step already passed them. `detectCIEnvironment`, `--ci-passed`, and `last-verified.json` SHA-match skip logic are Stage 5a Phase 4. Bollard uses its own `last-verified.json` (not tool-specific cache timestamps) for local dev skip detection — simpler, under Bollard's control, toolchain-agnostic. Integration model: Bollard as smart observer + optional pre-commit hook, never script injection. See [spec/stage5a-self-hosting.md §12](spec/stage5a-self-hosting.md).
+- **Adversarial test promotion:** Manual only via `bollard promote-test`. Automatic candidate detection (bug-catcher signal, repeated-generation fingerprinting) is Stage 5a Phase 4. See [spec/stage5a-self-hosting.md §13](spec/stage5a-self-hosting.md).
 
 ## Tech Stack (Non-Negotiable)
 
@@ -853,7 +855,9 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - **External observe providers** — Datadog, Flagsmith, LaunchDarkly, Cloud Run, ArgoCD implementations. Interfaces exist in `@bollard/observe`; implementations are 4b+.
 - **Advanced fault injection** — network_delay, resource_limit via `tc`/`iptables`. `FaultInjector` interface is extensible; only `service_stop` is implemented.
 - **Library-mode behavioral testing** — agent prompt has `{{#if hasPublicApi}}` ready; implementation deferred.
-- CI integration (5a Phase 3+), SQLite query layer (5a Phase 2), MCP history tools (5a Phase 3), self-improvement, protocol compliance CI, prompt regression gating, parallel scope execution — Stage 5 (see [spec/ROADMAP.md](../spec/ROADMAP.md))
+- **CI-aware verification** — `detectCIEnvironment`, JUnit XML reading, `--ci-passed` flag, `last-verified.json` SHA-match skip logic, optional pre-commit hook — Stage 5a Phase 4. See [spec/stage5a-self-hosting.md §12](spec/stage5a-self-hosting.md).
+- **Adversarial test promotion** — automatic candidate detection (bug-catcher + repeated-generation fingerprinting), promotion flow at `approve-pr` gate, `rewriteImportsForPromotion`, `.bollard/promoted.json` — Stage 5a Phase 4. See [spec/stage5a-self-hosting.md §13](spec/stage5a-self-hosting.md).
+- SQLite query layer (5a Phase 2), MCP history tools (5a Phase 3), Bollard-on-Bollard CI (5a Phase 5), protocol compliance CI (5a Phase 6), self-improvement (5b), agent intelligence (5c) — Stage 5 (see [spec/ROADMAP.md](../spec/ROADMAP.md))
 
 ### Size (current):
 - Run `cloc` or similar inside Docker if you need exact LOC; structure is 9 packages as listed above.
