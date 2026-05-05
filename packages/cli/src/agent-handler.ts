@@ -13,6 +13,7 @@ import type { AgentContext, AgentResult, ExecutorOptions } from "@bollard/agents
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context.js"
+import { BollardError } from "@bollard/engine/src/errors.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
 import type { BehavioralContext } from "@bollard/verify/src/behavioral-extractor.js"
 import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
@@ -536,7 +537,19 @@ export async function createAgenticHandler(
           process.stderr.write(`\x1b[31m  [rollback] Failed: ${msg}\x1b[0m\n`)
         }
       }
-      throw err
+      const partialCost =
+        BollardError.is(err) && typeof err.context?.["totalCostUsd"] === "number"
+          ? err.context["totalCostUsd"]
+          : 0
+      const errorCode = BollardError.is(err) ? err.code : "NODE_EXECUTION_FAILED"
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      return {
+        status: "fail",
+        data: "",
+        cost_usd: partialCost,
+        duration_ms: Date.now() - startMs,
+        error: { code: errorCode, message: errorMsg },
+      }
     } finally {
       spinner.finalize()
     }

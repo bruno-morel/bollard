@@ -133,6 +133,8 @@ describe("executeAgent", () => {
       expect(BollardError.is(err)).toBe(true)
       if (BollardError.is(err)) {
         expect(err.code).toBe("NODE_EXECUTION_FAILED")
+        expect(err.context?.["totalCostUsd"]).toBeTypeOf("number")
+        expect((err.context?.["totalCostUsd"] as number) ?? 0).toBeGreaterThanOrEqual(0)
       }
     }
   })

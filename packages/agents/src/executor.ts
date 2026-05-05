@@ -324,6 +324,6 @@ export async function executeAgent(
   throw new BollardError({
     code: "NODE_EXECUTION_FAILED",
     message: `Agent "${agent.role}" exceeded max turns (${agent.maxTurns})`,
-    context: { agentRole: agent.role, maxTurns: agent.maxTurns, turns },
+    context: { agentRole: agent.role, maxTurns: agent.maxTurns, turns, totalCostUsd },
   })
 }

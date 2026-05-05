@@ -101,6 +101,21 @@ describe("search", () => {
     const result = await searchTool.execute({ pattern: "foo\\d+", regex: true }, ctx)
     expect(result).toContain("foo123")
   })
+
+  it("auto-falls back to literal search on regex parse errors", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "const pos[0] = value\n")
+    const result = await searchTool.execute({ pattern: "pos[0", regex: true }, ctx)
+    expect(result).toContain("[auto-fallback: regex parse error, searched as literal string]")
+    expect(result).toContain("pos[0]")
+  })
+
+  it("auto-fallback reports no matches when literal search still finds nothing", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "const x = 1\n")
+    const result = await searchTool.execute({ pattern: "pos[0", regex: true }, ctx)
+    expect(result).toBe(
+      "[auto-fallback: regex parse error, searched as literal string]\nNo matches found.",
+    )
+  })
 })
 
 describe("run_command", () => {

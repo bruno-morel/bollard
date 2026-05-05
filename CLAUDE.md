@@ -65,6 +65,7 @@ docker compose run --rm dev --filter @bollard/cli run start -- doctor --history
 - **Kotlin source extraction** in the helper is regex-based (no compiler); bytecode path for compiled `.class` is best-effort.
 - **Mutation testing:** TS/JS (Stryker), Python (mutmut), Rust (cargo-mutants), Java/Kotlin (PIT). Go mutation testing deferred — no maintained upstream tool (`go-mutesting` is unmaintained). `MutationToolId` reserves `"go-mutesting"` for future use.
 - **Coder rollback:** After `create-branch`, `ctx.rollbackSha` stores the branch HEAD. If the **coder** agent throws (e.g. max turns), the CLI runs `git checkout -- .`, `git clean -fd`, `git reset --hard` to that SHA when `ctx.gitBranch` is set. Rollback errors are logged; the original error still stops the pipeline.
+- **Coder search + `regex: true`:** The `search` tool auto-falls back to literal string matching when a regex pattern fails to parse (exit code 2). The coder prompt discourages `regex: true` for code pattern searches. Previous self-test burned 60 turns on unescaped regex patterns before this fix.
 - **Static-checks / run-tests:** Both use `onFailure: "skip"` — the coder verification hook already ran the same checks (typecheck, lint, test, audit, secretScan) with batched feedback up to 3 retries, so redundant failures there do not halt the rest of the pipeline (contract, behavioral, mutation, review).
 - **Observe providers:** `@bollard/observe` ships built-in providers only (HTTP fetch, JSON files, git). External providers (Datadog, Flagsmith, Cloud Run, ArgoCD) are 4b+ — interfaces exist, implementations come when needed.
 - **Advanced fault injection:** Only `service_stop` implemented; network_delay/resource_limit are future work.
@@ -810,7 +811,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 
 ### Stage 4c (Part 1) hardening (DONE) — Pipeline quality-of-life
 - **Auto-format generated adversarial tests:** `formatGeneratedAdversarialTestFile()` runs `biome check --write --unsafe` after each write node (boundary, contract, behavioral). Non-fatal try/catch.
-- **Search tool → ripgrep:** `search.ts` now uses `rg` with `--fixed-strings` by default (no more `Unmatched )` errors). Optional `regex: true` for intentional regex.
+- **Search tool → ripgrep:** `search.ts` now uses `rg` with `--fixed-strings` by default. `regex: true` is available but auto-falls back to literal string on parse errors (exit code 2). Coder prompt discourages `regex: true` for code pattern searches.
 - **`rm` in coder allowlist:** Path-guarded (must be inside workDir, no recursive `-r`/`-rf`).
 - **Anthropic model ID:** smoke test and pricing updated to `claude-haiku-4-5-20251001`.
 - **Bollard-on-bollard self-test:** `CostTracker.summary()` — 28/28 nodes, $0.63, information barrier held, 699 → 705 tests.

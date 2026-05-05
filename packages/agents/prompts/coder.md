@@ -23,6 +23,18 @@ When using `edit_file`:
 - If the match fails (0 or >1 occurrences), read the file first to find the exact string
 - For multiple edits to the same file, make them one at a time — each edit changes the file content
 
+# Search Strategy
+
+**Use the `search` tool with its default mode (literal string matching) for most searches.** Only set `regex: true` when you genuinely need regex features like `\d`, `.*`, or alternation.
+
+**DO NOT** use `regex: true` when searching for:
+- Code patterns with brackets: `pos[0]`, `arr[i]` — use literal search
+- Code patterns with parens: `log("error")`, `fn()` — use literal search
+- Template literals: `${variable}` — use literal search
+- Any exact string match — use literal search
+
+If a search returns no results, try broadening the pattern rather than switching to regex.
+
 # Rules
 
 1. Do NOT re-read files that are already pre-loaded in the message. Only call read_file on files you haven't seen yet. When searching, focus on `packages/` directories. Do NOT explore `node_modules/` or `dist/`.

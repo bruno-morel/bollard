@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import * as fc from "fast-check"
 import { buildProjectTree, createAgenticHandler } from "../src/agent-handler.js"
 import { createContext } from "@bollard/engine/src/context.js"
+import { BollardError } from "@bollard/engine/src/errors.js"
 import type { BollardConfig } from "@bollard/engine/src/context.js"
 import type { BlueprintNode } from "@bollard/engine/src/blueprint.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
@@ -275,7 +276,13 @@ describe("createAgenticHandler", () => {
       return undefined as never
     })
 
-    vi.mocked(executeAgent).mockRejectedValueOnce(new Error("max turns"))
+    vi.mocked(executeAgent).mockRejectedValueOnce(
+      new BollardError({
+        code: "NODE_EXECUTION_FAILED",
+        message: "max turns",
+        context: { totalCostUsd: 1.23 },
+      }),
+    )
 
     const { handler } = await createAgenticHandler(baseConfig, "/tmp/w", makeProfile())
     ctx.plan = { summary: "x", affected_files: { modify: [] } }
@@ -289,7 +296,11 @@ describe("createAgenticHandler", () => {
       agent: "coder",
     }
 
-    await expect(handler(coderNode, ctx)).rejects.toThrow("max turns")
+    const result = await handler(coderNode, ctx)
+    expect(result.status).toBe("fail")
+    expect(result.cost_usd).toBe(1.23)
+    expect(result.error?.code).toBe("NODE_EXECUTION_FAILED")
+    expect(result.error?.message).toContain("max turns")
     expect(sawReset).toBe(true)
   })
 
@@ -318,12 +329,13 @@ describe("createAgenticHandler", () => {
     ctx.gitBranch = "bollard/x"
     ctx.rollbackSha = "abc123"
 
-    await expect(
-      handler(
-        { id: "implement", name: "Implement", type: "agentic", agent: "coder" },
-        ctx,
-      ),
-    ).rejects.toThrow("coder exhausted")
+    const result = await handler(
+      { id: "implement", name: "Implement", type: "agentic", agent: "coder" },
+      ctx,
+    )
+    expect(result.status).toBe("fail")
+    expect(result.cost_usd).toBe(0)
+    expect(result.error?.message).toContain("coder exhausted")
   })
 
   it("does not run git rollback when planner fails even if rollbackSha is set", async () => {
@@ -350,12 +362,12 @@ describe("createAgenticHandler", () => {
     ctx.rollbackSha = "should-not-use"
     ctx.gitBranch = "bollard/x"
 
-    await expect(
-      handler(
-        { id: "generate-plan", name: "Plan", type: "agentic", agent: "planner" },
-        ctx,
-      ),
-    ).rejects.toThrow("planner failed")
+    const result = await handler(
+      { id: "generate-plan", name: "Plan", type: "agentic", agent: "planner" },
+      ctx,
+    )
+    expect(result.status).toBe("fail")
+    expect(result.error?.message).toContain("planner failed")
 
     expect(resetHardCalls).toBe(0)
   })
