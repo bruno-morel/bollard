@@ -78,6 +78,7 @@ export interface SqliteIndex {
   summary(since?: number): RunSummary
   rebuild(records: HistoryRecord[]): { runCount: number; durationMs: number }
   recordCount(): number
+  purge(before: number): { purged: number }
   close(): void
 }
 
@@ -503,6 +504,40 @@ export function createSqliteIndex(dbPath: string): SqliteIndex {
     db.close()
   }
 
+  const purge = (before: number): { purged: number } => {
+    const tx = db.transaction(() => {
+      // First, find all run_ids that will be deleted
+      const runIdsToDelete = db
+        .prepare("SELECT run_id FROM runs WHERE timestamp < ?")
+        .all(before) as { run_id: string }[]
+
+      if (runIdsToDelete.length === 0) {
+        return 0
+      }
+
+      const runIds = runIdsToDelete.map((row) => row.run_id)
+      const placeholders = runIds.map(() => "?").join(",")
+
+      // Delete from child tables first (explicit cascade since SQLite foreign keys are off by default)
+      db.prepare(`DELETE FROM nodes WHERE run_id IN (${placeholders})`).run(...runIds)
+      db.prepare(`DELETE FROM scopes WHERE run_id IN (${placeholders})`).run(...runIds)
+
+      // Delete from runs table
+      const deleteResult = db.prepare("DELETE FROM runs WHERE timestamp < ?").run(before)
+      const deletedCount = deleteResult.changes
+
+      // Update record_count metadata
+      const currentCount = Number.parseInt(getMetadata(db, "record_count") ?? "0", 10)
+      const newCount = Math.max(0, currentCount - deletedCount)
+      setMetadata(db, "record_count", String(newCount))
+
+      return deletedCount
+    })
+
+    const purgedCount = tx()
+    return { purged: purgedCount }
+  }
+
   return {
     insert: insertRecord,
     query,
@@ -510,6 +545,7 @@ export function createSqliteIndex(dbPath: string): SqliteIndex {
     summary,
     rebuild,
     recordCount,
+    purge,
     close,
   }
 }

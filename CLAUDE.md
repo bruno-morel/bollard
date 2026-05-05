@@ -861,7 +861,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 ### Stage 5a Phase 2 (DONE) — SQLite Query Layer:
 - `createSqliteIndex(dbPath)` closure factory in `run-history-db.ts` — WAL mode, synchronous=NORMAL, idempotent schema
 - Schema: `runs` table (unified RunRecord + VerifyRecord via `type` discriminant), `nodes`, `scopes`, `metadata` tables + 5 indexes
-- `SqliteIndex` interface: `insert`, `query`, `findByRunId`, `summary`, `rebuild`, `recordCount`, `close`
+- `SqliteIndex` interface: `insert`, `query`, `findByRunId`, `summary`, `rebuild`, `recordCount`, `purge`, `close`
 - `RunSummary` type: totalRuns, successRate, avgCostUsd, avgDurationMs, avgTestCount, avgMutationScore?, costTrend, byBlueprint
 - `computeCostTrend()` exported from `run-history.ts` — split-half average comparison, 10% threshold
 - `FileRunHistoryStore` extended: dynamic `import("./run-history-db.js")` with try/catch fallback to JSONL-only mode; `ensureDbCurrent()` auto-rebuilds when stale

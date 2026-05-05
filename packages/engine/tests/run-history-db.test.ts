@@ -289,4 +289,151 @@ describe("createSqliteIndex", () => {
     expect(idx.recordCount()).toBe(2)
     idx.close()
   })
+
+  describe("purge", () => {
+    it("purge with no matching records returns { purged: 0 } and leaves existing records intact", () => {
+      const idx = createSqliteIndex(dbPath)
+
+      // Insert some records with timestamps after the purge cutoff
+      idx.insert(makeRunRecord({ runId: "r1", timestamp: 2000 }))
+      idx.insert(makeRunRecord({ runId: "r2", timestamp: 3000 }))
+      idx.insert(makeVerify({ runId: "v1", timestamp: 2500 }))
+
+      // Purge records before timestamp 1000 (no matches)
+      const result = idx.purge(1000)
+
+      expect(result.purged).toBe(0)
+      expect(idx.recordCount()).toBe(3)
+      expect(idx.findByRunId("r1")).toBeDefined()
+      expect(idx.findByRunId("r2")).toBeDefined()
+      expect(idx.findByRunId("v1")).toBeDefined()
+
+      idx.close()
+    })
+
+    it("purge all records when all timestamps are older than before", () => {
+      const idx = createSqliteIndex(dbPath)
+
+      // Insert records with timestamps before the purge cutoff
+      idx.insert(makeRunRecord({ runId: "r1", timestamp: 1000 }))
+      idx.insert(makeRunRecord({ runId: "r2", timestamp: 1500 }))
+      idx.insert(makeVerify({ runId: "v1", timestamp: 800 }))
+
+      expect(idx.recordCount()).toBe(3)
+
+      // Purge records before timestamp 2000 (all should be deleted)
+      const result = idx.purge(2000)
+
+      expect(result.purged).toBe(3)
+      expect(idx.recordCount()).toBe(0)
+      expect(idx.findByRunId("r1")).toBeUndefined()
+      expect(idx.findByRunId("r2")).toBeUndefined()
+      expect(idx.findByRunId("v1")).toBeUndefined()
+
+      idx.close()
+    })
+
+    it("purge preserving newer records - insert 3 records with timestamps 1000, 2000, 3000, purge before 2500, verify only the 3000 record survives", () => {
+      const idx = createSqliteIndex(dbPath)
+
+      // Insert records with specific timestamps
+      idx.insert(
+        makeRunRecord({
+          runId: "r1",
+          timestamp: 1000,
+          nodes: [{ id: "n1", name: "Node1", type: "deterministic", status: "ok" }],
+          scopes: [
+            {
+              scope: "test",
+              enabled: true,
+              claimsProposed: 1,
+              claimsGrounded: 1,
+              claimsDropped: 0,
+            },
+          ],
+        }),
+      )
+      idx.insert(
+        makeRunRecord({
+          runId: "r2",
+          timestamp: 2000,
+          nodes: [{ id: "n2", name: "Node2", type: "deterministic", status: "ok" }],
+          scopes: [
+            {
+              scope: "test",
+              enabled: true,
+              claimsProposed: 2,
+              claimsGrounded: 2,
+              claimsDropped: 0,
+            },
+          ],
+        }),
+      )
+      idx.insert(
+        makeRunRecord({
+          runId: "r3",
+          timestamp: 3000,
+          nodes: [{ id: "n3", name: "Node3", type: "deterministic", status: "ok" }],
+          scopes: [
+            {
+              scope: "test",
+              enabled: true,
+              claimsProposed: 3,
+              claimsGrounded: 3,
+              claimsDropped: 0,
+            },
+          ],
+        }),
+      )
+
+      expect(idx.recordCount()).toBe(3)
+
+      // Purge records before timestamp 2500 (should delete r1 and r2, keep r3)
+      const result = idx.purge(2500)
+
+      expect(result.purged).toBe(2)
+      expect(idx.recordCount()).toBe(1)
+      expect(idx.findByRunId("r1")).toBeUndefined()
+      expect(idx.findByRunId("r2")).toBeUndefined()
+
+      const surviving = idx.findByRunId("r3")
+      expect(surviving).toBeDefined()
+      expect(surviving?.timestamp).toBe(3000)
+
+      idx.close()
+    })
+
+    it("purge updates recordCount metadata correctly after deletion", () => {
+      const idx = createSqliteIndex(dbPath)
+
+      // Insert multiple records
+      idx.insert(makeRunRecord({ runId: "r1", timestamp: 1000 }))
+      idx.insert(makeRunRecord({ runId: "r2", timestamp: 2000 }))
+      idx.insert(makeRunRecord({ runId: "r3", timestamp: 3000 }))
+      idx.insert(makeVerify({ runId: "v1", timestamp: 1500 }))
+      idx.insert(makeVerify({ runId: "v2", timestamp: 2500 }))
+
+      expect(idx.recordCount()).toBe(5)
+
+      // Purge records before timestamp 2200 (should delete r1, r2, v1)
+      const result = idx.purge(2200)
+
+      expect(result.purged).toBe(3)
+      expect(idx.recordCount()).toBe(2)
+
+      // Verify the remaining records
+      expect(idx.findByRunId("r1")).toBeUndefined()
+      expect(idx.findByRunId("r2")).toBeUndefined()
+      expect(idx.findByRunId("v1")).toBeUndefined()
+      expect(idx.findByRunId("r3")).toBeDefined()
+      expect(idx.findByRunId("v2")).toBeDefined()
+
+      // Purge the rest
+      const result2 = idx.purge(4000)
+      expect(result2.purged).toBe(2)
+      expect(idx.recordCount()).toBe(0)
+
+      idx.close()
+    })
+  })
 })
