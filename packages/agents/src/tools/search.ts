@@ -40,6 +40,16 @@ function isExitCode(err: unknown, code: number): boolean {
   )
 }
 
+/** Strip ASCII control chars and DEL so ripgrep never sees raw newlines etc. */
+function stripControlChars(raw: string): string {
+  let out = ""
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw.charCodeAt(i)
+    out += c <= 31 || c === 127 ? " " : raw[i]
+  }
+  return out
+}
+
 export const searchTool: AgentTool = {
   name: "search",
   description:
@@ -69,12 +79,17 @@ export const searchTool: AgentTool = {
     required: ["pattern"],
   },
   async execute(input, ctx) {
+    const workRoot = resolve(ctx.workDir)
     const searchPath = resolve(ctx.workDir, String(input["path"] ?? "."))
-    if (!searchPath.startsWith(resolve(ctx.workDir))) {
+    if (!searchPath.startsWith(workRoot)) {
       throw new Error("Path traversal detected")
     }
     const isRegex = input["regex"] === true
-    const pattern = String(input["pattern"])
+    const rawPattern = String(input["pattern"])
+    const pattern = stripControlChars(rawPattern).trim()
+    if (pattern.length === 0) {
+      return "Error: empty search pattern after sanitization. Provide a non-empty string."
+    }
     const glob = input["glob"] ? String(input["glob"]) : undefined
     const args = buildRgArgs(pattern, searchPath, glob, !isRegex)
 
@@ -105,10 +120,12 @@ export const searchTool: AgentTool = {
           if (isExitCode(fallbackErr, 1)) {
             return `${AUTO_FALLBACK_PREFIX}\nNo matches found.`
           }
-          throw fallbackErr
+          const msg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+          return `Search error (fallback also failed): ${msg}\nTry a different, simpler pattern.`
         }
       }
-      throw err
+      const msg = err instanceof Error ? err.message : String(err)
+      return `Search error: ${msg}\nTry a shorter or simpler pattern without special characters.`
     }
   },
 }

@@ -116,6 +116,23 @@ describe("search", () => {
       "[auto-fallback: regex parse error, searched as literal string]\nNo matches found.",
     )
   })
+
+  it("strips control characters from pattern", async () => {
+    writeFileSync(join(tempDir, "target.ts"), "export function purge() {}\n")
+    const result = await searchTool.execute({ pattern: "export\nfunction" }, ctx)
+    expect(result).toContain("purge")
+    expect(result).not.toContain("Search error")
+  })
+
+  it("returns error message instead of throwing on ripgrep failure", async () => {
+    const result = await searchTool.execute({ pattern: "anything", path: "no-such-dir-xyz" }, ctx)
+    expect(result).toContain("Search error")
+  })
+
+  it("handles empty pattern after sanitization", async () => {
+    const result = await searchTool.execute({ pattern: "\n\n\t" }, ctx)
+    expect(result).toContain("empty search pattern")
+  })
 })
 
 describe("run_command", () => {
