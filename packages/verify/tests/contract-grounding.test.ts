@@ -129,12 +129,11 @@ describe("verifyClaimGrounding", () => {
         },
       ],
     }
-    expect(() => verifyClaimGrounding(doc, CORPUS_WITH_SNAPSHOT, ALL_ENABLED)).toThrow(BollardError)
-    try {
-      verifyClaimGrounding(doc, CORPUS_WITH_SNAPSHOT, ALL_ENABLED)
-    } catch (err: unknown) {
-      expect((err as BollardError).code).toBe("CONTRACT_TESTER_NO_GROUNDED_CLAIMS")
-    }
+    const result = verifyClaimGrounding(doc, CORPUS_WITH_SNAPSHOT, ALL_ENABLED)
+    expect(result.kept).toEqual([])
+    expect(result.dropped).toHaveLength(1)
+    expect(result.dropped[0]?.id).toBe("float-exact")
+    expect(result.dropped[0]?.reason).toBe("grounding_not_in_context")
   })
 
   // v1 limitation: entailment not checked; the runtime test remains the final gate.
@@ -168,13 +167,10 @@ describe("verifyClaimGrounding", () => {
     const doc: ClaimDocument = {
       claims: [makeClaim({ id: "empty-g", grounding: [] })],
     }
-    expect(() => verifyClaimGrounding(doc, CORPUS_WITH_SNAPSHOT, ALL_ENABLED)).toThrow(BollardError)
-    try {
-      verifyClaimGrounding(doc, CORPUS_WITH_SNAPSHOT, ALL_ENABLED)
-    } catch (err: unknown) {
-      const ctx = (err as BollardError).context as { dropped: Array<{ reason: string }> }
-      expect(ctx.dropped[0]?.reason).toBe("grounding_empty")
-    }
+    const result = verifyClaimGrounding(doc, CORPUS_WITH_SNAPSHOT, ALL_ENABLED)
+    expect(result.kept).toEqual([])
+    expect(result.dropped).toHaveLength(1)
+    expect(result.dropped[0]?.reason).toBe("grounding_empty")
   })
 
   it("drops duplicate ids — duplicate_id", () => {
@@ -215,7 +211,7 @@ describe("verifyClaimGrounding", () => {
     expect(result.dropped[0]?.reason).toBe("concern_invalid")
   })
 
-  it("throws CONTRACT_TESTER_NO_GROUNDED_CLAIMS when zero survivors", () => {
+  it("returns empty kept array when zero survivors (soft-fail per ADR-0001)", () => {
     const doc: ClaimDocument = {
       claims: [
         makeClaim({
@@ -224,12 +220,9 @@ describe("verifyClaimGrounding", () => {
         }),
       ],
     }
-    expect(() => verifyClaimGrounding(doc, CORPUS_WITH_SNAPSHOT, ALL_ENABLED)).toThrow(BollardError)
-    try {
-      verifyClaimGrounding(doc, CORPUS_WITH_SNAPSHOT, ALL_ENABLED)
-    } catch (err: unknown) {
-      expect((err as BollardError).code).toBe("CONTRACT_TESTER_NO_GROUNDED_CLAIMS")
-    }
+    const result = verifyClaimGrounding(doc, CORPUS_WITH_SNAPSHOT, ALL_ENABLED)
+    expect(result.kept).toEqual([])
+    expect(result.dropped.length).toBe(doc.claims.length)
   })
 })
 

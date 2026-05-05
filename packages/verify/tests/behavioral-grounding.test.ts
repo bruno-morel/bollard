@@ -94,17 +94,18 @@ describe("behavioral grounding pipeline", () => {
       ],
     })
     const doc = parseClaimDocument(raw, { invalidCode: "BEHAVIORAL_TESTER_OUTPUT_INVALID" })
-    expect(() =>
-      verifyClaimGrounding(doc, corpus, {
-        correctness: true,
-        security: true,
-        performance: true,
-        resilience: true,
-      }),
-    ).toThrow()
+    const result = verifyClaimGrounding(doc, corpus, {
+      correctness: true,
+      security: true,
+      performance: true,
+      resilience: true,
+    })
+    expect(result.kept).toEqual([])
+    expect(result.dropped).toHaveLength(1)
+    expect(result.dropped[0]?.reason).toBe("grounding_not_in_context")
   })
 
-  it("uses BEHAVIORAL_NO_GROUNDED_CLAIMS when all dropped", () => {
+  it("returns empty kept array when all behavioral claims are dropped (soft-fail per ADR-0001)", () => {
     const ctx: BehavioralContext = {
       endpoints: [{ method: "GET", path: "/x", handler: "h", sourceFile: "f.ts" }],
       config: [],
@@ -124,21 +125,19 @@ describe("behavioral grounding pipeline", () => {
       ],
     })
     const doc = parseClaimDocument(raw, { invalidCode: "BEHAVIORAL_TESTER_OUTPUT_INVALID" })
-    try {
-      verifyClaimGrounding(
-        doc,
-        corpus,
-        {
-          correctness: true,
-          security: true,
-          performance: true,
-          resilience: true,
-        },
-        { noGroundedClaimsCode: "BEHAVIORAL_NO_GROUNDED_CLAIMS" },
-      )
-      expect.fail("expected throw")
-    } catch (e: unknown) {
-      expect(e).toMatchObject({ code: "BEHAVIORAL_NO_GROUNDED_CLAIMS" })
-    }
+    // Pass-through: noGroundedClaimsCode option is accepted but unused (kept for source-compat).
+    const result = verifyClaimGrounding(
+      doc,
+      corpus,
+      {
+        correctness: true,
+        security: true,
+        performance: true,
+        resilience: true,
+      },
+      { noGroundedClaimsCode: "BEHAVIORAL_NO_GROUNDED_CLAIMS" },
+    )
+    expect(result.kept).toEqual([])
+    expect(result.dropped).toHaveLength(1)
   })
 })

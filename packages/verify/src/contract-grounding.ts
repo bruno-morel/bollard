@@ -7,6 +7,11 @@ export interface ClaimDocumentParseOptions {
 }
 
 export interface ClaimGroundingVerifyOptions {
+  /**
+   * Retained for source-compat with callers that previously requested a custom
+   * "no grounded claims" error code. Zero survivors is now soft-failed (returns
+   * empty `kept`), so this option is accepted but unused. ADR-0001.
+   */
   noGroundedClaimsCode?: BollardErrorCode
 }
 
@@ -204,9 +209,8 @@ export function verifyClaimGrounding(
   doc: ClaimDocument,
   corpus: ContractCorpus,
   enabledConcerns: EnabledConcerns,
-  options?: ClaimGroundingVerifyOptions,
+  _options?: ClaimGroundingVerifyOptions,
 ): VerificationResult {
-  const noGroundedClaimsCode = options?.noGroundedClaimsCode ?? "CONTRACT_TESTER_NO_GROUNDED_CLAIMS"
   const kept: ClaimRecord[] = []
   const dropped: DroppedClaim[] = []
   const seenIds = new Set<string>()
@@ -260,14 +264,10 @@ export function verifyClaimGrounding(
     }
   }
 
-  if (kept.length === 0) {
-    throw new BollardError({
-      code: noGroundedClaimsCode,
-      message: `All ${doc.claims.length} claims were dropped during grounding verification`,
-      context: { dropped },
-    })
-  }
-
+  // Soft-fail when zero claims survive grounding (ADR-0001): downstream write nodes
+  // already skip cleanly on empty `kept`, and an internal-only change with no public
+  // contract surface is expected to drop everything. The grounding result log event
+  // still records `proposed`, `grounded: 0`, `dropRate: 1.0` for full observability.
   return { kept, dropped }
 }
 

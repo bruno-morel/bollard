@@ -472,3 +472,45 @@ describe("downstream risk-gate skip propagation", () => {
     })
   })
 })
+
+describe("verify-claim-grounding soft-fail (ADR-0001)", () => {
+  it("returns ok with empty claims when all contract claims are dropped by grounding", async () => {
+    const execute = getContractNode("verify-claim-grounding")
+    const ctx = makeContext({
+      contractEnabled: true,
+      results: {
+        "assess-contract-risk": {
+          status: "ok",
+          data: { skipContract: false, riskLevel: "medium" },
+        },
+        "extract-contracts": {
+          status: "ok",
+          data: {
+            contract: { modules: [], edges: [], affectedEdges: [] },
+          },
+        },
+        "generate-contract-tests": {
+          status: "ok",
+          data: JSON.stringify({
+            claims: [
+              {
+                id: "ungrounded-1",
+                concern: "correctness",
+                claim: "some internal thing",
+                grounding: [{ quote: "this quote does not exist in the corpus", source: "fake" }],
+                test: "it('should work', () => { expect(true).toBe(true) })",
+              },
+            ],
+          }),
+        },
+      },
+    })
+
+    const result = await execute(ctx)
+
+    expect(result.status).toBe("ok")
+    const data = result.data as { claims: unknown[]; dropped: unknown[] }
+    expect(data.claims).toEqual([])
+    expect(data.dropped.length).toBe(1)
+  })
+})
