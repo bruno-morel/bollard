@@ -4,6 +4,7 @@ import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
 import { describe, expect, it } from "vitest"
 import {
+  dedupeImportLines,
   deriveAdversarialTestPath,
   jvmContractCoerceVitestItToJUnit5,
   normalizeJvmWrittenTestClassName,
@@ -179,6 +180,53 @@ describe("deriveAdversarialTestPath", () => {
     expect(
       deriveAdversarialTestPath("src/main/kotlin/x/Y.kt", makeProfile("kotlin"), "behavioral"),
     ).toBe(join("src/test/kotlin/x", "YBehavioralTest.kt"))
+  })
+})
+
+describe("dedupeImportLines", () => {
+  it("merges specifiers from the same module path", () => {
+    const input = [
+      'import type { HistoryRecord } from "@bollard/engine/src/run-history.js"',
+      'import type { HistoryRecord, RunRecord } from "@bollard/engine/src/run-history.js"',
+    ]
+    const result = dedupeImportLines(input)
+    expect(result).toHaveLength(1)
+    expect(result[0]).toContain("HistoryRecord")
+    expect(result[0]).toContain("RunRecord")
+    expect(result[0]).toContain("type")
+  })
+
+  it("keeps imports from different modules separate", () => {
+    const input = ['import { describe, it } from "vitest"', 'import type { Foo } from "./foo.js"']
+    const result = dedupeImportLines(input)
+    expect(result).toHaveLength(2)
+  })
+
+  it("passes through non-matching import lines unchanged", () => {
+    const input = ['import "side-effect-module"', 'import type { Foo } from "./foo.js"']
+    const result = dedupeImportLines(input)
+    expect(result).toHaveLength(2)
+    expect(result[0]).toBe('import "side-effect-module"')
+  })
+
+  it("downgrades type-only to value import when mixed", () => {
+    const input = ['import type { Foo } from "./foo.js"', 'import { Bar } from "./foo.js"']
+    const result = dedupeImportLines(input)
+    expect(result).toHaveLength(1)
+    expect(result[0]).not.toContain("type")
+    expect(result[0]).toContain("Bar")
+    expect(result[0]).toContain("Foo")
+  })
+
+  it("handles empty input", () => {
+    expect(dedupeImportLines([])).toEqual([])
+  })
+
+  it("handles single import line", () => {
+    const input = ['import type { A } from "./a.js"']
+    const result = dedupeImportLines(input)
+    expect(result).toHaveLength(1)
+    expect(result[0]).toContain("A")
   })
 })
 

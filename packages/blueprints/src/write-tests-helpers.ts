@@ -359,3 +359,59 @@ export function normalizeJvmWrittenTestClassName(
     },
   )
 }
+
+/**
+ * Merge import lines that reference the same module path, deduplicating specifiers.
+ *
+ * Input:  ["import type { A } from \"x\"", "import type { A, B } from \"x\"", "import { C } from \"y\""]
+ * Output: ["import type { A, B } from \"x\"", "import { C } from \"y\""]
+ *
+ * Handles: `import { X }`, `import type { X }`, `import { type X }` (inline type imports).
+ * Lines that don't match the `import ... from "..."` pattern are passed through unchanged.
+ */
+export function dedupeImportLines(lines: string[]): string[] {
+  const moduleMap = new Map<string, { isTypeOnly: boolean; specifiers: Set<string> }>()
+  const passthrough: string[] = []
+
+  for (const line of lines) {
+    const m = line.match(/^import\s+(type\s+)?\{\s*([^}]+)\s*\}\s*from\s*["']([^"']+)["']\s*;?\s*$/)
+    if (!m) {
+      passthrough.push(line)
+      continue
+    }
+
+    const isTypeImport = Boolean(m[1]?.trim())
+    const rawSpecifiers = m[2] ?? ""
+    const modulePath = m[3] ?? ""
+
+    const existing = moduleMap.get(modulePath)
+    if (!existing) {
+      const specs = new Set(
+        rawSpecifiers
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      )
+      moduleMap.set(modulePath, { isTypeOnly: isTypeImport, specifiers: specs })
+    } else {
+      for (const spec of rawSpecifiers
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)) {
+        existing.specifiers.add(spec)
+      }
+      if (!isTypeImport) {
+        existing.isTypeOnly = false
+      }
+    }
+  }
+
+  const result: string[] = [...passthrough]
+  for (const [modulePath, { isTypeOnly, specifiers }] of moduleMap) {
+    const typeKeyword = isTypeOnly ? "type " : ""
+    const specs = [...specifiers].sort().join(", ")
+    result.push(`import ${typeKeyword}{ ${specs} } from "${modulePath}"`)
+  }
+
+  return result
+}

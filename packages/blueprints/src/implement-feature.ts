@@ -38,6 +38,7 @@ import {
 } from "@bollard/verify/src/test-lifecycle.js"
 import { extractPrivateIdentifiers, getExtractor } from "@bollard/verify/src/type-extractor.js"
 import {
+  dedupeImportLines,
   deriveAdversarialTestPath,
   inferJvmPackageFromMainSource,
   jvmContractCoerceVitestItToJUnit5,
@@ -709,15 +710,16 @@ export function createImplementFeatureBlueprint(
             lang,
           )
 
-          // Hoist import lines from claim test bodies into the preamble
-          const hoistedImports = new Set<string>()
+          // Hoist import lines from claim test bodies into the preamble, deduplicating
+          // specifiers from the same module (ADR-0001: deterministic post-filter)
+          const rawImports: string[] = []
           const strippedBodies: string[] = []
           for (const c of claims) {
             const lines = c.test.split("\n")
             const bodyLines: string[] = []
             for (const line of lines) {
               if (line.trimStart().startsWith("import ")) {
-                hoistedImports.add(line.trim())
+                rawImports.push(line.trim())
               } else {
                 bodyLines.push(line)
               }
@@ -725,6 +727,7 @@ export function createImplementFeatureBlueprint(
             const body = bodyLines.join("\n").trim()
             if (body.length > 0) strippedBodies.push(body)
           }
+          const hoistedImports = dedupeImportLines(rawImports)
 
           let preamble: string
           let wrapStart: string
@@ -990,14 +993,14 @@ export function createImplementFeatureBlueprint(
           const claims = verifyRes.claims
           const lang = profile.language ?? "typescript"
 
-          const hoistedImports = new Set<string>()
+          const rawImports: string[] = []
           const strippedBodies: string[] = []
           for (const c of claims) {
             const lines = c.test.split("\n")
             const bodyLines: string[] = []
             for (const line of lines) {
               if (line.trimStart().startsWith("import ")) {
-                hoistedImports.add(line.trim())
+                rawImports.push(line.trim())
               } else {
                 bodyLines.push(line)
               }
@@ -1005,6 +1008,7 @@ export function createImplementFeatureBlueprint(
             const body = bodyLines.join("\n").trim()
             if (body.length > 0) strippedBodies.push(body)
           }
+          const hoistedImports = dedupeImportLines(rawImports)
 
           let preamble: string
           let wrapStart: string
