@@ -5,6 +5,7 @@ import { CostTracker } from "@bollard/engine/src/cost-tracker.js"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   createImplementFeatureBlueprint,
+  deriveRiskLevel,
   scanDiffForExportChanges,
 } from "../src/implement-feature.js"
 
@@ -98,6 +99,68 @@ function getContractNode(id: string) {
 
 afterEach(() => {
   vi.restoreAllMocks()
+})
+
+describe("deriveRiskLevel", () => {
+  it("returns level string when present", () => {
+    expect(deriveRiskLevel({ level: "High" })).toBe("high")
+  })
+
+  it("returns low when all numeric scores are 0-1", () => {
+    expect(
+      deriveRiskLevel({
+        blast_radius: 1,
+        reversibility: 1,
+        dollars_at_risk: 0,
+        security_sensitivity: 1,
+        novelty: 1,
+      }),
+    ).toBe("low")
+  })
+
+  it("returns medium when blast_radius is 2", () => {
+    expect(
+      deriveRiskLevel({
+        blast_radius: 2,
+        reversibility: 1,
+        dollars_at_risk: 0,
+        security_sensitivity: 0,
+        novelty: 0,
+      }),
+    ).toBe("medium")
+  })
+
+  it("returns high when blast_radius is 3+", () => {
+    expect(
+      deriveRiskLevel({
+        blast_radius: 3,
+        reversibility: 0,
+        dollars_at_risk: 0,
+        security_sensitivity: 0,
+        novelty: 0,
+      }),
+    ).toBe("high")
+  })
+
+  it("returns high when any score is 3+", () => {
+    expect(
+      deriveRiskLevel({
+        blast_radius: 1,
+        reversibility: 0,
+        dollars_at_risk: 0,
+        security_sensitivity: 3,
+        novelty: 0,
+      }),
+    ).toBe("high")
+  })
+
+  it("returns unknown when risk_assessment is undefined", () => {
+    expect(deriveRiskLevel(undefined)).toBe("unknown")
+  })
+
+  it("returns unknown when blast_radius is not a number", () => {
+    expect(deriveRiskLevel({ reversibility: 0 })).toBe("unknown")
+  })
 })
 
 describe("scanDiffForExportChanges", () => {
@@ -273,6 +336,37 @@ describe("assess-contract-risk node", () => {
       riskLevel: "medium",
       touchesExportedSymbols: false,
       skipContract: false,
+    })
+  })
+
+  it("skips when numeric risk scores are all low and no exported symbols changed", async () => {
+    const execute = getRiskGateNode()
+    const ctx = makeContext({
+      plan: {
+        risk_assessment: {
+          blast_radius: 1,
+          reversibility: 1,
+          dollars_at_risk: 0,
+          security_sensitivity: 1,
+          novelty: 1,
+          rationale: "Low-risk change",
+        },
+      },
+    })
+    mockExecFileAsync.mockResolvedValue({ stdout: "+const x = 1\n", stderr: "" })
+
+    const result = await execute(ctx)
+
+    expect(result.status).toBe("ok")
+    expect((result.data as Record<string, unknown>).skipContract).toBe(true)
+    expect((result.data as Record<string, unknown>).riskLevel).toBe("low")
+    expect(ctx.log.info).toHaveBeenCalledWith("contract_scope_decision", {
+      event: "contract_scope_decision",
+      runId: "test-run-001",
+      decision: "skipped-by-risk-gate",
+      riskLevel: "low",
+      touchesExportedSymbols: false,
+      skipContract: true,
     })
   })
 

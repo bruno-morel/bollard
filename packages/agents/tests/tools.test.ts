@@ -194,6 +194,7 @@ describe("edit_file", () => {
       ctx,
     )
     expect(result).toContain("Error: old_string not found in file")
+    expect(result).toContain("start_line/end_line")
   })
 
   it("returns error when old_string appears multiple times", async () => {
@@ -203,6 +204,7 @@ describe("edit_file", () => {
       ctx,
     )
     expect(result).toContain("appears 2 times")
+    expect(result).toContain("start_line/end_line")
   })
 
   it("rejects path traversal", async () => {
@@ -231,5 +233,75 @@ describe("edit_file", () => {
     expect(readFileSync(join(tempDir, "code.ts"), "utf-8")).toBe(
       "line1\nline2a\nline2b\nline2c\nline3\n",
     )
+  })
+
+  it("replaces lines by line range", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "line1\nline2\nline3\nline4\nline5\n")
+    const result = await editFileTool.execute(
+      { path: "code.ts", start_line: 2, end_line: 3, new_string: "replaced2\nreplaced3" },
+      ctx,
+    )
+    expect(result).toContain("Replaced lines 2-3")
+    expect(readFileSync(join(tempDir, "code.ts"), "utf-8")).toBe(
+      "line1\nreplaced2\nreplaced3\nline4\nline5\n",
+    )
+  })
+
+  it("deletes lines when new_string is empty in line-range mode", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "line1\nline2\nline3\nline4\n")
+    const result = await editFileTool.execute(
+      { path: "code.ts", start_line: 2, end_line: 3, new_string: "" },
+      ctx,
+    )
+    expect(result).toContain("Replaced lines 2-3")
+    expect(readFileSync(join(tempDir, "code.ts"), "utf-8")).toBe("line1\nline4\n")
+  })
+
+  it("inserts more lines than removed in line-range mode", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "a\nb\nc\n")
+    const result = await editFileTool.execute(
+      { path: "code.ts", start_line: 2, end_line: 2, new_string: "x\ny\nz" },
+      ctx,
+    )
+    expect(result).toContain("1 line(s)) with 3 line(s)")
+    expect(readFileSync(join(tempDir, "code.ts"), "utf-8")).toBe("a\nx\ny\nz\nc\n")
+  })
+
+  it("returns error for invalid line range", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "a\nb\nc\n")
+    const result = await editFileTool.execute(
+      { path: "code.ts", start_line: 0, end_line: 2, new_string: "x" },
+      ctx,
+    )
+    expect(result).toContain("Error: invalid line range")
+  })
+
+  it("returns error for reversed line range", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "a\nb\nc\n")
+    const result = await editFileTool.execute(
+      { path: "code.ts", start_line: 3, end_line: 1, new_string: "x" },
+      ctx,
+    )
+    expect(result).toContain("Error: invalid line range")
+  })
+
+  it("caps end_line to file length", async () => {
+    writeFileSync(join(tempDir, "code.ts"), "a\nb\nc\n")
+    const result = await editFileTool.execute(
+      { path: "code.ts", start_line: 2, end_line: 999, new_string: "x" },
+      ctx,
+    )
+    expect(result).toContain("Replaced lines 2-")
+    // split("\n") treats trailing newline as an extra empty line; capping end replaces through it
+    expect(readFileSync(join(tempDir, "code.ts"), "utf-8")).toBe("a\nx")
+  })
+
+  it("rejects path traversal in line-range mode", async () => {
+    await expect(
+      editFileTool.execute(
+        { path: "../../../etc/passwd", start_line: 1, end_line: 1, new_string: "x" },
+        ctx,
+      ),
+    ).rejects.toThrow("Path traversal")
   })
 })

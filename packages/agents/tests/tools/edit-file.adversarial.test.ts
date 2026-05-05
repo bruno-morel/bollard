@@ -52,7 +52,7 @@ describe("editFileTool edits", () => {
       { path: "b.txt", old_string: "", new_string: "y" },
       ctx,
     )
-    expect(out).toMatch(/old_string cannot be empty/)
+    expect(out).toMatch(/provide either old_string or start_line\+end_line/)
   })
 
   it("returns error when old_string not found", async () => {

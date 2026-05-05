@@ -66,6 +66,8 @@ docker compose run --rm dev --filter @bollard/cli run start -- doctor --history
 - **Mutation testing:** TS/JS (Stryker), Python (mutmut), Rust (cargo-mutants), Java/Kotlin (PIT). Go mutation testing deferred — no maintained upstream tool (`go-mutesting` is unmaintained). `MutationToolId` reserves `"go-mutesting"` for future use.
 - **Coder rollback:** After `create-branch`, `ctx.rollbackSha` stores the branch HEAD. If the **coder** agent throws (e.g. max turns), the CLI runs `git checkout -- .`, `git clean -fd`, `git reset --hard` to that SHA when `ctx.gitBranch` is set. Rollback errors are logged; the original error still stops the pipeline.
 - **Coder search + `regex: true`:** The `search` tool auto-falls back to literal string matching when a regex pattern fails to parse (exit code 2). The coder prompt discourages `regex: true` for code pattern searches. Control characters (newlines, tabs) are stripped from patterns before passing to ripgrep. Any ripgrep error returns a message to the LLM instead of throwing — search never wastes a coder turn on a tool exception.
+- **`edit_file` line-range mode:** `edit_file` accepts `start_line` + `end_line` (1-based, inclusive) as an alternative to `old_string`. Coder prompt teaches "search → get line numbers → edit by range" as the preferred workflow. This eliminates the exact-match death spiral (coder burned 30-70 turns per run trying to construct `old_string` from memory).
+- **Risk gate numeric scores:** The planner outputs numeric risk scores (`blast_radius: 0-4`, etc.). `deriveRiskLevel()` maps these to categorical levels (`"low"` / `"medium"` / `"high"`). Previously the risk gate only accepted a string `level` field which the planner never produced, causing all runs to default to `"unknown"` and never skip contract testing.
 - **Static-checks / run-tests:** Both use `onFailure: "skip"` — the coder verification hook already ran the same checks (typecheck, lint, test, audit, secretScan) with batched feedback up to 3 retries, so redundant failures there do not halt the rest of the pipeline (contract, behavioral, mutation, review).
 - **Observe providers:** `@bollard/observe` ships built-in providers only (HTTP fetch, JSON files, git). External providers (Datadog, Flagsmith, Cloud Run, ArgoCD) are 4b+ — interfaces exist, implementations come when needed.
 - **Advanced fault injection:** Only `service_stop` implemented; network_delay/resource_limit are future work.
@@ -576,7 +578,7 @@ The core Stage 1 upgrade. Runs a tool-use loop:
 |------|------|--------|-------------|
 | read-file | `read_file` | Planner + Coder | Read file contents, path-traversal protected |
 | write-file | `write_file` | Coder only | Write/overwrite files, creates parent dirs |
-| edit-file | `edit_file` | Coder only | Surgical string replacement (unique match required), path-traversal protected |
+| edit-file | `edit_file` | Coder only | Surgical file editing: string replacement OR line-range replacement (Stage 2 + 5a hardening) |
 | list-dir | `list_dir` | Planner + Coder | List directory contents with type indicators |
 | search | `search` | Planner + Coder | Ripgrep-based search with fixed-string default (optional regex mode) |
 | run-command | `run_command` | Coder only | Execute whitelisted commands (pnpm, node, tsc, biome, git, rm, etc.) with path guards |
@@ -812,6 +814,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 ### Stage 4c (Part 1) hardening (DONE) — Pipeline quality-of-life
 - **Auto-format generated adversarial tests:** `formatGeneratedAdversarialTestFile()` runs `biome check --write --unsafe` after each write node (boundary, contract, behavioral). Non-fatal try/catch.
 - **Search tool → ripgrep:** `search.ts` now uses `rg` with `--fixed-strings` by default. `regex: true` auto-falls back to literal string on parse errors (exit code 2). Control characters stripped from patterns. All ripgrep errors return messages instead of throwing — search tool is zero-exception (only path traversal throws).
+- **`edit_file` line-range mode:** `start_line` + `end_line` alternative to `old_string` string matching. Coder prompt updated to prefer line-range mode. Eliminates the exact-match search death spiral that wasted 30-70 coder turns per Bollard-on-Bollard run.
 - **`rm` in coder allowlist:** Path-guarded (must be inside workDir, no recursive `-r`/`-rf`).
 - **Anthropic model ID:** smoke test and pricing updated to `claude-haiku-4-5-20251001`.
 - **Bollard-on-bollard self-test:** `CostTracker.summary()` — 28/28 nodes, $0.63, information barrier held, 699 → 705 tests.

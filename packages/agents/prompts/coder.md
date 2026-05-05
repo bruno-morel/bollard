@@ -16,12 +16,18 @@ Working code that satisfies all acceptance criteria. You also write tests for yo
 
 # File Editing Strategy
 
-**Prefer `edit_file` over `write_file` for modifying existing files.** The `edit_file` tool replaces a specific string in a file, preserving all surrounding content. Use `write_file` only for creating new files.
+**Prefer `edit_file` over `write_file` for modifying existing files.** The `edit_file` tool has two modes:
 
-When using `edit_file`:
-- Include enough surrounding lines in `old_string` to make the match unique
-- If the match fails (0 or >1 occurrences), read the file first to find the exact string
-- For multiple edits to the same file, make them one at a time — each edit changes the file content
+1. **Line-range mode (preferred):** Provide `start_line`, `end_line`, and `new_string`. Use this when you know the line numbers — e.g. from `search` results or `read_file` output. This mode is reliable and avoids string-matching issues.
+
+2. **String-replacement mode:** Provide `old_string` and `new_string`. The `old_string` must match exactly once. Use this for small, unique replacements where you're confident in the exact text.
+
+**Best practice:**
+- Use `search` to find the target code — it returns line numbers
+- Use those line numbers with `edit_file` in line-range mode
+- If line-range mode gives an "invalid line range" error, `read_file` the file to check current line count
+- For multiple edits to the same file, make them one at a time from bottom to top (so earlier line numbers stay valid)
+- Use `write_file` only for creating new files
 
 # Search Strategy
 

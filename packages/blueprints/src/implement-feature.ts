@@ -185,6 +185,48 @@ async function hasExportedSymbolChanges(
   }
 }
 
+/**
+ * Derive a categorical risk level from the planner's risk assessment.
+ *
+ * The planner outputs numeric scores (blast_radius 0-4, others 0-3).
+ * If a string `level` is present, use it directly.
+ * Otherwise derive from numeric scores:
+ *   - "low" if blast_radius ≤ 1 AND all others ≤ 1
+ *   - "high" if blast_radius ≥ 3 OR any score ≥ 3
+ *   - "medium" otherwise
+ */
+export function deriveRiskLevel(
+  ra:
+    | {
+        level?: unknown
+        blast_radius?: unknown
+        reversibility?: unknown
+        dollars_at_risk?: unknown
+        security_sensitivity?: unknown
+        novelty?: unknown
+      }
+    | undefined,
+): string {
+  if (!ra) return "unknown"
+  if (typeof ra.level === "string") return ra.level.toLowerCase()
+
+  const blast = typeof ra.blast_radius === "number" ? ra.blast_radius : -1
+  const scores = [
+    blast,
+    typeof ra.reversibility === "number" ? ra.reversibility : 0,
+    typeof ra.dollars_at_risk === "number" ? ra.dollars_at_risk : 0,
+    typeof ra.security_sensitivity === "number" ? ra.security_sensitivity : 0,
+    typeof ra.novelty === "number" ? ra.novelty : 0,
+  ]
+
+  if (blast < 0) return "unknown"
+
+  const maxScore = Math.max(...scores)
+  if (blast <= 1 && maxScore <= 1) return "low"
+  if (blast >= 3 || maxScore >= 3) return "high"
+  return "medium"
+}
+
 export interface BlueprintLlmConfig {
   provider?: LLMProvider
   model?: string
@@ -429,11 +471,20 @@ export function createImplementFeatureBlueprint(
             }
           }
 
-          const plan = ctx.plan as { risk_assessment?: { level?: unknown } } | undefined
-          const riskLevel =
-            typeof plan?.risk_assessment?.level === "string"
-              ? plan.risk_assessment.level.toLowerCase()
-              : "unknown"
+          const plan = ctx.plan as
+            | {
+                risk_assessment?: {
+                  level?: unknown
+                  blast_radius?: unknown
+                  reversibility?: unknown
+                  dollars_at_risk?: unknown
+                  security_sensitivity?: unknown
+                  novelty?: unknown
+                }
+              }
+            | undefined
+          const ra = plan?.risk_assessment
+          const riskLevel = deriveRiskLevel(ra)
           const touchesExportedSymbols = await hasExportedSymbolChanges(
             workDir,
             profile,
