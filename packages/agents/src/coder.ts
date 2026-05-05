@@ -17,7 +17,7 @@ export async function createCoderAgent(profile?: ToolchainProfile): Promise<Agen
     role: "coder",
     systemPrompt,
     tools: ALL_TOOLS,
-    maxTurns: 60,
+    maxTurns: 80,
     temperature: 0.3,
     maxTokens: 16384,
   }

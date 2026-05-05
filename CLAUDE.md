@@ -586,7 +586,7 @@ All tools enforce path-traversal protection: resolved path must start with `work
 ### Agents
 
 - **Planner** (`createPlannerAgent(profile?)`): read-only tools, temperature 0.2, max 25 turns. Produces structured JSON plan with summary, acceptance criteria, affected files, risk assessment, steps.
-- **Coder** (`createCoderAgent(profile?)`): all 6 tools, temperature 0.3, max 60 turns. Implements plans, writes tests. Prefers `edit_file` for existing files, `write_file` for new files. Verification hook skipped after 80% of turns to prevent budget exhaustion.
+- **Coder** (`createCoderAgent(profile?)`): all 6 tools, temperature 0.3, max 80 turns. Implements plans, writes tests. Prefers `edit_file` for existing files, `write_file` for new files. Verification hook skipped after 80% of turns to prevent budget exhaustion.
 - **Boundary tester** (`createBoundaryTesterAgent(profile?)`): no tools, temperature 0.3, max 5 turns. Generates boundary-scope adversarial tests from type signatures and referenced type definitions; prompt includes four concern lenses when weights are not `off`.
 - **Contract tester** (`createContractTesterAgent(profile?)`): no tools, temperature 0.4, max 10 turns. Generates contract-scope tests from `ContractContext` (module graph + edges); language/framework via profile.
 - **Behavioral tester** (`createBehavioralTesterAgent(profile?)`): no tools, temperature 0.5, max 15 turns. Generates behavioral-scope tests from `BehavioralContext` (endpoints, config, dependencies, failure modes); concern lenses via profile.
@@ -751,7 +751,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - Deeper type extraction: `ExtractedTypeDefinition`, `ExtractionResult`, `resolveReferencedTypes`
 - `SignatureExtractor` interface with `TsCompilerExtractor` and `LlmFallbackExtractor`
 - `write-tests` node: profile-aware test placement (src/ → tests/), markdown fence stripping
-- Coder max turns increased to 60 (from 40) with turn budget guidance in prompt
+- Coder max turns increased to 80 (from 60, originally 40) with explicit turn allocation guidance in prompt
 - `deferPostCompletionVerifyFromTurn` in executor (renamed in Stage 3a validation from `skipVerificationAfterTurn`) — post-completion verification hook deferred above 80% turn budget
 - `buildTesterMessage` includes referenced type definitions alongside signatures
 - `compactOlderTurns` handles `edit_file` payloads

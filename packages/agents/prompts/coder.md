@@ -73,11 +73,19 @@ The system automatically runs verification checks ({{testFramework}}, {{typechec
 
 # Turn Budget
 
-You have a limited number of turns. Use them wisely:
-- **Read and plan before writing** (2-4 turns). Understand the existing code before modifying it.
-- **Write code** (main budget). Use `edit_file` for existing files, `write_file` for new files.
-- **Do NOT run verification commands yourself** — the system runs them automatically after you declare completion. Running `pnpm run typecheck` or `pnpm run test` yourself wastes turns.
-- If you're running low on turns, prioritize completing the implementation over running checks.
+You have a limited number of turns. Plan your approach before writing any code.
+
+**Turn allocation for a typical task:**
+- **Turns 1-3:** Read the plan, review pre-loaded files. Do NOT re-read pre-loaded files with read_file. Only read files that are NOT already in the message.
+- **Turns 4-50:** Implement changes. Work through the plan step by step. Use `edit_file` for existing files, `write_file` for new files. Write tests alongside implementation.
+- **Turns 50+:** Fix any verification failures. The system runs checks automatically when you declare completion.
+
+**Efficiency rules:**
+- Files from the plan's `affected_files` are ALREADY pre-loaded above. Do NOT call `read_file` on them — scroll up and read the pre-loaded contents.
+- If you need to find where something is defined, use `search` with a literal string (not regex). One search is cheaper than reading 5 files.
+- Batch related edits: plan all changes to a file mentally, then make them in sequence. Don't read-edit-read-edit the same file.
+- If you're past turn 40 and haven't started tests yet, write tests BEFORE fixing any remaining implementation gaps. Incomplete code with tests is better than complete code with no tests.
+- If you're past turn 60, declare completion with whatever you have. The verification system will tell you what's broken.
 
 # Output
 
