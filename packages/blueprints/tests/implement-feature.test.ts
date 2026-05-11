@@ -7,8 +7,8 @@ import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
 describe("createImplementFeatureBlueprint", () => {
   const bp = createImplementFeatureBlueprint("/tmp/test")
 
-  it("has 29 nodes in the correct order", () => {
-    expect(bp.nodes).toHaveLength(29)
+  it("has 30 nodes in the correct order", () => {
+    expect(bp.nodes).toHaveLength(30)
     const ids = bp.nodes.map((n) => n.id)
     expect(ids).toEqual([
       "create-branch",
@@ -19,6 +19,7 @@ describe("createImplementFeatureBlueprint", () => {
       "static-checks",
       "extract-signatures",
       "generate-tests",
+      "verify-boundary-grounding",
       "write-tests",
       "run-tests",
       "assess-contract-risk",
@@ -54,6 +55,7 @@ describe("createImplementFeatureBlueprint", () => {
       { id: "static-checks", type: "deterministic" },
       { id: "extract-signatures", type: "deterministic" },
       { id: "generate-tests", type: "agentic" },
+      { id: "verify-boundary-grounding", type: "deterministic" },
       { id: "write-tests", type: "deterministic" },
       { id: "run-tests", type: "deterministic" },
       { id: "assess-contract-risk", type: "deterministic" },
@@ -112,10 +114,11 @@ describe("createImplementFeatureBlueprint", () => {
     expect(implNode?.onFailure).toBe("stop")
   })
 
-  it("expand-affected-files, static-checks, and run-tests skip on failure after coder verification hook", () => {
+  it("expand-affected-files, static-checks, run-tests, and verify-boundary-grounding skip on failure after coder verification hook", () => {
     expect(bp.nodes.find((n) => n.id === "expand-affected-files")?.onFailure).toBe("skip")
     expect(bp.nodes.find((n) => n.id === "static-checks")?.onFailure).toBe("skip")
     expect(bp.nodes.find((n) => n.id === "run-tests")?.onFailure).toBe("skip")
+    expect(bp.nodes.find((n) => n.id === "verify-boundary-grounding")?.onFailure).toBe("skip")
   })
 
   it("deterministic nodes never have an agent field", () => {
@@ -141,6 +144,15 @@ describe("createImplementFeatureBlueprint", () => {
     for (const node of agenticNodes) {
       expect(node.execute).toBeUndefined()
     }
+  })
+
+  it("boundary grounding sits between generate-tests and write-tests", () => {
+    const ids = bp.nodes.map((n) => n.id)
+    const iGen = ids.indexOf("generate-tests")
+    const iVerify = ids.indexOf("verify-boundary-grounding")
+    const iWrite = ids.indexOf("write-tests")
+    expect(iVerify).toBe(iGen + 1)
+    expect(iWrite).toBe(iVerify + 1)
   })
 
   it("has 6 agentic nodes including behavioral-tester and semantic-reviewer", () => {

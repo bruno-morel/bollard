@@ -318,7 +318,7 @@ function buildTesterMessage(ctx: PipelineContext): string {
 
   sections.push(
     "# Instructions",
-    `Write a complete test file in ${langLabel}. Output ONLY the ${langLabel} test code, no explanations.`,
+    `Output exactly one JSON claims document as specified in your system prompt (markdown code fence labeled json). Each claim's test field is the ${langLabel} test case body plus wrapper (${langLabel} test framework); imports before the wrapper. No prose outside the fence.`,
   )
 
   return sections.join("\n")

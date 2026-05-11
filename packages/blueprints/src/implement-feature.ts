@@ -19,11 +19,13 @@ import { MAX_PRELOAD_FILES, expandAffectedFiles } from "@bollard/verify/src/cont
 import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
 import { buildContractContext } from "@bollard/verify/src/contract-extractor.js"
 import {
+  type ClaimRecord,
+  type ContractCorpus,
+  type EnabledConcerns,
   contractContextToCorpus,
   parseClaimDocument,
   verifyClaimGrounding,
 } from "@bollard/verify/src/contract-grounding.js"
-import type { ClaimRecord, EnabledConcerns } from "@bollard/verify/src/contract-grounding.js"
 import { runTests } from "@bollard/verify/src/dynamic.js"
 import { runMutationTesting } from "@bollard/verify/src/mutation.js"
 import {
@@ -33,23 +35,65 @@ import {
 } from "@bollard/verify/src/review-grounding.js"
 import type { ReviewDocument, ReviewFinding } from "@bollard/verify/src/review-grounding.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
-import {
-  resolveBehavioralTestOutputRel,
-  resolveContractTestOutputRel,
-} from "@bollard/verify/src/test-lifecycle.js"
 import { extractPrivateIdentifiers, getExtractor } from "@bollard/verify/src/type-extractor.js"
+import { assembleTestFile } from "./test-assembler.js"
 import {
-  dedupeImportLines,
-  deriveAdversarialTestPath,
-  inferJvmPackageFromMainSource,
-  jvmContractCoerceVitestItToJUnit5,
   normalizeJvmWrittenTestClassName,
-  resolveContractTestModulePrefix,
   sanitizeJavaPrimitiveInstanceofMisuse,
-  stripMarkdownFences,
 } from "./write-tests-helpers.js"
 
 const execFileAsync = promisify(execFile)
+
+function buildBoundaryCorpus(ctx: PipelineContext): ContractCorpus {
+  const entries: string[] = []
+  const task = ctx.task.trim()
+  if (task.length > 0) entries.push(task)
+
+  const plan = ctx.plan as
+    | {
+        summary?: string
+        acceptance_criteria?: string[]
+        steps?: { runtimeConstraints?: string[] }[]
+      }
+    | undefined
+
+  if (typeof plan?.summary === "string" && plan.summary.trim().length > 0) {
+    entries.push(plan.summary)
+  }
+  if (Array.isArray(plan?.acceptance_criteria)) {
+    const ac = plan.acceptance_criteria.map(String).join("\n")
+    if (ac.trim().length > 0) entries.push(ac)
+  }
+  const allConstraints = (plan?.steps ?? []).flatMap((s) => s.runtimeConstraints ?? [])
+  const uniqueConstraints = [...new Set(allConstraints)].filter((c) => c.trim().length > 0)
+  if (uniqueConstraints.length > 0) {
+    entries.push(uniqueConstraints.join("\n"))
+  }
+
+  const extractionData = ctx.results["extract-signatures"]?.data as
+    | {
+        signatures?: Array<{
+          imports?: string
+          types?: string
+          signatures?: string
+        }>
+        types?: Array<{ definition: string }>
+      }
+    | undefined
+
+  for (const sig of extractionData?.signatures ?? []) {
+    if (sig.imports?.trim()) entries.push(sig.imports)
+    if (sig.types?.trim()) entries.push(sig.types)
+    if (sig.signatures?.trim()) entries.push(sig.signatures)
+  }
+  for (const t of extractionData?.types ?? []) {
+    if (typeof t.definition === "string" && t.definition.trim().length > 0) {
+      entries.push(t.definition)
+    }
+  }
+
+  return { entries }
+}
 
 async function formatGeneratedAdversarialTestFile(
   ctx: PipelineContext,
@@ -399,32 +443,174 @@ export function createImplementFeatureBlueprint(
       },
 
       {
+        id: "verify-boundary-grounding",
+        name: "Verify Boundary Claim Grounding",
+        type: "deterministic",
+        onFailure: "skip",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const profile = ctx.toolchainProfile
+          const language = profile?.language ?? "unknown"
+
+          const logGrounding = (params: {
+            proposed: number
+            grounded: number
+            dropped: number
+            dropRate: number
+            droppedSymbols: string[]
+          }) => {
+            ctx.log.info("boundary_grounding_result", {
+              event: "boundary_grounding_result",
+              runId: ctx.runId,
+              language,
+              ...params,
+            })
+          }
+
+          if (!profile) {
+            logGrounding({
+              proposed: 0,
+              grounded: 0,
+              dropped: 0,
+              dropRate: 0,
+              droppedSymbols: [],
+            })
+            return { status: "ok", data: { skipped: true, reason: "no toolchain profile" } }
+          }
+
+          const gen = ctx.results["generate-tests"]
+          const raw = typeof gen?.data === "string" ? gen.data : ""
+          if (!raw.trim()) {
+            logGrounding({
+              proposed: 0,
+              grounded: 0,
+              dropped: 0,
+              dropRate: 0,
+              droppedSymbols: [],
+            })
+            return { status: "ok", data: { skipped: true, reason: "no boundary test output" } }
+          }
+
+          const corpus = buildBoundaryCorpus(ctx)
+          const concerns = profile.adversarial.boundary.concerns
+          const enabled: EnabledConcerns = {
+            correctness: concerns.correctness !== "off",
+            security: concerns.security !== "off",
+            performance: concerns.performance !== "off",
+            resilience: concerns.resilience !== "off",
+          }
+
+          try {
+            const doc = parseClaimDocument(raw, { invalidCode: "BOUNDARY_TESTER_OUTPUT_INVALID" })
+            const result = verifyClaimGrounding(doc, corpus, enabled, {
+              noGroundedClaimsCode: "BOUNDARY_TESTER_NO_GROUNDED_CLAIMS",
+            })
+
+            const proposed = doc.claims.length
+            const grounded = result.kept.length
+            const droppedCount = result.dropped.length
+            const dropRate =
+              proposed === 0 ? 0 : Math.round((droppedCount / proposed) * 1000) / 1000
+            const droppedSymbols = [...new Set(result.dropped.map((d) => d.id))].sort()
+
+            logGrounding({
+              proposed,
+              grounded,
+              dropped: droppedCount,
+              dropRate,
+              droppedSymbols,
+            })
+
+            return {
+              status: "ok",
+              data: { claims: result.kept, dropped: result.dropped },
+            }
+          } catch (err: unknown) {
+            const message = BollardError.is(err) ? err.message : String(err)
+            const code = BollardError.is(err) ? err.code : "NODE_EXECUTION_FAILED"
+            ctx.log.warn("verify-boundary-grounding: skipping downstream boundary write", {
+              code,
+              message,
+            })
+            logGrounding({
+              proposed: 0,
+              grounded: 0,
+              dropped: 0,
+              dropRate: 0,
+              droppedSymbols: [],
+            })
+            return {
+              status: "ok",
+              data: { skipped: true, reason: message },
+            }
+          }
+        },
+      },
+
+      {
         id: "write-tests",
         name: "Write Adversarial Test Files",
         type: "deterministic",
         execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const testerResult = ctx.results["generate-tests"]
-          const testerOutput = typeof testerResult?.data === "string" ? testerResult.data : ""
+          const profile = ctx.toolchainProfile
+          if (!profile) {
+            return { status: "ok", data: { skipped: true, reason: "no toolchain profile" } }
+          }
 
-          if (!testerOutput) {
+          const verifyRes = ctx.results["verify-boundary-grounding"]?.data as
+            | { skipped?: boolean; reason?: string; claims?: ClaimRecord[] }
+            | undefined
+          if (verifyRes?.skipped || !verifyRes?.claims || verifyRes.claims.length === 0) {
+            const reason =
+              verifyRes?.skipped && typeof verifyRes.reason === "string"
+                ? verifyRes.reason
+                : "no grounded boundary claims"
             return {
-              status: "fail",
-              error: {
-                code: "NODE_EXECUTION_FAILED",
-                message: "No test output from boundary-tester agent",
-              },
+              status: "ok",
+              data: { skipped: true, reason },
             }
           }
 
           const files = getAffectedSourceFiles(ctx)
-          const leakedTokens: string[] = []
+          const firstFile = files[0]
+          if (!firstFile) {
+            return {
+              status: "fail",
+              error: {
+                code: "NODE_EXECUTION_FAILED",
+                message: "No affected files to generate tests for",
+              },
+            }
+          }
 
+          const claims = verifyRes.claims
+          const assembled = assembleTestFile({
+            claims,
+            profile,
+            sourceFile: firstFile,
+            scope: "boundary",
+            runId: ctx.runId,
+            task: ctx.task,
+          })
+
+          let toWrite = assembled.fileContent
+          const testPath = assembled.testPath
+          const lang = profile.language
+          if (lang === "java" || lang === "kotlin") {
+            const ext = lang === "java" ? ".java" : ".kt"
+            const expectedClass = basename(testPath, ext)
+            toWrite = normalizeJvmWrittenTestClassName(toWrite, expectedClass, lang)
+            if (lang === "java") {
+              toWrite = sanitizeJavaPrimitiveInstanceofMisuse(toWrite)
+            }
+          }
+
+          const leakedTokens: string[] = []
           for (const filePath of files) {
             try {
               const source = await readFile(resolve(workDir, filePath), "utf-8")
               const privateIds = extractPrivateIdentifiers(filePath, source)
               for (const id of privateIds) {
-                if (testerOutput.includes(id)) {
+                if (toWrite.includes(id)) {
                   leakedTokens.push(id)
                 }
               }
@@ -442,29 +628,6 @@ export function createImplementFeatureBlueprint(
             })
           }
 
-          const firstFile = files[0]
-          if (!firstFile) {
-            return {
-              status: "fail",
-              error: {
-                code: "NODE_EXECUTION_FAILED",
-                message: "No affected files to generate tests for",
-              },
-            }
-          }
-
-          const testPath = deriveAdversarialTestPath(firstFile, ctx.toolchainProfile, "boundary")
-          const cleanOutput = stripMarkdownFences(testerOutput)
-          const lang = ctx.toolchainProfile?.language
-          let toWrite = cleanOutput
-          if (lang === "java" || lang === "kotlin") {
-            const ext = lang === "java" ? ".java" : ".kt"
-            const expectedClass = basename(testPath, ext)
-            toWrite = normalizeJvmWrittenTestClassName(cleanOutput, expectedClass, lang)
-            if (lang === "java") {
-              toWrite = sanitizeJavaPrimitiveInstanceofMisuse(toWrite)
-            }
-          }
           const fullPath = resolve(workDir, testPath)
           await mkdir(dirname(fullPath), { recursive: true })
           await writeFile(fullPath, toWrite, "utf-8")
@@ -732,8 +895,6 @@ export function createImplementFeatureBlueprint(
           }
 
           const claims = verifyRes.claims
-          const lang = profile.language ?? "typescript"
-
           const files = getAffectedSourceFiles(ctx)
           const firstFile = files[0]
           if (!firstFile) {
@@ -746,75 +907,22 @@ export function createImplementFeatureBlueprint(
             }
           }
 
-          // For JVM multi-module contract tests, the test must be placed in the consumer
-          // module (the one that imports the provider) so it can compile against the edge's
-          // imported symbols. Non-JVM / single-module cases fall through unchanged.
           const contractExtract = ctx.results["extract-contracts"]?.data as
             | { contract?: ContractContext }
             | undefined
-          const contractSourceFile = resolveContractTestModulePrefix(
-            firstFile,
-            contractExtract?.contract,
-            lang,
-          )
 
-          // Hoist import lines from claim test bodies into the preamble, deduplicating
-          // specifiers from the same module (ADR-0001: deterministic post-filter)
-          const rawImports: string[] = []
-          const strippedBodies: string[] = []
-          for (const c of claims) {
-            const lines = c.test.split("\n")
-            const bodyLines: string[] = []
-            for (const line of lines) {
-              if (line.trimStart().startsWith("import ")) {
-                rawImports.push(line.trim())
-              } else {
-                bodyLines.push(line)
-              }
-            }
-            const body = bodyLines.join("\n").trim()
-            if (body.length > 0) strippedBodies.push(body)
-          }
-          const hoistedImports = dedupeImportLines(rawImports)
-
-          let preamble: string
-          let wrapStart: string
-          let wrapEnd: string
-          if (lang === "python") {
-            preamble = "import pytest\n"
-            wrapStart = ""
-            wrapEnd = ""
-          } else if (lang === "java" || lang === "kotlin") {
-            const ext = lang === "java" ? "java" : "kt"
-            const derivedRel = deriveAdversarialTestPath(contractSourceFile, profile, "contract")
-            const simpleName = basename(derivedRel, `.${ext}`)
-            const pkg = inferJvmPackageFromMainSource(contractSourceFile)
-            const importLines = [...hoistedImports].sort().join("\n")
-            if (lang === "java") {
-              const jUnitImports =
-                "import org.junit.jupiter.api.Test;\nimport static org.junit.jupiter.api.Assertions.*;"
-              preamble = pkg
-                ? `package ${pkg};\n\n${jUnitImports}\n${importLines}\n`
-                : `${jUnitImports}\n${importLines}\n`
-            } else {
-              preamble = pkg ? `package ${pkg};\n\n${importLines}\n` : `${importLines}\n`
-            }
-            wrapStart =
-              lang === "java" ? `\npublic class ${simpleName} {\n` : `\nclass ${simpleName} {\n`
-            wrapEnd = "\n}\n"
-          } else {
-            const vitestImport = 'import { describe, it, expect, vi } from "vitest"'
-            const allImports = [vitestImport, ...hoistedImports].join("\n")
-            preamble = `${allImports}\n`
-            wrapStart = '\ndescribe("contract tests", () => {\n'
-            wrapEnd = "\n})\n"
-          }
-
-          let testBodies = strippedBodies.join("\n\n")
-          if (lang === "java" && testBodies.includes("it(")) {
-            testBodies = jvmContractCoerceVitestItToJUnit5(testBodies)
-          }
-          const fileContent = `${preamble}${wrapStart}${testBodies}${wrapEnd}`
+          const assembled = assembleTestFile({
+            claims,
+            profile,
+            sourceFile: firstFile,
+            scope: "contract",
+            ...(contractExtract?.contract !== undefined
+              ? { contractContext: contractExtract.contract }
+              : {}),
+            runId: ctx.runId,
+            task: ctx.task,
+          })
+          const { fileContent, testPath } = assembled
 
           const leakedTokens: string[] = []
           for (const filePath of files) {
@@ -838,13 +946,6 @@ export function createImplementFeatureBlueprint(
             })
           }
 
-          const derivedRel = deriveAdversarialTestPath(contractSourceFile, profile, "contract")
-          const testPath = resolveContractTestOutputRel({
-            runId: ctx.runId,
-            task: ctx.task,
-            derivedRelativePath: derivedRel,
-            lifecycle: profile.adversarial.contract.lifecycle,
-          })
           const fullPath = resolve(workDir, testPath)
           await mkdir(dirname(fullPath), { recursive: true })
           await writeFile(fullPath, fileContent, "utf-8")
@@ -1039,44 +1140,29 @@ export function createImplementFeatureBlueprint(
           }
 
           const claims = verifyRes.claims
-          const lang = profile.language ?? "typescript"
-
-          const rawImports: string[] = []
-          const strippedBodies: string[] = []
-          for (const c of claims) {
-            const lines = c.test.split("\n")
-            const bodyLines: string[] = []
-            for (const line of lines) {
-              if (line.trimStart().startsWith("import ")) {
-                rawImports.push(line.trim())
-              } else {
-                bodyLines.push(line)
-              }
-            }
-            const body = bodyLines.join("\n").trim()
-            if (body.length > 0) strippedBodies.push(body)
-          }
-          const hoistedImports = dedupeImportLines(rawImports)
-
-          let preamble: string
-          let wrapStart: string
-          let wrapEnd: string
-          if (lang === "python") {
-            preamble = "import pytest\n"
-            wrapStart = ""
-            wrapEnd = ""
-          } else {
-            const vitestImport = 'import { describe, it, expect, vi } from "vitest"'
-            const allImports = [vitestImport, ...hoistedImports].join("\n")
-            preamble = `${allImports}\n`
-            wrapStart = '\ndescribe("behavioral tests", () => {\n'
-            wrapEnd = "\n})\n"
-          }
-
-          const testBodies = strippedBodies.join("\n\n")
-          const fileContent = `${preamble}${wrapStart}${testBodies}${wrapEnd}`
 
           const files = getAffectedSourceFiles(ctx)
+          const firstFile = files[0]
+          if (!firstFile) {
+            return {
+              status: "fail",
+              error: {
+                code: "NODE_EXECUTION_FAILED",
+                message: "No affected files for behavioral tests",
+              },
+            }
+          }
+
+          const assembled = assembleTestFile({
+            claims,
+            profile,
+            sourceFile: firstFile,
+            scope: "behavioral",
+            runId: ctx.runId,
+            task: ctx.task,
+          })
+          const { fileContent, testPath } = assembled
+
           const leakedTokens: string[] = []
           for (const filePath of files) {
             try {
@@ -1099,24 +1185,6 @@ export function createImplementFeatureBlueprint(
             })
           }
 
-          const firstFile = files[0]
-          if (!firstFile) {
-            return {
-              status: "fail",
-              error: {
-                code: "NODE_EXECUTION_FAILED",
-                message: "No affected files for behavioral tests",
-              },
-            }
-          }
-
-          const derivedRel = deriveAdversarialTestPath(firstFile, profile, "behavioral")
-          const testPath = resolveBehavioralTestOutputRel({
-            runId: ctx.runId,
-            task: ctx.task,
-            derivedRelativePath: derivedRel,
-            lifecycle: profile.adversarial.behavioral.lifecycle,
-          })
           const fullPath = resolve(workDir, testPath)
           await mkdir(dirname(fullPath), { recursive: true })
           await writeFile(fullPath, fileContent, "utf-8")

@@ -73,7 +73,31 @@ function makeWriteTestsCtx(tempDir: string): PipelineContext {
     results: {
       "generate-tests": {
         status: "ok",
-        data: `import { describe, it, expect } from "vitest"\n\ndescribe("t", () => {\n  it("x", () => {\n    expect(1).toBe(1)\n  })\n})\n`,
+        data: JSON.stringify({
+          claims: [
+            {
+              id: "bnd1",
+              concern: "correctness",
+              claim: "x",
+              grounding: [{ quote: "task", source: "t" }],
+              test: 'it("x", () => { expect(1).toBe(1) })',
+            },
+          ],
+        }),
+      },
+      "verify-boundary-grounding": {
+        status: "ok",
+        data: {
+          claims: [
+            {
+              id: "bnd1",
+              concern: "correctness",
+              claim: "x",
+              grounding: [{ quote: "task", source: "t" }],
+              test: 'it("x", () => { expect(1).toBe(1) })',
+            },
+          ],
+        },
       },
     },
     plan: {

@@ -147,3 +147,32 @@ Confirm:
 - `write-contract-tests` behaviour is unchanged (same output shape as before the refactor)
 - Node count in run output: 30 nodes
 - No regression on grounding drop rates (all three scopes should show 0 drops on a clean task)
+
+---
+
+## Implementation note: boundary corpus construction
+
+`ContractCorpus` is `{ entries: string[] }` — it is a generic string array, not contract-specific. To build the boundary corpus, construct it directly:
+
+```typescript
+const sigData = ctx.results["extract-signatures"]?.data as
+  | { signatures?: string; types?: string; imports?: string }
+  | undefined
+const plan = ctx.plan as
+  | { summary?: string; acceptance_criteria?: string[] }
+  | undefined
+const corpus: ContractCorpus = {
+  entries: [
+    sigData?.signatures ?? "",
+    sigData?.types ?? "",
+    sigData?.imports ?? "",
+    plan?.summary ?? "",
+    ctx.task,
+    ...(plan?.acceptance_criteria ?? []),
+  ].filter(s => s.length > 0),
+}
+```
+
+Then call `verifyClaimGrounding(doc, corpus, enabled, { noGroundedClaimsCode: "BOUNDARY_TESTER_NO_GROUNDED_CLAIMS" })` exactly as the behavioral node does.
+
+`verify-boundary-grounding` uses `onFailure: "skip"` and catches `BollardError` — on failure it returns `{ status: "ok", data: { skipped: true, reason: err.message } }` so the rest of the pipeline is unaffected. Same pattern as `verify-behavioral-grounding`.

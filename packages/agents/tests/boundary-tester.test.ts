@@ -103,13 +103,15 @@ describe("createBoundaryTesterAgent", () => {
   it("with Python profile produces prompt mentioning pytest", async () => {
     const agent = await createBoundaryTesterAgent(PY_PROFILE)
     expect(agent.systemPrompt).toContain("pytest")
-    expect(agent.systemPrompt).toContain("import pytest")
+    expect(agent.systemPrompt).toContain("Output Format")
     expect(agent.systemPrompt).not.toContain("vitest")
   })
 
-  it("with Python profile includes Python output format", async () => {
-    const agent = await createBoundaryTesterAgent(PY_PROFILE)
-    expect(agent.systemPrompt).toContain("hypothesis")
-    expect(agent.systemPrompt).not.toContain("describe(")
+  it("Output Format uses claims JSON protocol with bnd ids and grounding", async () => {
+    const agent = await createBoundaryTesterAgent()
+    expect(agent.systemPrompt).toContain('"claims"')
+    expect(agent.systemPrompt).toContain("grounding")
+    expect(agent.systemPrompt).toContain("bnd")
+    expect(agent.systemPrompt).not.toContain("Output ONLY the test file content")
   })
 })

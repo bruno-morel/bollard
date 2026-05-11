@@ -88,118 +88,51 @@ Allocate your probe budget by the weights below. HIGH = several targeted tests; 
 
 # Output Format
 
-Output ONLY the test file content. No explanatory text. The output will be written directly to a test file.
+Output exactly one JSON document wrapped in a ```json code fence. No prose before or after the fence. The document has a single top-level `claims` array.
+
+Each claim object has these fields:
+
+- `id` — a short unique identifier with prefix **`bnd`** (e.g. `"bnd1"`, `"bnd2"`).
+- `concern` — one of `"correctness"`, `"security"`, `"performance"`, `"resilience"`.
+- `claim` — a natural-language statement of the boundary property being tested.
+- `grounding` — a **non-empty** array of `{ "quote", "source" }` objects.
+  - `quote` must be a **verbatim substring** copied from the **task description**, **acceptance criteria**, **runtime constraints** (if any), or the **type signatures / imports / types** you received in this message. Copy-paste the fragment exactly. Paraphrases will be rejected by the deterministic verifier.
+  - `source` is a human-readable label (e.g. `"signature:Foo.bar"`, `"criterion:3"`). It is not machine-verified in v1 but aids human review.
+- `test` — the **full test case** in the project's test framework ({{testFramework}}), including the `it(...)` / `test(...)` wrapper or language equivalent. Include any needed `import` statements for modules under test as standalone lines **before** the test wrapper — these will be hoisted to the top of the assembled test file. Do **not** import the test framework primitives (`describe`, `it`, `expect`, `vi`, pytest, `testing` package for Go, etc.) — that is handled automatically.
+
+The `test` field must follow the conventions for your language: **`it(...)`** for TypeScript/Vitest, a **method** for Python/pytest, **`func Test...`** for Go, **`#[test]`** for Rust, **`@Test void`** (or `fun`) for Java/Kotlin. The write node adds file-level scaffolding (`describe`, class body, package line, `mod tests`, etc.). Your job is the property body inside the per-claim wrapper plus correct imports for code under test.
+
+If you cannot ground a claim in the provided signatures or plan text, **do not emit it**. Writing an ungrounded test is worse than writing fewer tests. Every claim must be traceable to something the context actually states.
 
 {{#if isTypeScript}}
-Start with imports, then describe blocks:
-
-```typescript
-import { describe, it, expect } from "vitest"
-import * as fc from "fast-check"
-import { ... } from "../src/module.js"
-
-describe("Feature: <acceptance criterion 1>", () => {
-  it("should ...", () => { ... })
-  it("should ...", () => { ... })
-})
-```
-{{else if isPython}}
-Start with imports, then test classes or functions:
-
-```python
-import pytest
-from hypothesis import given, strategies as st
-from module import ...
-
-class TestFeatureCriterion1:
-    def test_should_do_something(self):
-        ...
-
-    @given(st.integers())
-    def test_property_invariant(self, n):
-        ...
-```
-{{else if isGo}}
-Start with package declaration and imports:
-
-```go
-package module_test
-
-import (
-    "testing"
-    "github.com/stretchr/testify/assert"
-)
-
-func TestFeatureCriterion1(t *testing.T) {
-    t.Run("should do something", func(t *testing.T) {
-        ...
-    })
-}
-```
-{{else if isRust}}
-Start with use declarations:
-
-```rust
-use super::*;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_feature_criterion_1() {
-        ...
-    }
-}
-```
-{{else if isJava}}
-Generate JUnit 5 tests. Use:
-
-- `@Test` from `org.junit.jupiter.api.Test`
-- `assertThrows`, `assertEquals`, `assertNotNull` from `org.junit.jupiter.api.Assertions`
-- `@ParameterizedTest` with `@ValueSource` or `@CsvSource` for edge cases
-- **The test file is saved as `<SourceBase>AdversarialTest.java` (same package as the class under test).** Name the **public** class exactly `<SourceBase>AdversarialTest` (e.g. `CalculatorAdversarialTest` for `Calculator.java`). Start with a `package ...;` line matching `src/test/java/...`.
-- **Numeric correctness:** For `power` / exponentiation with a **negative base**, an **odd** integer exponent yields a **negative** result (e.g. (-2)³ = -8). Only even exponents make the result positive. Match normal real arithmetic unless the task explicitly defines different rules.
-
-Do NOT use: JUnit 4 (`@RunWith`, `org.junit.Assert`), Mockito, or Spring test annotations unless the project already uses them.
-
-```java
-package com.example;
-
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Assertions;
-
-public class CalculatorAdversarialTest {
-  @Test
-  void shouldDoSomething() {
-    // ...
-  }
-}
-```
-{{else if isKotlin}}
-Generate JUnit 5 tests in Kotlin. Use:
-
-- `@Test`, `assertEquals`, `assertThrows` from `org.junit.jupiter.api`
-- `assertFailsWith<ExceptionType> { }` where appropriate
-- `@ParameterizedTest` for edge cases
-- **The file is saved as `<SourceBase>AdversarialTest.kt`.** Name the class exactly `<SourceBase>AdversarialTest` and use a `package` line matching `src/test/kotlin/...`.
-- **Numeric correctness:** For `power` with a negative base, odd exponents preserve the sign of the base unless the task says otherwise.
-
-Do NOT use: JUnit 4, Mockito, or Spring test annotations unless the project already uses them.
-
-```kotlin
-package com.example
-
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Assertions.assertEquals
-
-class CalculatorAdversarialTest {
-  @Test
-  fun shouldDoSomething() {
-    // ...
-  }
-}
-```
-{{else}}
-Use the test framework conventions appropriate for the language. Start with imports, then structured test cases.
+**Vitest assertion note:** `toThrow()` accepts an Error class or a regex, NOT a callback function. To check an error code, use a try/catch with `expect(err.code).toBe(...)` or `BollardError.hasCode()`.
 {{/if}}
+
+{{#if isJava}}
+**JVM:** Prefer public APIs. The assembled file will match `<SourceBase>AdversarialTest.java` and package layout under `src/test/java/...`.
+{{/if}}
+
+{{#if isKotlin}}
+**JVM:** Same as Java — public APIs; assembled file `<SourceBase>AdversarialTest.kt` under `src/test/kotlin/...`.
+{{/if}}
+
+## Example (TypeScript + Vitest, shape only)
+
+```json
+{
+  "claims": [
+    {
+      "id": "bnd1",
+      "concern": "correctness",
+      "claim": "add rejects negative cost values per acceptance criteria",
+      "grounding": [
+        {
+          "quote": "add() rejects negative cost values",
+          "source": "criterion:2"
+        }
+      ],
+      "test": "import { CostTracker } from \"@bollard/engine/src/cost-tracker.js\"\n\nit('rejects negative add', () => {\n  const t = new CostTracker(10)\n  expect(() => t.add(-1)).toThrow()\n})"
+    }
+  ]
+}
+```
