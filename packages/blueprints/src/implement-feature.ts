@@ -15,6 +15,7 @@ import {
   generateBehavioralCompose,
   generateVerifyCompose,
 } from "@bollard/verify/src/compose-generator.js"
+import { MAX_PRELOAD_FILES, expandAffectedFiles } from "@bollard/verify/src/context-expansion.js"
 import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
 import { buildContractContext } from "@bollard/verify/src/contract-extractor.js"
 import {
@@ -282,6 +283,53 @@ export function createImplementFeatureBlueprint(
         id: "approve-plan",
         name: "Approve Plan",
         type: "human_gate",
+      },
+
+      {
+        id: "expand-affected-files",
+        name: "Expand affected files via import graph",
+        type: "deterministic",
+        onFailure: "skip",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          try {
+            const profile = ctx.toolchainProfile
+            if (!profile) {
+              return {
+                status: "ok",
+                data: {
+                  expanded: { files: [], fanInScores: {}, source: "passthrough" as const },
+                },
+              }
+            }
+            const plan = ctx.plan as { affected_files?: { modify?: string[] } } | undefined
+            const modify = plan?.affected_files?.modify ?? []
+            const expanded = await expandAffectedFiles(
+              workDir,
+              modify,
+              profile,
+              MAX_PRELOAD_FILES,
+              (msg, data) => ctx.log.warn(msg, data),
+            )
+            ctx.log.info("context_expansion_result", {
+              event: "context_expansion_result",
+              runId: ctx.runId,
+              source: expanded.source,
+              fileCount: expanded.files.length,
+              modifyCount: modify.length,
+            })
+            return { status: "ok", data: { expanded } }
+          } catch (err: unknown) {
+            ctx.log.warn("expand-affected-files: degrading to passthrough", {
+              error: err instanceof Error ? err.message : String(err),
+            })
+            return {
+              status: "ok",
+              data: {
+                expanded: { files: [], fanInScores: {}, source: "passthrough" as const },
+              },
+            }
+          }
+        },
       },
 
       {

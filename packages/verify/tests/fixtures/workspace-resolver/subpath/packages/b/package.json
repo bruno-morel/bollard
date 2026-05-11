@@ -1,0 +1,8 @@
+{
+  "name": "@wr/b",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/entry.ts"
+  }
+}

@@ -16,6 +16,10 @@ import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context
 import { BollardError } from "@bollard/engine/src/errors.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
 import type { BehavioralContext } from "@bollard/verify/src/behavioral-extractor.js"
+import {
+  MAX_PRELOAD_CHARS_PER_FILE,
+  MAX_PRELOAD_FILES,
+} from "@bollard/verify/src/context-expansion.js"
 import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
 import type {
   ExtractedSignature,
@@ -24,8 +28,6 @@ import type {
 import { createAgentSpinner } from "./spinner.js"
 
 const execFileAsync = promisify(execFile)
-const MAX_PRELOAD_CHARS_PER_FILE = 10_000
-const MAX_PRELOAD_FILES = 10
 
 type VerificationCheck = { label: string; cmd: string; args: string[] }
 
@@ -124,18 +126,24 @@ function parsePlanResponse(text: string): unknown {
   }
 }
 
-async function preloadAffectedFiles(plan: unknown, workDir: string): Promise<string> {
-  if (!plan || typeof plan !== "object") return ""
+export async function preloadAffectedFiles(ctx: PipelineContext, workDir: string): Promise<string> {
+  if (!ctx.plan || typeof ctx.plan !== "object") return ""
 
-  const affectedFiles = (plan as Record<string, unknown>)["affected_files"] as
+  const affectedFiles = (ctx.plan as Record<string, unknown>)["affected_files"] as
     | Record<string, string[]>
     | undefined
   if (!affectedFiles) return ""
 
-  const filesToRead = [...(affectedFiles["modify"] ?? [])].slice(0, MAX_PRELOAD_FILES)
+  const expandData = ctx.results["expand-affected-files"]?.data as
+    | { expanded?: { files?: string[] } }
+    | undefined
+  const expandedFiles = expandData?.expanded?.files
+  const fromPlan = affectedFiles["modify"] ?? []
+  const filesToRead = expandedFiles && expandedFiles.length > 0 ? [...expandedFiles] : [...fromPlan]
+  const capped = filesToRead.slice(0, MAX_PRELOAD_FILES)
   const sections: string[] = []
 
-  for (const filePath of filesToRead) {
+  for (const filePath of capped) {
     try {
       const content = await readFile(resolve(workDir, filePath), "utf-8")
       const capped =
@@ -491,7 +499,7 @@ export async function createAgenticHandler(
     }
 
     if (agentRole === "coder" && ctx.plan) {
-      const preloaded = await preloadAffectedFiles(ctx.plan, workDir)
+      const preloaded = await preloadAffectedFiles(ctx, workDir)
       userMessage = `Task: ${ctx.task}\n\nApproved Plan:\n${JSON.stringify(ctx.plan, null, 2)}${preloaded}`
       executorOptions = {
         postCompletionHook: createVerificationHook(workDir, profile),

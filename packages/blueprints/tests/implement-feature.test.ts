@@ -7,13 +7,14 @@ import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
 describe("createImplementFeatureBlueprint", () => {
   const bp = createImplementFeatureBlueprint("/tmp/test")
 
-  it("has 28 nodes in the correct order", () => {
-    expect(bp.nodes).toHaveLength(28)
+  it("has 29 nodes in the correct order", () => {
+    expect(bp.nodes).toHaveLength(29)
     const ids = bp.nodes.map((n) => n.id)
     expect(ids).toEqual([
       "create-branch",
       "generate-plan",
       "approve-plan",
+      "expand-affected-files",
       "implement",
       "static-checks",
       "extract-signatures",
@@ -48,6 +49,7 @@ describe("createImplementFeatureBlueprint", () => {
       { id: "create-branch", type: "deterministic" },
       { id: "generate-plan", type: "agentic" },
       { id: "approve-plan", type: "human_gate" },
+      { id: "expand-affected-files", type: "deterministic" },
       { id: "implement", type: "agentic" },
       { id: "static-checks", type: "deterministic" },
       { id: "extract-signatures", type: "deterministic" },
@@ -110,7 +112,8 @@ describe("createImplementFeatureBlueprint", () => {
     expect(implNode?.onFailure).toBe("stop")
   })
 
-  it("static-checks and run-tests skip on failure after coder verification hook", () => {
+  it("expand-affected-files, static-checks, and run-tests skip on failure after coder verification hook", () => {
+    expect(bp.nodes.find((n) => n.id === "expand-affected-files")?.onFailure).toBe("skip")
     expect(bp.nodes.find((n) => n.id === "static-checks")?.onFailure).toBe("skip")
     expect(bp.nodes.find((n) => n.id === "run-tests")?.onFailure).toBe("skip")
   })
