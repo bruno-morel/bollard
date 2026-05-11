@@ -65,6 +65,23 @@ Bollard runs its own `implement-feature` pipeline on Bollard changes. Every PR t
 - **Parallel scope execution:** Boundary, contract, and behavioral agents run concurrently after context extraction (they see different context and produce different outputs). Blueprint engine needs parallel node support.
 - **Agent memory across runs:** Agents learn from previous runs on the same project — which probes found real bugs, which test patterns were most effective, which concerns had the highest yield.
 
+### 5d: Token Economy — Determinism + Local Models
+
+The pipeline currently spends $0.63–$1.40 of frontier-model budget per `implement-feature` run (the two anchor cost points in CLAUDE.md). The dominant line item is the coder agent (80-turn ceiling; the explicit recorded run in CLAUDE.md used 42 turns at the older 60-turn ceiling, and the line-range mode commit log notes 30–70 turns wasted on the exact-match search death spiral before that fix). A substantial fraction of those turns is mechanical work — re-deriving information already on disk, applying batched patches in response to the post-completion verification hook, regenerating boilerplate around adversarial tests. Stage 5d collapses that fraction into deterministic code paths and routes the remaining low-creativity LLM calls to a locally-hosted small model. Frontier API spend is reserved for genuinely creative, multi-turn work.
+
+The full design is in [stage5d-token-economy.md](./stage5d-token-economy.md). The decision rule that governs which work goes deterministic vs. local vs. frontier is in [ADR-0004](./adr/0004-determinism-local-frontier-tiers.md).
+
+- ~~**Deterministic context expansion (Phase 1):** `ts.preProcessFile` + workspace package resolution (`workspace-resolver.ts`) walk relative and `@scope/pkg` imports, rank by fan-in, cap at the existing preload budget; `expand-affected-files` node after `approve-plan`; coder pre-load reads `ctx.results` first.~~ **DONE (2026-05-11)** — self-test run `20260511-0314-run-fef3d9`. Pre-code `history compare` baseline was not captured; run that gate on `main` when measuring turn/cost deltas.
+- **Verification-feedback patcher (Phase 2):** The post-completion hook today sends batched typecheck/lint failures back to the coder for up to 3 retries, all on frontier. Phase 2 adds a deterministic autofix pass first (`tsc --fix` style — Biome `--write` is already there for lint, this extends it to obvious tsc/test fixes) and routes the remaining structured-error→patch work to a local 1–3B model via llama.cpp. The frontier coder only sees failures the local model couldn't fix.
+- **Adversarial test scaffolding (Phase 3):** Boundary, contract, and behavioral testers currently emit full test files. Phase 3 makes them emit only the property bodies + grounding pointers; a deterministic template renderer assembles imports, `describe`/`it` blocks, fast-check setup, and helper boilerplate. Existing claims-grounding pattern (ADR-0001) extends naturally.
+- **Local-model runtime (Phase 4):** llama.cpp binary baked into the `dev` image (~10 MB). Models lazy-pulled into a Docker volume on first use (no image bloat). New `LocalProvider` in `@bollard/llm` implementing the `LLMProvider` interface — agent routing already supports per-agent provider selection via `.bollard.yml`. Embeddings via `fastembed-js` with `bge-small-en-v1.5` for file-relevance scoring. Default models: Qwen2.5-Coder-1.5B-Instruct (Q4_K_M, ~1 GB) for the patcher and the diff classifier; bge-small-en-v1.5 (~133 MB) for embeddings.
+- **Per-agent model assignment (Phase 5):** Wire the `.bollard.yml` `llm.agents.*` overrides through to defaults: planner→Haiku (already cheap), coder→frontier (creative work), boundary/contract/behavioral testers→frontier for property bodies once Phase 3 has stripped the boilerplate (smaller token surface), semantic-reviewer→local diff classifier first, frontier only for findings the classifier flags. `bollard cost-budget` CLI for per-run budget enforcement, hard cap at `BollardConfig.maxCostUsd`.
+- **Cost regression CI (Phase 6):** Aggregate `CostTracker` snapshots from run history (Stage 5a Phase 2 SQLite layer) into per-blueprint cost trends. CI fails when median cost-per-run on the implement-feature evals regresses by more than a configurable threshold. Mirrors the prompt-regression-gating pattern from Stage 5b.
+
+**Sequencing rationale:** Phases 1 and 3 give the largest absolute token savings without any local-model work, so they ship first and validate the determinization principle. Phase 2 builds on Phase 1 (the patcher needs the same context-expansion machinery). Phase 4 is the local runtime — a one-time integration that unlocks Phases 5 and beyond. Phase 6 closes the loop so future regressions are caught automatically.
+
+**Success metrics:** Cost per `implement-feature` self-test on the `CostTracker.subtract()` validation task drops below $0.30 (anchored against the $0.63 Stage 4c self-test datum in CLAUDE.md). Coder turn count on the same task drops by at least 30% from a captured pre-Phase-1 baseline. No regression on adversarial test quality (drop rate at `verify-claim-grounding`, mutation score, semantic-review finding rate all stay at or above historical bands). Full thresholds and the Phase 6 cost regression CI gate are in [stage5d-token-economy.md](./stage5d-token-economy.md).
+
 ### Lessons from Stage 4d that shape Stage 5
 
 These findings are architectural — they affect how every future stage is designed:
@@ -286,8 +303,8 @@ The BollardProvider interface supports all of these. Implementation priority fol
 
 - A/B experiment statistics (significance testing) on flag cohorts
 - Audience-based flag targeting (user attributes beyond percentage)
-- SQLite or webhook-push historical data storage
-- Local model support (ollama, llama.cpp) as LLM provider
+- ~~SQLite or webhook-push historical data storage~~ — SQLite shipped in Stage 5a Phase 2 (2026-05-05)
+- ~~Local model support (ollama, llama.cpp) as LLM provider~~ — promoted to Stage 5d ([stage5d-token-economy.md](./stage5d-token-economy.md))
 - Bollard marketplace for community blueprints
 - IDE extensions (VS Code, JetBrains) beyond MCP
 - Multi-repo / monorepo-aware verification
