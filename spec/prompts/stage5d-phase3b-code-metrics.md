@@ -1,36 +1,68 @@
-# Cursor Prompt — Stage 5d Phase 3b: Deterministic Code Metrics Extraction
+# Cursor Prompt — Stage 5d Phase 3b: Deterministic Code Metrics + Load Testing
 
-> **Purpose:** Add a `extract-code-metrics` deterministic node between `generate-review-diff` and `semantic-review`. It collects concrete, machine-readable signals — coverage delta on changed files, complexity hotspots, SAST pattern hits, git churn, probe latency percentiles, CVE detail — and injects them into the semantic reviewer's context. The reviewer stops having to infer what it can now read. This is ADR-0004 Tier 1 applied to the review scope.
+> **Purpose:** Add two deterministic nodes to the pipeline:
+> 1. `extract-code-metrics` — between `generate-review-diff` and `semantic-review`. Collects coverage delta, complexity hotspots, SAST findings, git churn, CVE detail, and probe latency percentiles. Injects all of it as structured context into the semantic reviewer so it stops inferring what it can now read.
+> 2. `run-load-tests` — optional stage inside `run-behavioral-tests`, activated when k6 is on PATH and `metrics.loadTest.enabled: true` in `.bollard.yml`. Produces p95/p99 latency and error-rate data that feeds into the semantic reviewer and probe perf report.
 >
-> **Zero new image deps.** Everything uses tools already in the `dev` image (`rg`, `git`, `pnpm`, `go`, `cargo`, `python3`) or already-available language-native coverage outputs. No semgrep, no external services.
+> **Tier (per ADR-0004):** Fully Tier 1 — zero LLM calls, zero new mandatory image deps. Every tool is either already in the `dev` image (`rg`, `git`, language-native coverage CLIs) or opt-in via `dev-full` (k6, semgrep). All extractors degrade gracefully to empty/zero when the tool is absent.
 
 Read CLAUDE.md fully before writing any code. Then read:
-- `spec/adr/0004-determinism-local-frontier-tiers.md` — confirms this is Tier 1 work
-- `spec/adr/0001-deterministic-filters-for-llm-output.md` — the grounding principle
-- `packages/verify/src/static.ts` — pattern for running tools and returning structured results
-- `packages/verify/src/behavioral-extractor.ts` — pattern for regex-based deterministic extraction
+- `spec/adr/0004-determinism-local-frontier-tiers.md` — Tier 1 confirmation
+- `spec/adr/0001-deterministic-filters-for-llm-output.md` — grounding principle
+- `packages/verify/src/static.ts` — pattern for tool execution + structured results
+- `packages/verify/src/behavioral-extractor.ts` — pattern for regex-based extraction
 - `packages/agents/prompts/semantic-reviewer.md` — what the reviewer currently sees (only diff + plan)
-- `packages/cli/src/agent-handler.ts` — `buildSemanticReviewerMessage` (the function to extend)
-- `packages/blueprints/src/implement-feature.ts` — node 25/26 (`generate-review-diff` → `semantic-review`) to see the insertion point
+- `packages/cli/src/agent-handler.ts` — `buildSemanticReviewerMessage` to extend
+- `packages/blueprints/src/implement-feature.ts` — insertion points: after node 25 (`generate-review-diff`) and inside `run-behavioral-tests` (node 22)
 - `packages/detect/src/types.ts` — `ToolchainProfile`, `VerificationCommand`
-- `packages/observe/src/providers/types.ts` — `ProbeResult`, `ProbeRunSummary`, `ProbeSummary`
+- `packages/observe/src/providers/types.ts` — `ProbeResult`, `ProbeRunSummary`
+
+---
+
+## Tool decision matrix (evaluated against Bollard's constraints)
+
+Every tool was evaluated against: self-contained Docker dev image, language-agnostic where possible, integrate with user's existing project config first, opinionated fallback, never block the pipeline.
+
+| Tool | Decision | Where | Why |
+|------|----------|-------|-----|
+| `rg` patterns (SAST) | ✅ `dev` image | `extract-code-metrics` | Already in image; curated embedded patterns; no config needed |
+| Semgrep | ✅ `dev-full` upgrade | `extract-code-metrics` | `which semgrep` → use OWASP rulesets; else `rg` fallback |
+| Coverage (v8/go/tarpaulin/pytest-cov) | ✅ language-native | `extract-code-metrics` | Already present in any project running tests; detect + degrade |
+| Git churn | ✅ `dev` image | `extract-code-metrics` | `git log` always available |
+| CVE JSON (`pnpm audit --json` etc.) | ✅ already runs | `extract-code-metrics` | Re-run with `--json` for structured detail; same tool as `static-checks` |
+| Probe latency percentiles | ✅ local JSONL | `extract-code-metrics` | Reads `FileMetricsStore` — no new dep |
+| Complexity from diff | ✅ pure TS | `extract-code-metrics` | Parse `+` hunk lines; count decision keywords; zero deps |
+| **k6** | ✅ `dev-full` opt-in | `run-behavioral-tests` | Single static binary; JS tests; `--out json`; fits Docker Compose model |
+| axe-core | 🔜 later | behavioral scope | Right tool for UI projects; separate PR after Phase 3b |
+| OWASP ZAP | 🔜 later | behavioral compose | Needs live service; separate compose service in `dev-full` |
+| Prometheus | 🔜 Stage 4b+ | observe provider | Interface exists; implementation deferred |
+| Chaos Mesh | ❌ | — | K8s-only; use `tc` for `network_delay` in existing `FaultInjector` |
+| SonarQube | ❌ | — | Requires external server; breaks self-contained Docker model |
+| Gatling / JMeter / Artillery | ❌ | — | k6 covers this; redundant |
+| SQLMap | ❌ | — | Exploitation tool, not scanner; `rg` covers SQL injection detection |
+| KICS | ❌ | — | IaC-only; out of scope for Bollard's `LanguageId` set |
+| Sitespeed.io | ❌ | — | Too heavy; k6 covers perf; axe-core covers usability (later) |
+| ESLint/Pylint/PMD | ✅ already done | `static-checks` | Biome/ruff/golangci-lint/clippy already wired per language |
+| SpotBugs/PMD (JVM) | 🔜 small add | `java.ts` detector | Add as `checks.sast` in Java detector; separate PR |
 
 ---
 
 ## What to build
 
-### 1. New file: `packages/verify/src/code-metrics.ts`
+### Part A — `extract-code-metrics` node
 
-This is the core deterministic extractor. Pure functions where possible, async where tool execution is needed.
+#### A1. New file: `packages/verify/src/code-metrics.ts`
 
-#### 1a. Coverage delta on changed files
+Pure functions + async tool runners. Every extractor has its own try/catch and returns zero/empty on failure.
+
+##### A1a. Coverage delta on changed files
 
 ```typescript
 export interface FileCoverage {
-  file: string           // relative path
-  lines: number          // total lines
+  file: string        // relative path
+  lines: number
   coveredLines: number
-  pct: number            // 0–100
+  pct: number         // 0–100
 }
 
 export interface CoverageDelta {
@@ -41,88 +73,92 @@ export interface CoverageDelta {
 }
 ```
 
-Detection logic (profile-driven, graceful degradation):
-- **TypeScript/JavaScript**: detect `@vitest/coverage-v8` in `node_modules/.pnpm` or `node_modules/@vitest`. If present, run `vitest run --coverage --reporter=json --coverage.reporter=json` with `--testPathPattern` limited to test files touching the changed source files. Parse `coverage/coverage-summary.json` (Istanbul/v8 JSON format). If absent → `tool: "none"`.
-- **Go**: run `go test -coverprofile=.bollard/cover.out ./...` then `go tool cover -func=.bollard/cover.out` → parse line-level output. Filter to changed files only.
-- **Rust**: detect `cargo-tarpaulin` in `~/.cargo/bin`. If present, run `cargo tarpaulin --out Json --output-dir .bollard/` → parse `tarpaulin-report.json`. Filter to changed files.
-- **Python**: detect `pytest-cov` via `python3 -c "import pytest_cov"`. If present, run `python3 -m pytest --cov --cov-report=json:/.bollard/coverage.json`. Parse. Filter to changed files.
-- All: **timeout 60s**, return `tool: "none"` on timeout or tool-not-found. Never block the pipeline.
+Detection (profile-driven, `tool: "none"` on timeout/missing):
+- **TypeScript/JavaScript**: detect `@vitest/coverage-v8` in `node_modules`. Run `vitest run --coverage --reporter=json --coverage.reporter=json`. Limit to test files that import any changed source file (pass as positional args). Parse `coverage/coverage-summary.json`. Timeout 60s.
+- **Go**: `go test -coverprofile=.bollard/cover.out ./...` then `go tool cover -func=.bollard/cover.out`. Parse, filter to changed files. Timeout 60s.
+- **Rust**: detect `cargo-tarpaulin`. Run `cargo tarpaulin --out Json --output-dir .bollard/`. Parse `tarpaulin-report.json`. Timeout 90s.
+- **Python**: detect `pytest-cov` via `python3 -c "import pytest_cov"`. Run `python3 -m pytest --cov --cov-report=json:.bollard/coverage.json`. Parse. Timeout 60s.
+- All others → `tool: "none"`.
 
-#### 1b. Complexity hotspots from diff hunks (zero new deps — uses `rg` + diff parsing)
+##### A1b. Complexity hotspots (pure diff parsing — zero new deps)
 
 ```typescript
 export interface ComplexityHotspot {
   file: string
-  functionName: string    // best-effort from context lines
-  decisionPoints: number  // count of: if|else if|for|while|switch|case|catch|&&|\|\||\?
-  added: boolean          // true = new code, false = modified
+  functionName: string  // best-effort: nearest function|def|func|fn|pub fn before hunk
+  decisionPoints: number  // if|else if|for|while|switch|case|catch|&&|\|\||\?:
+  added: boolean
 }
 
 export interface ComplexityReport {
-  hotspots: ComplexityHotspot[]   // sorted desc by decisionPoints
+  hotspots: ComplexityHotspot[]  // sorted desc by decisionPoints
   maxDecisionPoints: number
   filesAnalysed: number
 }
 ```
 
-Parse the unified diff from `ctx.results["generate-review-diff"].data.diff`. For each `+` hunk line, extract the enclosing function context (from `@@` context lines or nearest `function|def|func|fn |pub fn` in the preceding context). Count decision-point keywords in the added/modified lines only. No external tool — pure string parsing of the diff. This is an approximation but it's deterministic and fast.
+Parse the unified diff string. For each `+` hunk: find nearest preceding context line matching `function|def|func|fn |pub fn|class ` (the `@@` header often contains the function name — prefer it). Count decision-point keywords on `+` lines only within that function block. Flag as hotspot if `decisionPoints >= hotspotThreshold` (default 5, configurable via `MetricsConfig`). Pure TypeScript string parsing — no external tool.
 
-Threshold: flag as a hotspot if `decisionPoints >= 5` in a single function's added lines.
-
-#### 1c. SAST patterns via `rg` (already in dev image)
+##### A1c. SAST via `rg` with Semgrep upgrade path
 
 ```typescript
 export interface SastFinding {
-  pattern: string     // human name: "eval-misuse", "sql-concat", "path-traversal", etc.
+  pattern: string    // "eval-misuse", "sql-concat", "path-traversal", etc.
   file: string
   line: number
-  match: string       // the matched line (truncated to 200 chars)
+  match: string      // truncated to 200 chars
   severity: "high" | "medium" | "low"
+  source: "rg" | "semgrep"
 }
 
 export interface SastReport {
   findings: SastFinding[]
   patternsChecked: number
   filesScanned: number
+  tool: "semgrep" | "rg"
 }
 ```
 
-Run `rg` against **only the changed files** (from `ctx.changedFiles`). Use a curated, embedded pattern set — no external rule files needed:
+**Detection order:**
+1. `which semgrep` → run `semgrep --config p/owasp-top-ten --config p/secrets --json` against changed files. Parse JSON output. `tool: "semgrep"`.
+2. Else → `rg` embedded patterns (`tool: "rg"`):
 
 ```typescript
-const SAST_PATTERNS: Array<{ name: string; pattern: string; severity: SastFinding["severity"]; langs: LanguageId[] }> = [
+const SAST_PATTERNS = [
   // Injection
-  { name: "eval-misuse",       pattern: r`\beval\s*\(`,                              severity: "high",   langs: ["typescript","javascript","python"] },
-  { name: "sql-concat",        pattern: r`(query|sql|SQL)\s*[+=]\s*["'`].*\+`,      severity: "high",   langs: ["typescript","javascript","python","java","kotlin"] },
-  { name: "shell-exec",        pattern: r`\b(exec|execSync|child_process|os\.system|subprocess\.call)\b`, severity: "high", langs: ["typescript","javascript","python"] },
-  { name: "path-traversal",    pattern: r`\.\./|path\.join\([^)]*req\b`,             severity: "high",   langs: ["typescript","javascript"] },
-  // Secrets
-  { name: "hardcoded-secret",  pattern: r`(password|secret|api_key|token)\s*=\s*["'][^"']{8,}["']`, severity: "high", langs: ["typescript","javascript","python","java","kotlin","go","rust"] },
-  { name: "hardcoded-jwt",     pattern: r`eyJ[A-Za-z0-9_-]{20,}`,                   severity: "medium", langs: ["typescript","javascript","python","java","kotlin"] },
+  { name: "eval-misuse",         pattern: String.raw`\beval\s*\(`,                                         severity: "high",   langs: ["typescript","javascript","python"] },
+  { name: "sql-concat",          pattern: String.raw`(query|sql|SQL)\s*[+]=?\s*["'\`]`,                   severity: "high",   langs: ["typescript","javascript","python","java","kotlin"] },
+  { name: "shell-exec",          pattern: String.raw`\b(execSync|child_process|os\.system|subprocess\.call)\b`, severity: "high", langs: ["typescript","javascript","python"] },
+  { name: "path-traversal",      pattern: String.raw`\.\./|path\.join\([^)]*req\b`,                        severity: "high",   langs: ["typescript","javascript"] },
+  // Secrets (complement gitleaks which runs in static-checks)
+  { name: "hardcoded-secret",    pattern: String.raw`(password|secret|api_key|token)\s*=\s*["'][^"']{8,}["']`, severity: "high", langs: ["typescript","javascript","python","java","kotlin","go","rust"] },
+  { name: "hardcoded-jwt",       pattern: String.raw`eyJ[A-Za-z0-9_-]{20,}`,                               severity: "medium", langs: ["typescript","javascript","python","java","kotlin"] },
   // Unsafe patterns
-  { name: "prototype-pollution",pattern: r`\.__proto__\s*=|\[["']__proto__["']\]`,  severity: "high",   langs: ["typescript","javascript"] },
-  { name: "regex-dos",         pattern: r`new RegExp\([^)]*\+`,                      severity: "medium", langs: ["typescript","javascript"] },
-  { name: "unsafe-deserialize",pattern: r`\bpickle\.loads?\b|\byaml\.load\b`,       severity: "high",   langs: ["python"] },
-  { name: "go-unchecked-err",  pattern: r`^\s*[a-zA-Z_]+,\s*_\s*:?=`,              severity: "low",    langs: ["go"] },
-  { name: "panic-unwrap",      pattern: r`\.unwrap\(\)|\.expect\(`,                  severity: "low",    langs: ["rust"] },
-]
+  { name: "prototype-pollution", pattern: String.raw`\.__proto__\s*=|\[["']__proto__["']\]`,               severity: "high",   langs: ["typescript","javascript"] },
+  { name: "regex-dos",           pattern: String.raw`new RegExp\([^)]*\+`,                                 severity: "medium", langs: ["typescript","javascript"] },
+  { name: "unsafe-deserialize",  pattern: String.raw`\bpickle\.loads?\b|\byaml\.load\b`,                  severity: "high",   langs: ["python"] },
+  { name: "go-unchecked-err",    pattern: String.raw`^\s*[a-zA-Z_]+,\s*_\s*:?=`,                         severity: "low",    langs: ["go"] },
+  { name: "rust-unwrap",         pattern: String.raw`\.unwrap\(\)`,                                        severity: "low",    langs: ["rust"] },
+  { name: "java-sql-concat",     pattern: String.raw`Statement.*execute.*\+`,                              severity: "high",   langs: ["java","kotlin"] },
+  { name: "java-xxe",            pattern: String.raw`DocumentBuilderFactory|SAXParserFactory`,             severity: "medium", langs: ["java","kotlin"] },
+] as const
 ```
 
-Filter patterns by `profile.language`. Run `rg --json -n <pattern> <file>` for each pattern × each changed file. Parse JSON output. Deduplicate by (file, line). **Only scan lines that appear in the diff `+` hunks** (new/modified code), not the whole file.
+Filter patterns by `profile.language`. Run `rg --json -n` per pattern × per changed file. Only flag lines appearing in `+` hunks. Deduplicate by `(file, line)`.
 
-#### 1d. Git churn score for changed files
+##### A1d. Git churn score
 
 ```typescript
 export interface ChurnScore {
   file: string
-  commitCount: number   // git log --follow --oneline -- <file> | wc -l
-  churnRisk: "low" | "medium" | "high"  // low<10, medium<30, high>=30
+  commitCount: number
+  churnRisk: "low" | "medium" | "high"  // <10 / <30 / >=30 (configurable via MetricsConfig)
 }
 ```
 
-Run `git log --follow --oneline -- <file>` per changed file. Count lines. Fast, always available, no external deps.
+`git log --follow --oneline -- <file>` per changed file. Count output lines. Always available.
 
-#### 1e. CVE detail from audit JSON
+##### A1e. CVE detail from audit JSON
 
 ```typescript
 export interface CveDetail {
@@ -140,9 +176,13 @@ export interface AuditDetail {
 }
 ```
 
-Re-run the audit tool with `--json` output (vs. the current human-readable run in `static-checks`). Parse structured JSON. For pnpm: `pnpm audit --json` → parse `advisories`. For cargo: `cargo audit --json` → parse `vulnerabilities`. For Python: `pip-audit --format=json` (detect presence first). This replaces the current pass/fail audit check with actionable detail the semantic reviewer can cite.
+Re-run audit with `--json` (same tool as `static-checks` but structured output — does NOT replace the gating pass/fail check):
+- pnpm: `pnpm audit --json` → parse `advisories` map
+- cargo: `cargo audit --json` → parse `vulnerabilities.list`
+- Python: `pip-audit --format=json` if on PATH
+- Timeout 30s; `tool: "none"` on failure.
 
-#### 1f. Probe latency percentiles (production performance)
+##### A1f. Probe latency percentiles (production performance)
 
 ```typescript
 export interface ProbePerf {
@@ -161,13 +201,13 @@ export interface ProbePerf {
 export interface ProbePerfReport {
   probes: ProbePerf[]
   windowMs: number
-  source: "file-metrics-store" | "none"
+  source: "file-metrics-store" | "k6" | "none"
 }
 ```
 
-Read from `.bollard/observe/metrics.jsonl` (the `FileMetricsStore` already writes here). Parse the last N probe results per `probeId` (default window: last 100 results or 24h, whichever is smaller). Compute percentiles using a simple sort. Trend: compare avg of last 20% of window vs. first 20% — if delta > 15% degradation → "degrading". This is **purely deterministic** — no LLM, just JSONL parsing and arithmetic.
+Read `.bollard/observe/metrics.jsonl` (written by `FileMetricsStore`). Also read `.bollard/observe/k6-latest.json` if present (written by Part B). Per `probeId`: sort by timestamp, take last `windowResults` results (default 100) or 24h window. Compute percentiles via sort. Trend: avg of last-20% vs first-20% — "degrading" if delta > 15%. Return `source: "none"` if neither file exists.
 
-### 2. New file: `packages/verify/src/code-metrics-runner.ts`
+#### A2. New file: `packages/verify/src/code-metrics-runner.ts`
 
 ```typescript
 export interface CodeMetrics {
@@ -185,31 +225,32 @@ export async function extractCodeMetrics(
   diff: string,
   changedFiles: string[],
   profile: ToolchainProfile,
-  warn: (msg: string) => void,
+  warn: (msg: string, data?: unknown) => void,
 ): Promise<CodeMetrics>
 ```
 
-Runs all six extractors in parallel (`Promise.all`). Each has its own try/catch returning a zero/empty result on failure — no extractor can block the others. Total wall time bounded by the slowest (coverage, ~30s). Hard timeout: 90s overall.
+Run all six extractors with `Promise.all`. Each has independent try/catch returning zero/empty. Hard overall timeout: 90s via `Promise.race`. Never throws.
 
-### 3. New `extract-code-metrics` blueprint node
+#### A3. New blueprint node `extract-code-metrics`
 
-Insert between `generate-review-diff` (node 25) and `semantic-review` (node 26) in `packages/blueprints/src/implement-feature.ts`.
+Insert between `generate-review-diff` (node 25) and `semantic-review` (node 26):
 
 ```typescript
 {
   id: "extract-code-metrics",
   name: "Extract Code Metrics",
   type: "deterministic",
-  onFailure: "skip",   // never blocks semantic review
+  onFailure: "skip",
   execute: async (ctx: PipelineContext): Promise<NodeResult> => {
     const diffRes = ctx.results["generate-review-diff"]?.data as { diff?: string } | undefined
     const diff = diffRes?.diff ?? ""
-    const changedFiles = ctx.changedFiles ?? []
     const profile = ctx.toolchainProfile
     if (!profile || !diff.trim()) {
       return { status: "ok", data: { skipped: true, reason: "no diff or profile" } }
     }
-    const metrics = await extractCodeMetrics(workDir, diff, changedFiles, profile, ctx.log.warn)
+    const metrics = await extractCodeMetrics(
+      workDir, diff, ctx.changedFiles ?? [], profile, ctx.log.warn
+    )
     ctx.log.info("code_metrics_result", {
       event: "code_metrics_result",
       runId: ctx.runId,
@@ -217,9 +258,11 @@ Insert between `generate-review-diff` (node 25) and `semantic-review` (node 26) 
       coveragePct: metrics.coverage.overallPct,
       complexityHotspots: metrics.complexity.hotspots.length,
       sastFindings: metrics.sast.findings.length,
+      sastTool: metrics.sast.tool,
       auditHigh: metrics.audit.highCount,
       auditCritical: metrics.audit.criticalCount,
       probeCount: metrics.probePerf.probes.length,
+      probePerfSource: metrics.probePerf.source,
       durationMs: metrics.durationMs,
     })
     return { status: "ok", data: { metrics } }
@@ -227,161 +270,134 @@ Insert between `generate-review-diff` (node 25) and `semantic-review` (node 26) 
 }
 ```
 
-### 4. Update `buildSemanticReviewerMessage` in `packages/cli/src/agent-handler.ts`
+#### A4. Update `buildSemanticReviewerMessage` in `packages/cli/src/agent-handler.ts`
 
-Extend to inject the metrics. Keep the existing diff + plan sections. Add a `## Code Metrics` section after the diff:
+Add a `## Code Metrics` section between the diff and the plan. Only emit sub-sections where data is non-empty:
 
-```typescript
-function buildSemanticReviewerMessage(ctx: PipelineContext): string {
-  const diffRes = ctx.results["generate-review-diff"]?.data as { diff?: string } | undefined
-  const diff = diffRes?.diff ?? ""
-  const plan = ctx.plan
-  const metricsRes = ctx.results["extract-code-metrics"]?.data as
-    | { skipped?: boolean; metrics?: CodeMetrics }
-    | undefined
-  const metrics = metricsRes?.metrics
+- `### Coverage (<tool>)` — overall pct + per-file breakdown
+- `### Complexity hotspots` — top 5 by decision-point count
+- `### SAST findings (<tool>)` — severity / pattern / file:line / match
+- `### High-churn files` — files with commitCount >= highThreshold
+- `### Dependency vulnerabilities` — critical/high counts + top-5 details
+- `### Degrading probe performance` — probes where `trend === "degrading"`
+- `### Load test (k6)` — when `probePerf.source === "k6"`, show p95/p99/error_rate per endpoint; flag endpoints with `error_rate > 1%` or `p99 > 1000ms`
 
-  const metricsSections: string[] = []
+Close with: `"Review the diff against the plan. Use the code metrics above to ground findings in concrete data where relevant. Output a JSON ReviewDocument."`
 
-  if (metrics) {
-    // Coverage
-    if (metrics.coverage.tool !== "none" && metrics.coverage.overallPct !== null) {
-      metricsSections.push(`### Coverage (${metrics.coverage.tool})
-Overall on changed files: ${metrics.coverage.overallPct.toFixed(1)}%
-${metrics.coverage.changedFiles.map(f => `- ${f.file}: ${f.pct.toFixed(1)}% (${f.coveredLines}/${f.lines} lines)`).join("\n")}`)
-    }
+#### A5. Update semantic-reviewer prompt
 
-    // Complexity hotspots
-    if (metrics.complexity.hotspots.length > 0) {
-      metricsSections.push(`### Complexity hotspots (decision points in added code)
-${metrics.complexity.hotspots.slice(0, 5).map(h => `- ${h.file} \`${h.functionName}\`: ${h.decisionPoints} decision points`).join("\n")}`)
-    }
-
-    // SAST
-    if (metrics.sast.findings.length > 0) {
-      metricsSections.push(`### SAST findings (rg patterns, added lines only)
-${metrics.sast.findings.map(f => `- [${f.severity}] ${f.pattern} in ${f.file}:${f.line}: \`${f.match}\``).join("\n")}`)
-    }
-
-    // Churn
-    const highChurn = metrics.churn.filter(c => c.churnRisk === "high")
-    if (highChurn.length > 0) {
-      metricsSections.push(`### High-churn files (commit history)
-${highChurn.map(c => `- ${c.file}: ${c.commitCount} commits`).join("\n")}`)
-    }
-
-    // CVEs
-    if (metrics.audit.criticalCount > 0 || metrics.audit.highCount > 0) {
-      metricsSections.push(`### Dependency vulnerabilities
-Critical: ${metrics.audit.criticalCount}, High: ${metrics.audit.highCount}
-${metrics.audit.details.map(d => `- ${d.package}: ${d.severity} — ${d.title}`).join("\n")}`)
-    }
-
-    // Probe performance
-    const degrading = metrics.probePerf.probes.filter(p => p.trend === "degrading")
-    if (degrading.length > 0) {
-      metricsSections.push(`### Degrading probe performance
-${degrading.map(p => `- ${p.probeId} (${p.endpoint}): p95=${p.p95Ms}ms, failRate=${(p.failRate * 100).toFixed(1)}%`).join("\n")}`)
-    }
-  }
-
-  const metricsBlock = metricsSections.length > 0
-    ? `\n## Code Metrics\n\n${metricsSections.join("\n\n")}\n`
-    : ""
-
-  return `## Git Diff\n\n<diff>\n${diff}\n</diff>\n${metricsBlock}\n## Plan\n\n<plan>\n${JSON.stringify(plan ?? {}, null, 2)}\n</plan>\n\nReview the diff against the plan. Use the code metrics above to ground findings in concrete data. Output a JSON ReviewDocument.`
-}
-```
-
-### 5. Update semantic-reviewer prompt
-
-Add a section after `# Inputs` that explains the new context:
+After `# Inputs`, add:
 
 ```markdown
-- **Code metrics** (when available): coverage % on changed files, complexity hotspots, SAST findings, churn scores, CVE detail, probe latency trends. These are deterministically computed — cite them in your grounding when relevant. A finding grounded in a concrete metric (e.g. "coverage 23% on changed file") is stronger than an inference from reading the diff.
+- **Code metrics** (when present, between diff and plan): coverage % on changed files,
+  complexity hotspots (decision-point count in new code), SAST findings (rg patterns or
+  semgrep OWASP rules on added lines only), git churn scores, CVE detail, probe latency
+  percentiles, and optionally k6 load test results. These are deterministically computed —
+  cite them in grounding when relevant. A finding grounded in a concrete number
+  ("coverage 21% on changed file", "p99=1240ms above 1s threshold") is stronger than
+  an inference from reading the diff.
 ```
 
-Update the `ReviewCategory` set to include two new categories that the metrics unlock:
-- `"insufficient-coverage"` — coverage on changed files below threshold (suggested: 60%)
-- `"security-pattern"` — SAST finding or CVE in changed code
+Add two new `ReviewCategory` values to `review-grounding.ts` and the `ReviewCategory` type:
+- `"insufficient-coverage"` — coverage on changed files below threshold
+- `"security-pattern"` — SAST finding, CVE, or hardcoded secret in changed code
 
-Add both to `review-grounding.ts` `VALID_CATEGORIES` and the `ReviewCategory` type.
-
-### 6. `.bollard.yml` extension for thresholds
-
-Add `metrics:` section to the Zod schema in `packages/cli/src/config.ts`:
-
-```typescript
-const metricsYamlSchema = z.object({
-  coverage: z.object({
-    enabled: z.boolean().default(true),
-    thresholdPct: z.number().min(0).max(100).default(60),
-  }).optional(),
-  complexity: z.object({
-    enabled: z.boolean().default(true),
-    hotspotThreshold: z.number().default(5),  // decision points
-  }).optional(),
-  sast: z.object({
-    enabled: z.boolean().default(true),
-  }).optional(),
-  churn: z.object({
-    enabled: z.boolean().default(true),
-    highThreshold: z.number().default(30),  // commits
-  }).optional(),
-  probePerf: z.object({
-    enabled: z.boolean().default(true),
-    windowResults: z.number().default(100),
-  }).optional(),
-}).strict()
-```
-
-Extend `BollardConfig` and thread through `PipelineContext` via `toolchainProfile` (or directly from config in `extractCodeMetrics`). Defaults are opinionated and work without any user config.
-
-### 7. Tests
-
-New file `packages/verify/tests/code-metrics.test.ts`:
-- `extractComplexityFromDiff`: given a diff string with known decision points → correct hotspot count
-- `buildSastFindings`: given a file with a known `eval(` call → finding returned; clean file → empty
-- `computeChurnScore`: given mock git output → correct risk tier
-- `aggregateProbePerf`: given JSONL probe results → correct p95, trend detection
-- `extractCveDetail`: given mock `pnpm audit --json` output → correct counts
-- All extractors: tool-not-found path → returns zero/empty result, no throw
-
-Update `packages/blueprints/tests/implement-feature.test.ts`:
-- Node count: 31 (was 30)
-- `"extract-code-metrics"` appears between `"generate-review-diff"` and `"semantic-review"`
-- `onFailure: "skip"` on the new node
-
-Update `packages/verify/src/review-grounding.ts`:
-- `VALID_CATEGORIES` includes `"insufficient-coverage"` and `"security-pattern"`
-- Tests in `packages/verify/tests/` (find the existing review-grounding test file) updated for new categories
-
-### 8. `ToolchainProfile` extension
-
-Add optional `metrics` field to `ToolchainProfile` in `packages/detect/src/types.ts`:
+#### A6. `ToolchainProfile` extension in `packages/detect/src/types.ts`
 
 ```typescript
 export interface MetricsConfig {
-  coverage: { enabled: boolean; thresholdPct: number }
-  complexity: { enabled: boolean; hotspotThreshold: number }
-  sast: { enabled: boolean }
-  churn: { enabled: boolean; highThreshold: number }
-  probePerf: { enabled: boolean; windowResults: number }
+  coverage:   { enabled: boolean; thresholdPct: number }        // default: true, 60
+  complexity: { enabled: boolean; hotspotThreshold: number }    // default: true, 5
+  sast:       { enabled: boolean }                              // default: true
+  churn:      { enabled: boolean; highThreshold: number }       // default: true, 30
+  probePerf:  { enabled: boolean; windowResults: number }       // default: true, 100
+  loadTest:   { enabled: boolean; vus: number; durationSec: number } // default: false, 10, 30
 }
 ```
 
-Add `metrics?: MetricsConfig` to `ToolchainProfile`. Default in each language detector: all enabled with the thresholds above. Thread through `extractCodeMetrics`.
+Add `metrics?: MetricsConfig` to `ToolchainProfile`. Add `metrics:` Zod schema to `packages/cli/src/config.ts` with the same structure, merging user values over opinionated defaults. Defaults work without any user config — `loadTest.enabled` defaults to `false`.
+
+---
+
+### Part B — k6 load testing inside `run-behavioral-tests`
+
+#### B1. Detection and execution
+
+After the existing `runTests(...)` call in `run-behavioral-tests` (node 22), add an optional k6 stage. Conditions to run:
+1. `which k6` succeeds
+2. `behavioralCtx.endpoints.length > 0`
+3. `profile.metrics?.loadTest?.enabled === true`
+
+If all three: generate k6 script, run it, parse results into `ProbePerfReport`, write `.bollard/observe/k6-latest.json`.
+
+The k6 stage never fails `run-behavioral-tests` — wrap in try/catch, log a warning on failure, continue.
+
+#### B2. k6 script generation (pure TS, deterministic)
+
+New function `generateK6Script(endpoints: EndpointEntry[], opts: { vus: number; durationSec: number }): string`:
+
+Generate a k6 JavaScript script from `BehavioralContext.endpoints`. Each endpoint becomes an `http.get` / `http.post` call with a basic status assertion. Script:
+
+```javascript
+import http from 'k6/http'
+import { check, sleep } from 'k6'
+export const options = { vus: {{vus}}, duration: '{{duration}}s' }
+const BASE = __ENV.BASE_URL || 'http://localhost:3000'
+export default function () {
+  // one check per endpoint
+  const r1 = http.get(`${BASE}/api/health`)
+  check(r1, { 'status 2xx': (r) => r.status >= 200 && r.status < 300 })
+  sleep(0.1)
+}
+```
+
+Write to `.bollard/k6-behavioral.js`. Run:
+```bash
+k6 run --out json=.bollard/observe/k6-latest.json \
+   --env BASE_URL=<observe.baseUrl or http://localhost:3000> \
+   --quiet \
+   .bollard/k6-behavioral.js
+```
+
+Timeout: `(durationSec * 2) + 30` seconds. Parse `k6-latest.json` summary object for `http_req_duration` (p95/p99) and `http_req_failed` rate per endpoint group. Write into `ProbePerfReport` with `source: "k6"`.
+
+---
+
+### Part C — Tests
+
+#### C1. `packages/verify/tests/code-metrics.test.ts`
+
+Unit tests (all pure / mock-based — no real tool execution):
+- `extractComplexityFromDiff`: diff with known `if/for/&&` → correct hotspot count; diff with 0 decision points → no hotspot
+- `buildSastFindings` (rg path): file content with `eval(` → finding returned; clean file → empty; pattern filtered by wrong language → not applied
+- `computeChurnScore`: mock git output 5 lines → "low"; 35 lines → "high"
+- `aggregateProbePerf`: 100 probe JSONL entries → correct p50/p95/p99; empty file → `source: "none"`; degrading trend detected correctly
+- `extractCveDetail`: mock `pnpm audit --json` → correct counts and top-5 details
+- `generateK6Script`: 2 endpoints → script contains both URLs, correct vus/duration
+- All extractors: tool-not-found path → zero/empty result, never throws
+
+#### C2. Update `packages/blueprints/tests/implement-feature.test.ts`
+- Node count: 31 (was 30)
+- `"extract-code-metrics"` between `"generate-review-diff"` and `"semantic-review"`
+- `onFailure: "skip"` asserted on `"extract-code-metrics"`
+
+#### C3. Update review-grounding tests
+- `"insufficient-coverage"` and `"security-pattern"` in `VALID_CATEGORIES` → pass validation
+- Unknown category → still fails
 
 ---
 
 ## What NOT to do
 
-- Do not install semgrep, SonarQube, or any tool that isn't already in the dev image or available as a language-native CLI already on the PATH for that language.
-- Do not run coverage on the full test suite — only on test files whose source imports any of the changed files. Pass `--testPathPattern` / file args to limit scope.
-- Do not block the pipeline on metrics failure. Every extractor wraps in try/catch returning zero result. `extract-code-metrics` has `onFailure: "skip"`.
-- Do not add new `ReviewCategory` values beyond `"insufficient-coverage"` and `"security-pattern"`. The existing six categories stay.
-- Do not change the semantic-reviewer agent's output schema or grounding verifier — metrics are input context only.
-- Do not run probe perf analysis if `.bollard/observe/metrics.jsonl` does not exist — return `source: "none"`.
+- Do not add semgrep to the `dev` image — `dev-full` upgrade path only via `which semgrep`.
+- Do not add k6 to the `dev` image — `dev-full` only, and only runs when `metrics.loadTest.enabled: true`. Default is off.
+- Do not wire OWASP ZAP, Chaos Mesh, SonarQube, Gatling, JMeter, SQLMap, or KICS — none fit the self-contained Docker model or Bollard's scope.
+- Do not run coverage on the full test suite — only test files importing changed source files.
+- Do not block the pipeline: `onFailure: "skip"` on `extract-code-metrics`; k6 stage is best-effort inside `run-behavioral-tests`.
+- Do not change the semantic-reviewer output schema or grounding verifier — metrics are input context only.
+- Do not add `ReviewCategory` values beyond `"insufficient-coverage"` and `"security-pattern"`.
+- Do not run probe perf if `.bollard/observe/metrics.jsonl` does not exist — return `source: "none"`.
+- Do not wire axe-core, Sitespeed.io, or OWASP ZAP in this phase — later behavioral-compose extension.
 
 ---
 
@@ -390,14 +406,15 @@ Add `metrics?: MetricsConfig` to `ToolchainProfile`. Default in each language de
 ```bash
 docker compose run --rm dev run typecheck
 docker compose run --rm dev run lint
-docker compose run --rm dev run test        # 31 nodes, new code-metrics tests pass
+docker compose run --rm dev run test   # 31 nodes, code-metrics tests pass
 docker compose run --rm dev --filter @bollard/cli run start -- verify --profile
 ```
 
-Bollard-on-Bollard self-test (`CostTracker.divide` or similar):
-- `extract-code-metrics` node appears in run output
-- `code_metrics_result` log event emitted with coverage tool, hotspot count, SAST count
-- Semantic reviewer message includes a `## Code Metrics` section
-- Blueprint: 31 nodes
-- Semantic reviewer findings reference concrete metric data (grounding quotes cite coverage % or SAST pattern name)
-- No regression: all existing grounding categories still work, `verify-review-grounding` drop rate unchanged
+Bollard-on-Bollard self-test (`CostTracker.divide`):
+- `extract-code-metrics` node appears in run output (node 26 of 31)
+- `code_metrics_result` event logged with all fields
+- `buildSemanticReviewerMessage` output includes `## Code Metrics` section
+- Semantic reviewer findings cite concrete metric data in grounding quotes
+- `"insufficient-coverage"` and `"security-pattern"` accepted by `verify-review-grounding`
+- k6 stage skips gracefully when k6 not on PATH (expected in `dev` image)
+- No regression: existing grounding categories and drop rates unchanged
