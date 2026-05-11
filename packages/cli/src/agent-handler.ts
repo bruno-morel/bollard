@@ -16,6 +16,7 @@ import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context
 import { BollardError } from "@bollard/engine/src/errors.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
 import type { BehavioralContext } from "@bollard/verify/src/behavioral-extractor.js"
+import type { CodeMetrics } from "@bollard/verify/src/code-metrics-runner.js"
 import {
   MAX_PRELOAD_CHARS_PER_FILE,
   MAX_PRELOAD_FILES,
@@ -327,12 +328,18 @@ function buildTesterMessage(ctx: PipelineContext): string {
 function buildSemanticReviewerMessage(ctx: PipelineContext): string {
   const diffRes = ctx.results["generate-review-diff"]?.data as { diff?: string } | undefined
   const diff = diffRes?.diff ?? ""
+  const metricsRes = ctx.results["extract-code-metrics"]?.data as
+    | { metrics?: CodeMetrics }
+    | undefined
   const plan = ctx.plan
+  const metricsSection = buildCodeMetricsSection(metricsRes?.metrics, ctx.toolchainProfile)
   return `## Git Diff
 
 <diff>
 ${diff}
 </diff>
+
+${metricsSection}
 
 ## Plan
 
@@ -340,7 +347,91 @@ ${diff}
 ${JSON.stringify(plan ?? {}, null, 2)}
 </plan>
 
-Review the diff against the plan. Output a JSON ReviewDocument.`
+Review the diff against the plan. Use the code metrics above to ground findings in concrete data where relevant. Output a JSON ReviewDocument.`
+}
+
+function buildCodeMetricsSection(
+  metrics: CodeMetrics | undefined,
+  profile?: ToolchainProfile,
+): string {
+  if (!metrics) return ""
+
+  const lines: string[] = ["## Code Metrics"]
+
+  if (metrics.coverage.tool !== "none" && metrics.coverage.overallPct !== null) {
+    lines.push("", `### Coverage (${metrics.coverage.tool})`)
+    lines.push(`- Overall: ${metrics.coverage.overallPct}%`)
+    for (const file of metrics.coverage.changedFiles.slice(0, 10)) {
+      lines.push(`- ${file.file}: ${file.pct}% (${file.coveredLines}/${file.lines} lines)`)
+    }
+  }
+
+  if (metrics.complexity.hotspots.length > 0) {
+    lines.push("", "### Complexity hotspots")
+    for (const hotspot of metrics.complexity.hotspots.slice(0, 5)) {
+      lines.push(
+        `- ${hotspot.file} ${hotspot.functionName}: ${hotspot.decisionPoints} decision points`,
+      )
+    }
+  }
+
+  if (metrics.sast.findings.length > 0) {
+    lines.push("", `### SAST findings (${metrics.sast.tool})`)
+    for (const finding of metrics.sast.findings.slice(0, 10)) {
+      lines.push(
+        `- ${finding.severity} ${finding.pattern} ${finding.file}:${finding.line} ${finding.match}`,
+      )
+    }
+  }
+
+  const highThreshold = profile?.metrics?.churn.highThreshold ?? 30
+  const highChurn = metrics.churn.filter((score) => score.commitCount >= highThreshold)
+  if (highChurn.length > 0) {
+    lines.push("", "### High-churn files")
+    for (const score of highChurn.slice(0, 10)) {
+      lines.push(`- ${score.file}: ${score.commitCount} commits (${score.churnRisk})`)
+    }
+  }
+
+  if (
+    metrics.audit.criticalCount > 0 ||
+    metrics.audit.highCount > 0 ||
+    metrics.audit.details.length > 0
+  ) {
+    lines.push("", "### Dependency vulnerabilities")
+    lines.push(
+      `- ${metrics.audit.tool}: ${metrics.audit.criticalCount} critical, ${metrics.audit.highCount} high`,
+    )
+    for (const cve of metrics.audit.details.slice(0, 5)) {
+      lines.push(`- ${cve.severity} ${cve.package}: ${cve.title}`)
+    }
+  }
+
+  const degrading = metrics.probePerf.probes.filter((probe) => probe.trend === "degrading")
+  if (degrading.length > 0) {
+    lines.push("", "### Degrading probe performance")
+    for (const probe of degrading.slice(0, 10)) {
+      lines.push(
+        `- ${probe.probeId} ${probe.endpoint}: p95=${probe.p95Ms}ms p99=${probe.p99Ms}ms failRate=${probe.failRate}`,
+      )
+    }
+  }
+
+  if (metrics.probePerf.source === "k6" && metrics.probePerf.probes.length > 0) {
+    lines.push("", "### Load test (k6)")
+    for (const probe of metrics.probePerf.probes.slice(0, 10)) {
+      const flags = [
+        probe.failRate > 0.01 ? "error_rate>1%" : "",
+        probe.p99Ms > 1000 ? "p99>1000ms" : "",
+      ].filter(Boolean)
+      const suffix = flags.length > 0 ? ` (${flags.join(", ")})` : ""
+      lines.push(
+        `- ${probe.endpoint}: p95=${probe.p95Ms}ms p99=${probe.p99Ms}ms error_rate=${probe.failRate}${suffix}`,
+      )
+    }
+  }
+
+  return lines.length === 1 ? "" : lines.join("\n")
 }
 
 function buildContractTesterMessage(ctx: PipelineContext): string {

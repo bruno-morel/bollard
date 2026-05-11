@@ -11,6 +11,8 @@ import { extractProbes } from "@bollard/observe/src/probe-extractor.js"
 import type { BehavioralContext } from "@bollard/verify/src/behavioral-extractor.js"
 import { buildBehavioralContext } from "@bollard/verify/src/behavioral-extractor.js"
 import { behavioralContextToCorpus } from "@bollard/verify/src/behavioral-grounding.js"
+import { extractCodeMetrics } from "@bollard/verify/src/code-metrics-runner.js"
+import { commandOnPath, runK6LoadTest } from "@bollard/verify/src/code-metrics.js"
 import {
   generateBehavioralCompose,
   generateVerifyCompose,
@@ -1224,14 +1226,14 @@ export function createImplementFeatureBlueprint(
             return { status: "ok", data: { skipped: true, reason: "no behavioral tests written" } }
           }
 
+          const behavioralCtx = behRes?.context ?? {
+            endpoints: [],
+            config: [],
+            dependencies: [],
+            failureModes: [],
+          }
           const composePath = resolve(workDir, ".bollard", "compose.behavioral.yml")
           try {
-            const behavioralCtx = behRes?.context ?? {
-              endpoints: [],
-              config: [],
-              dependencies: [],
-              failureModes: [],
-            }
             const compose = await generateBehavioralCompose({
               workDir,
               profile,
@@ -1257,7 +1259,44 @@ export function createImplementFeatureBlueprint(
               },
             }
           }
-          return { status: "ok", data: result }
+
+          let loadTestReport: unknown
+          try {
+            const loadConfig = profile.metrics?.loadTest
+            const shouldRunLoadTest =
+              loadConfig?.enabled === true &&
+              behavioralCtx.endpoints.length > 0 &&
+              (await commandOnPath("k6", workDir))
+            if (shouldRunLoadTest) {
+              const report = await runK6LoadTest(workDir, behavioralCtx.endpoints, {
+                vus: loadConfig.vus,
+                durationSec: loadConfig.durationSec,
+                baseUrl: "http://localhost:3000",
+              })
+              loadTestReport = report
+              ctx.log.info("load_test_result", {
+                event: "load_test_result",
+                runId: ctx.runId,
+                source: report.source,
+                probeCount: report.probes.length,
+              })
+            }
+          } catch (err: unknown) {
+            ctx.log.warn("load_test_skipped", {
+              message: err instanceof Error ? err.message : String(err),
+            })
+          }
+
+          return {
+            status: "ok",
+            data:
+              loadTestReport === undefined
+                ? result
+                : {
+                    result,
+                    loadTest: loadTestReport,
+                  },
+          }
         },
       },
 
@@ -1408,6 +1447,48 @@ export function createImplementFeatureBlueprint(
       },
 
       {
+        id: "extract-code-metrics",
+        name: "Extract Code Metrics",
+        type: "deterministic",
+        onFailure: "skip",
+        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+          const diffRes = ctx.results["generate-review-diff"]?.data as { diff?: string } | undefined
+          const diff = diffRes?.diff ?? ""
+          const profile = ctx.toolchainProfile
+          if (!profile || !diff.trim()) {
+            return { status: "ok", data: { skipped: true, reason: "no diff or profile" } }
+          }
+
+          const changedFiles =
+            ctx.changedFiles.length > 0 ? ctx.changedFiles : getAffectedSourceFiles(ctx)
+          const metrics = await extractCodeMetrics(
+            workDir,
+            diff,
+            changedFiles,
+            profile,
+            (msg, data) => ctx.log.warn(msg, data as Record<string, unknown> | undefined),
+          )
+
+          ctx.log.info("code_metrics_result", {
+            event: "code_metrics_result",
+            runId: ctx.runId,
+            coverageTool: metrics.coverage.tool,
+            coveragePct: metrics.coverage.overallPct,
+            complexityHotspots: metrics.complexity.hotspots.length,
+            sastFindings: metrics.sast.findings.length,
+            sastTool: metrics.sast.tool,
+            auditHigh: metrics.audit.highCount,
+            auditCritical: metrics.audit.criticalCount,
+            probeCount: metrics.probePerf.probes.length,
+            probePerfSource: metrics.probePerf.source,
+            durationMs: metrics.durationMs,
+          })
+
+          return { status: "ok", data: { metrics } }
+        },
+      },
+
+      {
         id: "semantic-review",
         name: "Semantic Review",
         type: "agentic",
@@ -1452,7 +1533,17 @@ export function createImplementFeatureBlueprint(
             return { status: "ok", data: { findings: [] as ReviewFinding[] } }
           }
 
-          const corpus = buildReviewCorpus(diffText, ctx.plan)
+          const metricsRes = ctx.results["extract-code-metrics"]?.data as
+            | { metrics?: unknown }
+            | undefined
+          const planForCorpus =
+            metricsRes?.metrics === undefined
+              ? ctx.plan
+              : {
+                  ...(ctx.plan && typeof ctx.plan === "object" ? ctx.plan : { plan: ctx.plan }),
+                  code_metrics: metricsRes.metrics,
+                }
+          const corpus = buildReviewCorpus(diffText, planForCorpus)
           const result = verifyReviewGrounding(doc, corpus)
 
           const proposed = doc.findings.length

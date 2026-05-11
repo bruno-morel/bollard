@@ -7,8 +7,8 @@ import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
 describe("createImplementFeatureBlueprint", () => {
   const bp = createImplementFeatureBlueprint("/tmp/test")
 
-  it("has 30 nodes in the correct order", () => {
-    expect(bp.nodes).toHaveLength(30)
+  it("has 31 nodes in the correct order", () => {
+    expect(bp.nodes).toHaveLength(31)
     const ids = bp.nodes.map((n) => n.id)
     expect(ids).toEqual([
       "create-branch",
@@ -36,6 +36,7 @@ describe("createImplementFeatureBlueprint", () => {
       "extract-probes",
       "run-mutation-testing",
       "generate-review-diff",
+      "extract-code-metrics",
       "semantic-review",
       "verify-review-grounding",
       "docker-verify",
@@ -72,6 +73,7 @@ describe("createImplementFeatureBlueprint", () => {
       { id: "extract-probes", type: "deterministic" },
       { id: "run-mutation-testing", type: "deterministic" },
       { id: "generate-review-diff", type: "deterministic" },
+      { id: "extract-code-metrics", type: "deterministic" },
       { id: "semantic-review", type: "agentic" },
       { id: "verify-review-grounding", type: "deterministic" },
       { id: "docker-verify", type: "deterministic" },
@@ -114,11 +116,12 @@ describe("createImplementFeatureBlueprint", () => {
     expect(implNode?.onFailure).toBe("stop")
   })
 
-  it("expand-affected-files, static-checks, run-tests, and verify-boundary-grounding skip on failure after coder verification hook", () => {
+  it("selected deterministic best-effort nodes skip on failure after coder verification hook", () => {
     expect(bp.nodes.find((n) => n.id === "expand-affected-files")?.onFailure).toBe("skip")
     expect(bp.nodes.find((n) => n.id === "static-checks")?.onFailure).toBe("skip")
     expect(bp.nodes.find((n) => n.id === "run-tests")?.onFailure).toBe("skip")
     expect(bp.nodes.find((n) => n.id === "verify-boundary-grounding")?.onFailure).toBe("skip")
+    expect(bp.nodes.find((n) => n.id === "extract-code-metrics")?.onFailure).toBe("skip")
   })
 
   it("deterministic nodes never have an agent field", () => {
@@ -184,9 +187,10 @@ describe("createImplementFeatureBlueprint", () => {
     const ids = bp.nodes.map((n) => n.id)
     const iMut = ids.indexOf("run-mutation-testing")
     expect(ids[iMut + 1]).toBe("generate-review-diff")
-    expect(ids[iMut + 2]).toBe("semantic-review")
-    expect(ids[iMut + 3]).toBe("verify-review-grounding")
-    expect(ids[iMut + 4]).toBe("docker-verify")
+    expect(ids[iMut + 2]).toBe("extract-code-metrics")
+    expect(ids[iMut + 3]).toBe("semantic-review")
+    expect(ids[iMut + 4]).toBe("verify-review-grounding")
+    expect(ids[iMut + 5]).toBe("docker-verify")
   })
 
   it("docker-verify follows verify-review-grounding", () => {

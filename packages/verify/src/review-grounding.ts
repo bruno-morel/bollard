@@ -10,6 +10,8 @@ export type ReviewCategory =
   | "error-handling"
   | "naming-consistency"
   | "api-compatibility"
+  | "insufficient-coverage"
+  | "security-pattern"
 
 export interface ReviewGrounding {
   quote: string
@@ -60,6 +62,8 @@ const VALID_CATEGORIES = new Set<string>([
   "error-handling",
   "naming-consistency",
   "api-compatibility",
+  "insufficient-coverage",
+  "security-pattern",
 ])
 
 function stripOptionalFences(raw: string): string {
@@ -234,6 +238,9 @@ export function buildReviewCorpus(diff: string, plan: unknown): ReviewCorpus {
     }
     if (Array.isArray(p["steps"])) {
       entries.push({ text: JSON.stringify(p["steps"]), source: "plan" })
+    }
+    if (p["code_metrics"] !== undefined) {
+      entries.push({ text: JSON.stringify(p["code_metrics"]), source: "plan" })
     }
   }
 

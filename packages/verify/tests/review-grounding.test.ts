@@ -150,4 +150,53 @@ describe("verifyReviewGrounding", () => {
     expect(result.kept).toHaveLength(1)
     expect(result.dropped.some((d) => d.reason === "duplicate_id")).toBe(true)
   })
+
+  it("accepts metric-driven categories", () => {
+    const doc = parseReviewDocument(
+      JSON.stringify({
+        findings: [
+          {
+            id: "r1",
+            severity: "warning",
+            category: "insufficient-coverage",
+            finding: "Coverage is below the threshold",
+            grounding: [{ quote: "coverage 21% on changed file", source: "plan" }],
+          },
+          {
+            id: "r2",
+            severity: "error",
+            category: "security-pattern",
+            finding: "SAST found eval",
+            grounding: [{ quote: "+eval(userInput)", source: "diff" }],
+          },
+        ],
+      }),
+    )
+    const corpus = buildReviewCorpus("+eval(userInput)\n", {
+      summary: "coverage 21% on changed file",
+    })
+    const result = verifyReviewGrounding(doc, corpus)
+    expect(result.kept).toHaveLength(2)
+    expect(result.dropped).toHaveLength(0)
+  })
+
+  it("still drops unknown categories", () => {
+    const doc = parseReviewDocument(
+      JSON.stringify({
+        findings: [
+          {
+            id: "r1",
+            severity: "warning",
+            category: "made-up-category",
+            finding: "x",
+            grounding: [{ quote: "shared", source: "plan" }],
+          },
+        ],
+      }),
+    )
+    const corpus = buildReviewCorpus("", { summary: "shared" })
+    const result = verifyReviewGrounding(doc, corpus)
+    expect(result.kept).toHaveLength(0)
+    expect(result.dropped.some((d) => d.reason === "category_invalid")).toBe(true)
+  })
 })

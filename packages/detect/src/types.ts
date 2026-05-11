@@ -81,6 +81,24 @@ export interface MutationConfig {
   concurrency: number
 }
 
+export interface MetricsConfig {
+  coverage: { enabled: boolean; thresholdPct: number }
+  complexity: { enabled: boolean; hotspotThreshold: number }
+  sast: { enabled: boolean }
+  churn: { enabled: boolean; highThreshold: number }
+  probePerf: { enabled: boolean; windowResults: number }
+  loadTest: { enabled: boolean; vus: number; durationSec: number }
+}
+
+export const DEFAULT_METRICS_CONFIG: MetricsConfig = {
+  coverage: { enabled: true, thresholdPct: 60 },
+  complexity: { enabled: true, hotspotThreshold: 5 },
+  sast: { enabled: true },
+  churn: { enabled: true, highThreshold: 30 },
+  probePerf: { enabled: true, windowResults: 100 },
+  loadTest: { enabled: false, vus: 10, durationSec: 30 },
+}
+
 export interface ToolchainProfile {
   language: LanguageId
   packageManager?: PackageManagerId
@@ -94,6 +112,7 @@ export interface ToolchainProfile {
   }
 
   mutation?: MutationConfig
+  metrics?: MetricsConfig
 
   sourcePatterns: string[]
   testPatterns: string[]

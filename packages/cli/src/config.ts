@@ -6,6 +6,7 @@ import type {
   ToolchainProfile,
   VerificationCommand,
 } from "@bollard/detect/src/types.js"
+import { DEFAULT_METRICS_CONFIG } from "@bollard/detect/src/types.js"
 import type { BollardConfig } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import type { ObserveProviderConfig } from "@bollard/observe/src/providers/types.js"
@@ -104,6 +105,53 @@ const observeYamlSchema = z
   })
   .strict()
 
+const metricsYamlSchema = z
+  .object({
+    coverage: z
+      .object({
+        enabled: z.boolean().optional(),
+        thresholdPct: z.number().optional(),
+      })
+      .strict()
+      .optional(),
+    complexity: z
+      .object({
+        enabled: z.boolean().optional(),
+        hotspotThreshold: z.number().optional(),
+      })
+      .strict()
+      .optional(),
+    sast: z
+      .object({
+        enabled: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    churn: z
+      .object({
+        enabled: z.boolean().optional(),
+        highThreshold: z.number().optional(),
+      })
+      .strict()
+      .optional(),
+    probePerf: z
+      .object({
+        enabled: z.boolean().optional(),
+        windowResults: z.number().optional(),
+      })
+      .strict()
+      .optional(),
+    loadTest: z
+      .object({
+        enabled: z.boolean().optional(),
+        vus: z.number().optional(),
+        durationSec: z.number().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+
 const bollardYamlSchema = z
   .object({
     llm: z
@@ -132,6 +180,7 @@ const bollardYamlSchema = z
         concurrency: z.number().optional(),
       })
       .optional(),
+    metrics: metricsYamlSchema.optional(),
     observe: observeYamlSchema.optional(),
   })
   .strict()
@@ -184,6 +233,7 @@ export async function resolveConfig(
       concurrency: typeof ym.concurrency === "number" ? ym.concurrency : 2,
     }
   }
+  applyMetricsConfig(profile, yamlResult?.metrics)
 
   applyEnvVars(config, sources)
 
@@ -320,6 +370,45 @@ interface LoadedBollardYaml {
     concurrency?: number | undefined
   }
   observe?: ObserveProviderConfig
+  metrics?: z.infer<typeof metricsYamlSchema>
+}
+
+function applyMetricsConfig(
+  profile: ToolchainProfile,
+  metricsYaml?: z.infer<typeof metricsYamlSchema>,
+): void {
+  profile.metrics = {
+    coverage: {
+      enabled: metricsYaml?.coverage?.enabled ?? DEFAULT_METRICS_CONFIG.coverage.enabled,
+      thresholdPct:
+        metricsYaml?.coverage?.thresholdPct ?? DEFAULT_METRICS_CONFIG.coverage.thresholdPct,
+    },
+    complexity: {
+      enabled: metricsYaml?.complexity?.enabled ?? DEFAULT_METRICS_CONFIG.complexity.enabled,
+      hotspotThreshold:
+        metricsYaml?.complexity?.hotspotThreshold ??
+        DEFAULT_METRICS_CONFIG.complexity.hotspotThreshold,
+    },
+    sast: {
+      enabled: metricsYaml?.sast?.enabled ?? DEFAULT_METRICS_CONFIG.sast.enabled,
+    },
+    churn: {
+      enabled: metricsYaml?.churn?.enabled ?? DEFAULT_METRICS_CONFIG.churn.enabled,
+      highThreshold:
+        metricsYaml?.churn?.highThreshold ?? DEFAULT_METRICS_CONFIG.churn.highThreshold,
+    },
+    probePerf: {
+      enabled: metricsYaml?.probePerf?.enabled ?? DEFAULT_METRICS_CONFIG.probePerf.enabled,
+      windowResults:
+        metricsYaml?.probePerf?.windowResults ?? DEFAULT_METRICS_CONFIG.probePerf.windowResults,
+    },
+    loadTest: {
+      enabled: metricsYaml?.loadTest?.enabled ?? DEFAULT_METRICS_CONFIG.loadTest.enabled,
+      vus: metricsYaml?.loadTest?.vus ?? DEFAULT_METRICS_CONFIG.loadTest.vus,
+      durationSec:
+        metricsYaml?.loadTest?.durationSec ?? DEFAULT_METRICS_CONFIG.loadTest.durationSec,
+    },
+  }
 }
 
 function loadBollardYaml(
@@ -389,6 +478,7 @@ function loadBollardYaml(
     ...(data.adversarial !== undefined ? { adversarial: data.adversarial } : {}),
     ...(data.mutation !== undefined ? { mutation: data.mutation } : {}),
     ...(data.observe !== undefined ? { observe: data.observe as ObserveProviderConfig } : {}),
+    ...(data.metrics !== undefined ? { metrics: data.metrics } : {}),
   }
 }
 
