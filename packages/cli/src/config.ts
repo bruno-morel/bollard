@@ -9,6 +9,7 @@ import type {
 import { DEFAULT_METRICS_CONFIG } from "@bollard/detect/src/types.js"
 import type { BollardConfig, LocalModelsConfig } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
+import { isBinaryAvailable } from "@bollard/llm/src/providers/local.js"
 import type { ObserveProviderConfig } from "@bollard/observe/src/providers/types.js"
 import { parse as parseYaml } from "yaml"
 import { z } from "zod"
@@ -20,6 +21,7 @@ export interface AnnotatedValue<T> {
   value: T
   source: ConfigSource
   detail?: string
+  warning?: string
 }
 
 const verificationCommandSchema = z.object({
@@ -283,6 +285,21 @@ export async function resolveConfig(
       message:
         "No LLM API key found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY environment variable.",
     })
+  }
+
+  const localAgents = Object.entries(config.llm.agents ?? {})
+    .filter(([, v]) => v.provider === "local")
+    .map(([k]) => k)
+
+  if (localAgents.length > 0) {
+    const available = await isBinaryAvailable()
+    if (!available) {
+      sources["localModels.binary"] = {
+        value: false,
+        source: "auto-detected",
+        warning: `provider: local configured for agents [${localAgents.join(", ")}] but llama-cli binary not found on PATH. Build the dev-local image: docker compose --profile local build dev-local`,
+      }
+    }
   }
 
   return {

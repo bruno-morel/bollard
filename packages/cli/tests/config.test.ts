@@ -249,4 +249,23 @@ describe("resolveConfig", () => {
 
     expect(profile.mutation).toBeUndefined()
   })
+
+  it("warns when provider local is configured for an agent but llama-cli is absent", async () => {
+    vi.stubEnv("PATH", "")
+    const yaml = [
+      "llm:",
+      "  agents:",
+      "    patcher:",
+      "      provider: local",
+      "      model: qwen2.5-coder-1.5b-instruct-q4_k_m",
+    ].join("\n")
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    const { sources } = await resolveConfig(undefined, tempDir)
+
+    expect(sources["localModels.binary"]?.value).toBe(false)
+    expect(sources["localModels.binary"]?.source).toBe("auto-detected")
+    expect(sources["localModels.binary"]?.warning).toMatch(/dev-local/)
+    expect(sources["localModels.binary"]?.warning).toContain("patcher")
+  })
 })

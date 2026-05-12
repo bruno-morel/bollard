@@ -126,6 +126,11 @@ async function findBinary(): Promise<string | null> {
   return null
 }
 
+/** Returns true if a llama.cpp binary is found on PATH. Never throws. */
+export async function isBinaryAvailable(): Promise<boolean> {
+  return (await findBinary()) !== null
+}
+
 function effectiveRegistryUrl(registryUrlFromConfig: string): string {
   const fromEnv = process.env["BOLLARD_MODEL_REGISTRY_URL"]
   if (fromEnv !== undefined && fromEnv.trim() !== "") {

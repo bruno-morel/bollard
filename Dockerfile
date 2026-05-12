@@ -53,31 +53,6 @@ RUN mkdir -p /out \
         -H:+ReportExceptionStackTraces
 
 # ──────────────────────────────────────────────────────────────
-# Stage D — llama.cpp CLI (built on same libc as node:22-slim dev)
-# ──────────────────────────────────────────────────────────────
-FROM node:22-slim AS llamacpp-builder
-ARG LLAMACPP_VERSION=b9113
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates curl build-essential cmake pkg-config \
-    && rm -rf /var/lib/apt/lists/*
-WORKDIR /src
-RUN curl -fsSL "https://github.com/ggml-org/llama.cpp/archive/refs/tags/${LLAMACPP_VERSION}.tar.gz" \
-        -o /tmp/llama.tgz \
-    && tar -xzf /tmp/llama.tgz -C /src --strip-components=1 \
-    && rm /tmp/llama.tgz
-RUN cmake -B build -S . \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DGGML_NATIVE=OFF \
-        -DGGML_STATIC=ON \
-        -DBUILD_SHARED_LIBS=OFF \
-        -DLLAMA_CURL=OFF \
-    && cmake --build build --target llama-cli -j"$(nproc)" \
-    && mkdir -p /out \
-    && cp build/bin/llama-cli /out/llama-cli
-
-# ──────────────────────────────────────────────────────────────
 # Stage C — dev (fast, day-to-day)
 # Node 22 + pnpm + python3 + pre-built Go/Rust/Java extractor helpers.
 # No Go, Rust, or JVM toolchain at runtime (Java helper is native binary).
@@ -91,8 +66,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 COPY --from=go-helper-builder   /out/bollard-extract-go /usr/local/bin/bollard-extract-go
 COPY --from=rust-helper-builder /out/bollard-extract-rs /usr/local/bin/bollard-extract-rs
 COPY --from=java-helper-builder /out/bollard-extract-java /usr/local/bin/bollard-extract-java
-COPY --from=llamacpp-builder     /out/llama-cli /usr/local/bin/llama-cli
-RUN bollard-extract-go --version && bollard-extract-rs --version && bollard-extract-java --version && llama-cli --version
+RUN bollard-extract-go --version && bollard-extract-rs --version && bollard-extract-java --version
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/engine/package.json packages/engine/package.json
@@ -153,5 +127,52 @@ RUN set -eux \
               /usr/lib/*/libasan* /usr/lib/*/libtsan* \
               /usr/lib/*/liblsan* /usr/lib/*/libhwasan* \
               /usr/lib/*/libubsan* /usr/lib/*/libgprofng*
+WORKDIR /app
+ENTRYPOINT ["pnpm"]
+
+# ──────────────────────────────────────────────────────────────
+# Stage E — llama.cpp CLI builder (opt-in, same libc as node:22-slim)
+# Only consumed by dev-local. Never included in dev or dev-full.
+# ──────────────────────────────────────────────────────────────
+FROM node:22-slim AS llamacpp-builder
+ARG LLAMACPP_VERSION=b9113
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl build-essential cmake pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+RUN curl -fsSL "https://github.com/ggml-org/llama.cpp/archive/refs/tags/${LLAMACPP_VERSION}.tar.gz" \
+        -o /tmp/llama.tgz \
+    && tar -xzf /tmp/llama.tgz -C /src --strip-components=1 \
+    && rm /tmp/llama.tgz
+RUN cmake -B build -S . \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DGGML_NATIVE=OFF \
+        -DGGML_STATIC=ON \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DLLAMA_CURL=OFF \
+    && cmake --build build --target llama-cli -j"$(nproc)" \
+    && mkdir -p /out \
+    && cp build/bin/llama-cli /out/llama-cli
+
+# ──────────────────────────────────────────────────────────────
+# Stage F — dev-local (opt-in local LLM tier)
+# Extends dev with the llama.cpp binary for LocalProvider inference.
+# Models are lazy-pulled at runtime into the bollard_models volume.
+#
+# Build:  docker compose --profile local build dev-local
+# Run:    docker compose --profile local run --rm dev-local <args>
+#
+# Activate in .bollard.yml:
+#   llm:
+#     agents:
+#       patcher:
+#         provider: local
+#         model: qwen2.5-coder-1.5b-instruct-q4_k_m
+# ──────────────────────────────────────────────────────────────
+FROM dev AS dev-local
+COPY --from=llamacpp-builder /out/llama-cli /usr/local/bin/llama-cli
+RUN llama-cli --version
 WORKDIR /app
 ENTRYPOINT ["pnpm"]

@@ -661,6 +661,9 @@ async function main(): Promise<void> {
       } else {
         log(`  ${DIM}· ${key} (${val.source})${RESET}`)
       }
+      if (val.warning !== undefined && val.warning !== "") {
+        log(`    ${YELLOW}⚠ ${val.warning}${RESET}`)
+      }
     }
 
     log("")

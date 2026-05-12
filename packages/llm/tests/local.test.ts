@@ -8,6 +8,7 @@ import {
   LocalProvider,
   MODEL_FILENAME,
   checkRamFloor,
+  isBinaryAvailable,
   resolveModelPath,
   serializePrompt,
 } from "../src/providers/local.js"
@@ -110,6 +111,32 @@ describe("LocalProvider", () => {
       } finally {
         process.env["PATH"] = prevPath
       }
+    })
+  })
+
+  describe("isBinaryAvailable", () => {
+    let prevPath: string
+
+    beforeEach(() => {
+      prevPath = process.env["PATH"] ?? ""
+    })
+
+    afterEach(() => {
+      process.env["PATH"] = prevPath
+    })
+
+    it("returns false when PATH has no llama binaries", async () => {
+      process.env["PATH"] = ""
+      expect(await isBinaryAvailable()).toBe(false)
+    })
+
+    it("returns true when stub llama-cli is on PATH", async () => {
+      const fakeBinDir = path.join(os.tmpdir(), `bollard-bin-avail-${Date.now()}`)
+      await mkdir(fakeBinDir, { recursive: true })
+      const script = path.join(fakeBinDir, "llama-cli")
+      await writeFile(script, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+      process.env["PATH"] = `${fakeBinDir}${path.delimiter}${prevPath}`
+      expect(await isBinaryAvailable()).toBe(true)
     })
   })
 
