@@ -3,6 +3,7 @@ import { BollardError } from "@bollard/engine/src/errors.js"
 import { MockProvider } from "./mock.js"
 import { AnthropicProvider } from "./providers/anthropic.js"
 import { GoogleProvider } from "./providers/google.js"
+import { LocalProvider } from "./providers/local.js"
 import { OpenAIProvider } from "./providers/openai.js"
 import type { LLMProvider, LLMResponse } from "./types.js"
 
@@ -63,6 +64,10 @@ export class LLMClient {
       case "mock":
         provider = new MockProvider(this.mockResponses ?? [])
         break
+      case "local": {
+        provider = new LocalProvider(this.config.localModels)
+        break
+      }
       default:
         throw new BollardError({
           code: "PROVIDER_NOT_FOUND",

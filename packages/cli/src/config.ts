@@ -7,7 +7,7 @@ import type {
   VerificationCommand,
 } from "@bollard/detect/src/types.js"
 import { DEFAULT_METRICS_CONFIG } from "@bollard/detect/src/types.js"
-import type { BollardConfig } from "@bollard/engine/src/context.js"
+import type { BollardConfig, LocalModelsConfig } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import type { ObserveProviderConfig } from "@bollard/observe/src/providers/types.js"
 import { parse as parseYaml } from "yaml"
@@ -105,6 +105,16 @@ const observeYamlSchema = z
   })
   .strict()
 
+const localModelsYamlSchema = z
+  .object({
+    minFreeRamGb: z.number().positive().optional(),
+    timeoutSec: z.number().positive().optional(),
+    cacheDir: z.string().min(1).optional(),
+    cacheSizeGb: z.number().positive().optional(),
+    registryUrl: z.string().min(1).optional(),
+  })
+  .strict()
+
 const metricsYamlSchema = z
   .object({
     coverage: z
@@ -182,6 +192,7 @@ const bollardYamlSchema = z
       .optional(),
     metrics: metricsYamlSchema.optional(),
     observe: observeYamlSchema.optional(),
+    localModels: localModelsYamlSchema.optional(),
   })
   .strict()
 
@@ -468,6 +479,14 @@ function loadBollardYaml(
     config.agent.max_duration_minutes = data.agent.max_duration_minutes
     sources["agent.max_duration_minutes"] = {
       value: data.agent.max_duration_minutes,
+      source: "file",
+      detail: "file:.bollard.yml",
+    }
+  }
+  if (data.localModels !== undefined) {
+    config.localModels = data.localModels as Partial<LocalModelsConfig>
+    sources["localModels"] = {
+      value: data.localModels,
       source: "file",
       detail: "file:.bollard.yml",
     }

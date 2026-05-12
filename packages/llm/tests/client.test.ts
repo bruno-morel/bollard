@@ -5,6 +5,7 @@ import { LLMClient } from "../src/client.js"
 import { MockProvider } from "../src/mock.js"
 import { AnthropicProvider } from "../src/providers/anthropic.js"
 import { GoogleProvider } from "../src/providers/google.js"
+import { LocalProvider } from "../src/providers/local.js"
 import { OpenAIProvider } from "../src/providers/openai.js"
 import type { LLMResponse } from "../src/types.js"
 
@@ -184,6 +185,16 @@ describe("LLMClient", () => {
         process.env["GOOGLE_API_KEY"] = origKey
       }
     }
+  })
+
+  it("resolves local provider without frontier API keys", () => {
+    const config = mockConfig({
+      llm: { default: { provider: "local", model: "qwen2.5-coder-1.5b-instruct-q4_k_m" } },
+    })
+    const client = new LLMClient(config)
+    const { provider } = client.forAgent("any")
+    expect(provider).toBeInstanceOf(LocalProvider)
+    expect(provider.name).toBe("local")
   })
 })
 

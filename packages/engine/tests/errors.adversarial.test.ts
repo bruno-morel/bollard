@@ -38,6 +38,10 @@ const validErrorCodes: BollardErrorCode[] = [
   "DRIFT_DETECTED",
   "ROLLOUT_BLOCKED",
   "FLAG_NOT_FOUND",
+  "IDE_CONFIG_INVALID",
+  "LOCAL_MODEL_NOT_AVAILABLE",
+  "LOCAL_MODEL_PULL_FAILED",
+  "LOCAL_MODEL_TIMEOUT",
 ]
 
 describe("Feature: BollardError construction and properties", () => {

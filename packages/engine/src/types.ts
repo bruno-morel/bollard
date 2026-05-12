@@ -15,6 +15,7 @@ export type {
   LogEntry,
   PipelineContext,
   BollardConfig,
+  LocalModelsConfig,
 } from "./context.js"
 export { createContext } from "./context.js"
 export type {

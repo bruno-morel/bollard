@@ -17,12 +17,14 @@ services:
       - mcp_modules:/app/packages/mcp/node_modules
       - observe_modules:/app/packages/observe/node_modules
       - /var/run/docker.sock:/var/run/docker.sock
+      - bollard_models:/var/cache/bollard/models
     working_dir: /app
     env_file:
       - path: .env
         required: false
     environment:
       - NODE_OPTIONS=--disable-warning=DEP0040
+      - BOLLARD_MODEL_REGISTRY_URL=${BOLLARD_MODEL_REGISTRY_URL:-}
     entrypoint: ["pnpm"]
 
   dev-full:
@@ -46,12 +48,14 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - go_cache:/root/.cache/go-build
       - cargo_cache:/root/.cargo/registry
+      - bollard_models:/var/cache/bollard/models
     working_dir: /app
     env_file:
       - path: .env
         required: false
     environment:
       - NODE_OPTIONS=--disable-warning=DEP0040
+      - BOLLARD_MODEL_REGISTRY_URL=${BOLLARD_MODEL_REGISTRY_URL:-}
     entrypoint: ["pnpm"]
 
 volumes:
@@ -65,6 +69,7 @@ volumes:
   detect_modules:
   mcp_modules:
   observe_modules:
+  bollard_models:
   node_modules_full:
   engine_modules_full:
   llm_modules_full:

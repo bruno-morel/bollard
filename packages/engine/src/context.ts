@@ -14,6 +14,23 @@ export interface LogEntry {
   data?: Record<string, unknown>
 }
 
+export interface LocalModelsConfig {
+  /** Minimum free RAM in GB before attempting local inference. Default: 3 */
+  minFreeRamGb: number
+  /** Hard timeout per inference call in seconds. Default: 60 */
+  timeoutSec: number
+  /** Named Docker volume mount path for model files. Default: /var/cache/bollard/models */
+  cacheDir: string
+  /** Max volume size in GB before LRU eviction (informational only in Phase 4). Default: 5 */
+  cacheSizeGb: number
+  /**
+   * URL prefix for pulling model files on first use.
+   * Supports BOLLARD_MODEL_REGISTRY_URL env override.
+   * Default: https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main
+   */
+  registryUrl: string
+}
+
 export interface BollardConfig {
   llm: {
     default: { provider: string; model: string }
@@ -23,6 +40,8 @@ export interface BollardConfig {
     max_cost_usd: number
     max_duration_minutes: number
   }
+  /** Optional overrides; omitted fields use LocalProvider defaults. */
+  localModels?: Partial<LocalModelsConfig>
 }
 
 export interface PipelineContext {
