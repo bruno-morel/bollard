@@ -12,7 +12,11 @@ import { createSemanticReviewerAgent } from "@bollard/agents/src/semantic-review
 import type { AgentContext, AgentResult, ExecutorOptions } from "@bollard/agents/src/types.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
-import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context.js"
+import type {
+  BollardConfig,
+  LocalModelsConfig,
+  PipelineContext,
+} from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
 import type { BehavioralContext } from "@bollard/verify/src/behavioral-extractor.js"
@@ -22,6 +26,14 @@ import {
   MAX_PRELOAD_FILES,
 } from "@bollard/verify/src/context-expansion.js"
 import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
+import {
+  type PatcherResult,
+  buildPatcherFeedback,
+  collectVerificationChecks,
+  runDeterministicAutofix,
+  runLocalPatcher,
+  runVerificationChecks,
+} from "@bollard/verify/src/feedback-patcher.js"
 import type {
   ExtractedSignature,
   ExtractedTypeDefinition,
@@ -29,37 +41,6 @@ import type {
 import { createAgentSpinner } from "./spinner.js"
 
 const execFileAsync = promisify(execFile)
-
-type VerificationCheck = { label: string; cmd: string; args: string[] }
-
-async function commandOnPath(cmd: string): Promise<boolean> {
-  try {
-    await execFileAsync("which", [cmd], { timeout: 5_000 })
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function buildFallbackVerificationChecks(): Promise<VerificationCheck[]> {
-  const base: VerificationCheck[] = [
-    { label: "typecheck", cmd: "pnpm", args: ["run", "typecheck"] },
-    { label: "lint", cmd: "pnpm", args: ["run", "lint"] },
-    { label: "test", cmd: "pnpm", args: ["run", "test"] },
-  ]
-  const extra: VerificationCheck[] = []
-  if (await commandOnPath("pnpm")) {
-    extra.push({ label: "audit", cmd: "pnpm", args: ["audit", "--audit-level=high"] })
-  }
-  if (await commandOnPath("gitleaks")) {
-    extra.push({
-      label: "secretScan",
-      cmd: "gitleaks",
-      args: ["detect", "--no-banner", "--source", "."],
-    })
-  }
-  return [...base, ...extra]
-}
 
 function buildFileFilter(profile?: ToolchainProfile): (entry: string) => boolean {
   if (profile) {
@@ -164,79 +145,41 @@ export async function preloadAffectedFiles(ctx: PipelineContext, workDir: string
 function createVerificationHook(
   workDir: string,
   profile?: ToolchainProfile,
+  localModelsConfig?: Partial<LocalModelsConfig>,
 ): (text: string) => Promise<string | null> {
   return async (): Promise<string | null> => {
-    const checks: VerificationCheck[] = profile
-      ? [
-          ...(profile.checks.typecheck
-            ? [
-                {
-                  label: "typecheck",
-                  cmd: profile.checks.typecheck.cmd,
-                  args: profile.checks.typecheck.args,
-                },
-              ]
-            : []),
-          ...(profile.checks.lint
-            ? [
-                {
-                  label: "lint",
-                  cmd: profile.checks.lint.cmd,
-                  args: profile.checks.lint.args,
-                },
-              ]
-            : []),
-          ...(profile.checks.test
-            ? [
-                {
-                  label: "test",
-                  cmd: profile.checks.test.cmd,
-                  args: profile.checks.test.args,
-                },
-              ]
-            : []),
-          ...(profile.checks.audit
-            ? [
-                {
-                  label: "audit",
-                  cmd: profile.checks.audit.cmd,
-                  args: profile.checks.audit.args,
-                },
-              ]
-            : []),
-          ...(profile.checks.secretScan
-            ? [
-                {
-                  label: "secretScan",
-                  cmd: profile.checks.secretScan.cmd,
-                  args: profile.checks.secretScan.args,
-                },
-              ]
-            : []),
-        ]
-      : await buildFallbackVerificationChecks()
+    const checks = await collectVerificationChecks(workDir, profile)
+    let { failures, failedLabels } = await runVerificationChecks(workDir, checks)
 
-    const failures: string[] = []
+    if (failures.length === 0) {
+      process.stderr.write("\x1b[32m  [verify] all checks passed\x1b[0m\n")
+      return null
+    }
 
-    for (const check of checks) {
-      process.stderr.write(`\x1b[2m  [verify] running ${check.label}...\x1b[0m\n`)
-      try {
-        await execFileAsync(check.cmd, check.args, {
-          cwd: workDir,
-          maxBuffer: 5 * 1024 * 1024,
-          timeout: 180_000,
-        })
-      } catch (err: unknown) {
-        const stdout =
-          err && typeof err === "object" && "stdout" in err
-            ? String((err as { stdout: string }).stdout)
-            : ""
-        const stderr =
-          err && typeof err === "object" && "stderr" in err
-            ? String((err as { stderr: string }).stderr)
-            : String(err)
-        failures.push(`## ${check.label} FAILED\n${`${stdout}\n${stderr}`.slice(0, 3000)}`)
-      }
+    const autofixResult = await runDeterministicAutofix(workDir, failures, profile)
+    const afterAutofix = await runVerificationChecks(workDir, checks, failedLabels)
+    failures = afterAutofix.failures
+    failedLabels = afterAutofix.failedLabels
+
+    if (failures.length === 0) {
+      process.stderr.write("\x1b[32m  [verify] all checks passed\x1b[0m\n")
+      return null
+    }
+
+    let patcherResult: PatcherResult = { kind: "skipped", reason: "no local config" }
+    if (localModelsConfig !== undefined) {
+      patcherResult = await runLocalPatcher(workDir, failures, localModelsConfig, profile)
+      const dim =
+        patcherResult.kind === "patched"
+          ? `patched: ${patcherResult.appliedChecks.join(", ")}`
+          : patcherResult.kind === "skipped"
+            ? `skipped: ${patcherResult.reason}`
+            : `failed: ${patcherResult.error.code} ${patcherResult.error.message}`
+      process.stderr.write(`\x1b[2m  [patcher] ${dim}\x1b[0m\n`)
+
+      const afterPatcher = await runVerificationChecks(workDir, checks, failedLabels)
+      failures = afterPatcher.failures
+      failedLabels = afterPatcher.failedLabels
     }
 
     if (failures.length === 0) {
@@ -244,7 +187,7 @@ function createVerificationHook(
       return null
     }
 
-    return `The system ran verification checks automatically. Fix the following issues and output your completion JSON again:\n\n${failures.join("\n\n")}`
+    return buildPatcherFeedback(failures, autofixResult, patcherResult)
   }
 }
 
@@ -593,7 +536,7 @@ export async function createAgenticHandler(
       const preloaded = await preloadAffectedFiles(ctx, workDir)
       userMessage = `Task: ${ctx.task}\n\nApproved Plan:\n${JSON.stringify(ctx.plan, null, 2)}${preloaded}`
       executorOptions = {
-        postCompletionHook: createVerificationHook(workDir, profile),
+        postCompletionHook: createVerificationHook(workDir, profile, config.localModels),
         maxVerificationRetries: 3,
         deferPostCompletionVerifyFromTurn: Math.floor(agents.coder.maxTurns * 0.8),
       }

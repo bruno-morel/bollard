@@ -38,6 +38,8 @@ export type BollardErrorCode =
   | "LOCAL_MODEL_NOT_AVAILABLE"
   | "LOCAL_MODEL_PULL_FAILED"
   | "LOCAL_MODEL_TIMEOUT"
+  | "PATCHER_PATCH_INVALID"
+  | "PATCHER_NO_PROGRESS"
 
 const RETRYABLE_CODES: ReadonlySet<BollardErrorCode> = new Set([
   "LLM_TIMEOUT",

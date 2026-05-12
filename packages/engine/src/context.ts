@@ -29,6 +29,8 @@ export interface LocalModelsConfig {
    * Default: https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main
    */
   registryUrl: string
+  /** Model id used by the Phase 2 patcher. Default: DEFAULT_MODEL_ID from `@bollard/llm` local provider. */
+  patcherModel?: string
 }
 
 export interface BollardConfig {

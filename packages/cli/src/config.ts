@@ -114,6 +114,7 @@ const localModelsYamlSchema = z
     cacheDir: z.string().min(1).optional(),
     cacheSizeGb: z.number().positive().optional(),
     registryUrl: z.string().min(1).optional(),
+    patcherModel: z.string().min(1).optional(),
   })
   .strict()
 
