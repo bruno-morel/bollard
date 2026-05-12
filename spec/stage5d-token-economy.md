@@ -1,6 +1,6 @@
 # Stage 5d — Token Economy
 
-**Status:** Design
+**Status:** Phases 1, 3, 3b, 4 DONE. Phase 4b in progress. Phases 2, 5, 6 pending.
 **Owner:** Bruno (maintainer)
 **Related:** [ROADMAP.md](./ROADMAP.md), [01-architecture.md](./01-architecture.md), [06-toolchain-profiles.md](./06-toolchain-profiles.md), [adr/0004-determinism-local-frontier-tiers.md](./adr/0004-determinism-local-frontier-tiers.md)
 
@@ -25,7 +25,7 @@ Stage 5d does **not** touch the adversarial-scope architecture, the contract/beh
 
 Stage 5d is **not** a Stage 5b prompt-evaluation upgrade in disguise. Prompt regression gating is Stage 5b's territory and stays there. Stage 5d's eval coverage is limited to a cost-regression check on the existing implement-feature evals.
 
-## Phase 1 — Deterministic context expansion
+## Phase 1 — Deterministic context expansion ✅ DONE
 
 **Problem.** The coder agent receives the planner's `affected_files.modify` list pre-loaded (up to 10 files, 10 KB each — `agent-handler.ts`). When the implementation requires touching a type defined in a fourth file the planner did not list, the coder spends a turn calling `read_file` to fetch it, then often another turn calling `search` to find where the type came from. These are deterministic lookups dressed up as creative work.
 
@@ -53,7 +53,7 @@ Stage 5d is **not** a Stage 5b prompt-evaluation upgrade in disguise. Prompt reg
 
 **Expected savings.** 1.0–1.5 coder turns per run on average (the verification retries that are now handled by autofix + local patcher). Frontier turn cost is roughly 5x the local model's compute cost on a 1.5B model running on CPU for typical patch sizes.
 
-## Phase 3 — Adversarial test scaffolding
+## Phase 3 — Adversarial test scaffolding ✅ DONE
 
 **Problem.** The boundary, contract, and behavioral testers all emit complete test files: imports, `describe`/`it` blocks, fast-check setup, helper functions, and the actual property bodies. Across runs, the boilerplate is near-identical for a given `(language, framework, scope)` triple. The frontier model is paying the token cost of regenerating known-good imports and known-good `describe` headers every run.
 
@@ -69,7 +69,15 @@ The renderer is profile-driven — same `ToolchainProfile` Bollard already uses 
 
 **Risk.** The renderer must support every `(language, framework, scope)` Bollard already ships. Stage 4c's Java/Kotlin work showed how cross-module test placement is non-trivial (`resolveContractTestModulePrefix`); template work has the same risk surface. Mitigation: ship per-language templates incrementally, fall back to "agent emits full file" for unsupported triples.
 
-## Phase 4 — Local-model runtime
+## Phase 3b — Deterministic code metrics + load testing ✅ DONE
+
+**Problem.** The semantic reviewer currently sees only the diff and the plan. It infers coverage gaps, complexity hotspots, and security patterns from raw code — work that deterministic tools already perform on every run.
+
+**Approach.** A new `extract-code-metrics` deterministic node (position 26 of 31, between `generate-review-diff` and `semantic-review`) runs six parallel sub-extractors with a 90s hard timeout and per-extractor graceful degradation: coverage delta (v8/go-cover/tarpaulin/pytest-cov), complexity hotspots from diff hunk parsing (pure TS, zero deps), SAST via `rg` patterns with Semgrep upgrade path when available, git churn via `git log`, CVE detail via `--json` audit re-run, and probe latency percentiles from `FileMetricsStore` + k6 output. The results are injected as a `## Code Metrics` section into `buildSemanticReviewerMessage`. Optional k6 load-test stage added inside `run-behavioral-tests` (opt-in via `metrics.loadTest.enabled: true`). Two new `ReviewCategory` values: `"insufficient-coverage"` and `"security-pattern"`.
+
+**Status.** DONE (2026-05-12). 966 passed / 4 skipped.
+
+## Phase 4 — Local-model runtime ✅ DONE (opt-in via `dev-local`)
 
 **Problem.** Phases 2 and 5 require a local-model tier. The runtime must fit in the dev-image footprint (~989 MB for `dev`, ~2.24 GB for `dev-full`), must not introduce a Python dependency (Bollard is Node-first), and must be controllable from the existing `LLMProvider` interface so per-agent routing in `.bollard.yml` continues to work.
 
@@ -82,7 +90,7 @@ The renderer is profile-driven — same `ToolchainProfile` Bollard already uses 
 
 **Why not Candle.** Candle (Rust) is a strong alternative — already in `dev-full` for `bollard-extract-rs` — but its model coverage is narrower than llama.cpp's, and the coder/patcher market has converged on GGUF as the de-facto small-model interchange format. Reconsider in Stage 6 if Candle's model coverage catches up.
 
-**Implementation surface.** New `LocalProvider` in `packages/llm/src/providers/local.ts` implementing the existing `LLMProvider` interface (incl. `chatStream` for streaming-progress parity). New model resolution code: on first use, check `/var/cache/bollard/models/<model-id>.gguf`, pull from a configured registry URL if absent, lock-file to handle concurrent first-pulls. Update `compose.yaml` to mount the cache volume. Update `Dockerfile` `dev` target to include the llama.cpp binary. Update `LLMClient.resolveProvider` to handle `"local"`. Extend `BollardConfig.llm` schema to allow `provider: "local"` per-agent overrides. Embeddings via `fastembed-js` ship as a separate `LLMProvider`-adjacent helper (different interface — embeddings are not chat).
+**Implementation surface.** `LocalProvider` shipped in `packages/llm/src/providers/local.ts` implementing the existing `LLMProvider` interface (incl. `chatStream`). `LLMClient.resolveProvider` handles `"local"`. `BollardConfig` extended with `localModels?: Partial<LocalModelsConfig>`. **The llama.cpp binary is NOT in the `dev` image** — it ships in a separate `dev-local` Docker target (Stage F in Dockerfile) behind `docker compose --profile local`. This keeps `docker compose build dev` fast for contributors who don't use local inference. The `bollard_models` volume is mounted only by `dev-local`. `resolveConfig` emits a yellow warning when `provider: local` is configured but `llama-cli` is not on PATH. Phase 4b (in progress) completes this opt-in restructuring. Embeddings via `fastembed-js` deferred to Phase 5.
 
 **RAM floor and graceful skip.** The Qwen2.5-Coder-1.5B Q4_K_M model requires roughly 1.5–2 GB of resident memory at inference time (weights + KV cache + runtime overhead). On machines with less than 3 GB of available RAM, CPU inference will thrash swap and be slower than the frontier call it is supposed to replace. `LocalProvider` must check available memory before the first inference call (via `/proc/meminfo` on Linux, `vm_stat` on macOS, or Node's `os.freemem()` as a cross-platform fallback) and skip the local call — falling through directly to the frontier tier — if available RAM is below a configurable floor (default `localModels.minFreeRamGb: 3` in `BollardConfig`). Log at `warn` level when skipping; never fail the pipeline.
 
@@ -125,12 +133,16 @@ The renderer is profile-driven — same `ToolchainProfile` Bollard already uses 
 Phase 1 ships standalone (no local-model dependency) and validates the determinization principle on coder turn count. Phase 3 also ships standalone and validates the templating principle on tester output. Phases 1 and 3 together should drop p50 cost-per-run by ~30% before any local-model work begins. Phase 4 is the local runtime — a single integration that unlocks Phase 2 (patcher) and Phase 5 (semantic-reviewer tiering, patcher routing). Phase 6 closes the loop.
 
 ```
-Phase 1 (deterministic context expansion) ──┐
-                                             ├── Phase 4 (local runtime) ── Phase 2 (patcher)
-Phase 3 (test scaffolding templates) ────────┘                          └── Phase 5 (per-agent assignment)
-                                                                                          │
-                                                                              Phase 6 (cost regression CI)
+Phase 1 ✅ (context expansion) ──┐
+Phase 3 ✅ (test scaffolding) ────┤
+Phase 3b ✅ (code metrics+k6) ───┤
+Phase 4 ✅ (local runtime) ───────┤── Phase 4b 🔄 (opt-in) ── Phase 2 (patcher) ──┐
+                                  └──────────────────────────── Phase 5 (per-agent) ─┤
+                                                                                      │
+                                                                          Phase 6 (cost regression CI)
 ```
+
+Phases 1, 3, 3b are fully independent and shipped without any local-model dependency. Phase 4 ships the `LocalProvider` code + `dev-local` image. Phase 4b makes the opt-in story clean (no build overhead for default contributors). Phase 2 and Phase 5 are the first consumers of the local tier and require Phase 4b to be validated first.
 
 Validation order matches: each phase has a Bollard-on-Bollard self-test on a real change (the `CostTracker.subtract()` and `bollard_watch_status` patterns from Stage 4c/4d worked well; reuse them) before the next phase starts.
 
