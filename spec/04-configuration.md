@@ -150,7 +150,7 @@ For things that vary by environment or contain secrets, env vars are the right p
 | `PRODUCTION_URL` | Base URL for production probes | For observability (Stage 3+) |
 | `STAGING_URL` | Base URL for staging probes | For probe dry-runs |
 | `BOLLARD_PROVIDER` | Override auto-detected provider | No — auto-detected |
-| `BOLLARD_MODEL` | Override default LLM model | No — defaults to `claude-sonnet-4-20250514` |
+| `BOLLARD_MODEL` | Override `llm.default` fallback model (unknown agent roles use this) | No — defaults to `claude-sonnet-4-20250514` |
 | `BOLLARD_MAX_COST` | Override max cost per run (USD) | No — defaults to 50 |
 | `BOLLARD_MAX_DURATION` | Override max duration (minutes) | No — defaults to 30 |
 
@@ -210,6 +210,22 @@ adversarial:
     concerns:
       security: off               # pure library, no attack surface
 ```
+
+#### Per-agent default models
+
+Bollard ships these defaults in `packages/cli/src/config.ts` (`DEFAULTS.llm.agents`). Override any role via `llm.agents.<role>` in `.bollard.yml`.
+
+| Agent role | Default provider | Default model | Rationale |
+|------------|------------------|---------------|-----------|
+| `planner` | `anthropic` | `claude-haiku-4-5-20251001` | Structured JSON output from bounded codebase scan. No multi-step reasoning needed. |
+| `coder` | `anthropic` | `claude-sonnet-4-20250514` | Creative implementation. Only agent where frontier quality pays off. |
+| `boundary-tester` | `anthropic` | `claude-haiku-4-5-20251001` | Grounded property bodies from type signatures. Boilerplate stripped (Phase 3). |
+| `contract-tester` | `anthropic` | `claude-haiku-4-5-20251001` | Same as boundary-tester. |
+| `behavioral-tester` | `anthropic` | `claude-haiku-4-5-20251001` | Same as boundary-tester. |
+| `semantic-reviewer` | `anthropic` | `claude-haiku-4-5-20251001` | Code review over a diff + metrics. Structured findings; no open-ended generation. |
+| `default` (fallback) | `anthropic` | `claude-sonnet-4-20250514` | Safety net for custom blueprint agents not listed above. |
+
+Override any agent by adding its role to `llm.agents` in `.bollard.yml`. Local-model routing (`provider: local`) requires the `dev-local` image — see `CLAUDE.md` § Three images.
 
 Still short. And most of this is optional — you only add sections when the defaults don't work.
 

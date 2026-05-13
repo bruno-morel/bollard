@@ -37,6 +37,11 @@ export interface BollardConfig {
   llm: {
     default: { provider: string; model: string }
     agents?: Record<string, { provider: string; model: string }>
+    /**
+     * Optional per-agent hard cost caps in USD. Parsed and surfaced in `config show --sources`.
+     * Enforcement (fallback to cheaper tier when exceeded) is Stage 6.
+     */
+    agentBudgets?: Record<string, number>
   }
   agent: {
     max_cost_usd: number

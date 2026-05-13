@@ -250,6 +250,46 @@ describe("resolveConfig", () => {
     expect(profile.mutation).toBeUndefined()
   })
 
+  it("defaults planner to Haiku and annotates model source as default", async () => {
+    const { config, sources } = await resolveConfig(undefined, tempDir)
+
+    expect(config.llm.agents?.planner?.model).toBe("claude-haiku-4-5-20251001")
+    expect(sources["llm.agents.planner.model"]?.source).toBe("default")
+    expect(sources["llm.agents.planner.model"]?.value).toBe("claude-haiku-4-5-20251001")
+  })
+
+  it("defaults coder to Sonnet", async () => {
+    const { config } = await resolveConfig(undefined, tempDir)
+
+    expect(config.llm.agents?.coder?.model).toBe("claude-sonnet-4-20250514")
+  })
+
+  it("respects .bollard.yml planner model override and marks source as file", async () => {
+    const yaml = [
+      "llm:",
+      "  agents:",
+      "    planner:",
+      "      provider: anthropic",
+      "      model: claude-sonnet-4-20250514",
+    ].join("\n")
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    const { config, sources } = await resolveConfig(undefined, tempDir)
+
+    expect(config.llm.agents?.planner?.model).toBe("claude-sonnet-4-20250514")
+    expect(sources["llm.agents.planner.model"]?.source).toBe("file")
+    expect(sources["llm.agents.planner.model"]?.detail).toBe("file:.bollard.yml")
+  })
+
+  it("parses llm.agentBudgets from .bollard.yml", async () => {
+    const yaml = ["llm:", "  agentBudgets:", "    coder: 1.5"].join("\n")
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    const { config } = await resolveConfig(undefined, tempDir)
+
+    expect(config.llm.agentBudgets?.coder).toBe(1.5)
+  })
+
   it("warns when provider local is configured for an agent but llama-cli is absent", async () => {
     vi.stubEnv("PATH", "")
     const yaml = [

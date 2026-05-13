@@ -173,6 +173,7 @@ const bollardYamlSchema = z
           .object({ provider: z.string().optional(), model: z.string().optional() })
           .optional(),
         agents: z.record(z.object({ provider: z.string(), model: z.string() })).optional(),
+        agentBudgets: z.record(z.number().positive()).optional(),
       })
       .optional(),
     agent: z
@@ -199,8 +200,23 @@ const bollardYamlSchema = z
   })
   .strict()
 
+/**
+ * Per-agent LLM defaults (Stage 5d Phase 5).
+ * Haiku: structured JSON / bounded-context work (planner, testers, semantic reviewer).
+ * Sonnet: creative multi-step implementation (coder) and fallback for unknown agent roles.
+ */
 const DEFAULTS: BollardConfig = {
-  llm: { default: { provider: "anthropic", model: "claude-sonnet-4-20250514" } },
+  llm: {
+    default: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+    agents: {
+      planner: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      coder: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+      "boundary-tester": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      "contract-tester": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      "behavioral-tester": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      "semantic-reviewer": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+    },
+  },
   agent: { max_cost_usd: 50, max_duration_minutes: 30 },
 }
 
@@ -273,6 +289,20 @@ export async function resolveConfig(
         value: cliFlags.agent.max_duration_minutes,
         source: "cli",
       }
+    }
+  }
+
+  for (const [role, assignment] of Object.entries(config.llm.agents ?? {})) {
+    const isOverridden = yamlResult?.overriddenAgentRoles?.has(role) ?? false
+    sources[`llm.agents.${role}.provider`] = {
+      value: assignment.provider,
+      source: isOverridden ? "file" : "default",
+      ...(isOverridden ? { detail: "file:.bollard.yml" as const } : {}),
+    }
+    sources[`llm.agents.${role}.model`] = {
+      value: assignment.model,
+      source: isOverridden ? "file" : "default",
+      ...(isOverridden ? { detail: "file:.bollard.yml" as const } : {}),
     }
   }
 
@@ -400,6 +430,8 @@ interface LoadedBollardYaml {
   }
   observe?: ObserveProviderConfig
   metrics?: z.infer<typeof metricsYamlSchema>
+  /** Roles whose `llm.agents.<role>` came from `.bollard.yml` (keys of parsed `llm.agents`, not post-merge). */
+  overriddenAgentRoles?: Set<string>
 }
 
 function applyMetricsConfig(
@@ -482,8 +514,18 @@ function loadBollardYaml(
       detail: "file:.bollard.yml",
     }
   }
+  const overriddenAgentRoles =
+    data.llm?.agents !== undefined ? new Set(Object.keys(data.llm.agents)) : undefined
   if (data.llm?.agents) {
-    config.llm.agents = data.llm.agents
+    config.llm.agents = { ...config.llm.agents, ...data.llm.agents }
+  }
+  if (data.llm?.agentBudgets) {
+    config.llm.agentBudgets = { ...(config.llm.agentBudgets ?? {}), ...data.llm.agentBudgets }
+    sources["llm.agentBudgets"] = {
+      value: config.llm.agentBudgets,
+      source: "file",
+      detail: "file:.bollard.yml",
+    }
   }
   if (data.agent?.max_cost_usd !== undefined) {
     config.agent.max_cost_usd = data.agent.max_cost_usd
@@ -516,6 +558,7 @@ function loadBollardYaml(
     ...(data.mutation !== undefined ? { mutation: data.mutation } : {}),
     ...(data.observe !== undefined ? { observe: data.observe as ObserveProviderConfig } : {}),
     ...(data.metrics !== undefined ? { metrics: data.metrics } : {}),
+    ...(overriddenAgentRoles !== undefined ? { overriddenAgentRoles } : {}),
   }
 }
 
