@@ -149,6 +149,21 @@ export async function executeAgent(
   const resolvedMaxTokens = agent.maxTokens ?? 4096
 
   while (turns < agent.maxTurns) {
+    const capUsd = ctx.pipelineCtx.config.agent.max_cost_usd
+    const liveCostUsd = ctx.pipelineCtx.costTracker.total() + totalCostUsd
+    if (liveCostUsd > capUsd) {
+      throw new BollardError({
+        code: "COST_LIMIT_EXCEEDED",
+        message: `Cost limit of $${capUsd} exceeded inside agent "${agent.role}" at turn ${turns + 1}`,
+        context: {
+          agentRole: agent.role,
+          turn: turns + 1,
+          costUsd: liveCostUsd,
+          limitUsd: capUsd,
+        },
+      })
+    }
+
     const displayTurn = turns + 1
     const turnStartedAt = Date.now()
     emitProgress(ctx, {

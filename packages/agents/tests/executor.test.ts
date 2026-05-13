@@ -1,7 +1,12 @@
 import { createContext } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import { MockProvider } from "@bollard/llm/src/mock.js"
-import type { LLMContentBlock, LLMMessage, LLMResponse } from "@bollard/llm/src/types.js"
+import type {
+  LLMContentBlock,
+  LLMMessage,
+  LLMProvider,
+  LLMResponse,
+} from "@bollard/llm/src/types.js"
 import { describe, expect, it } from "vitest"
 import { compactOlderTurns, executeAgent } from "../src/executor.js"
 import type { AgentContext, AgentDefinition, AgentTool, ExecutorOptions } from "../src/types.js"
@@ -184,6 +189,54 @@ describe("executeAgent", () => {
     const result = await executeAgent(agent, "test", provider, "test", makeCtx())
 
     expect(result.totalCostUsd).toBeCloseTo(0.008)
+  })
+
+  it("throws COST_LIMIT_EXCEEDED before max turns when live cost exceeds agent cap", async () => {
+    const lowCapConfig = {
+      llm: { default: { provider: "mock", model: "test" } },
+      agent: { max_cost_usd: 0.05, max_duration_minutes: 30 },
+    }
+    const ctx: AgentContext = {
+      pipelineCtx: createContext("test", "bp", lowCapConfig),
+      workDir: "/tmp/test",
+    }
+
+    const noopTool: AgentTool = {
+      name: "noop",
+      description: "No-op",
+      inputSchema: { type: "object" },
+      async execute() {
+        return "ok"
+      },
+    }
+
+    let callId = 0
+    const provider: LLMProvider = {
+      name: "burn-per-turn",
+      async chat() {
+        callId++
+        return {
+          content: [
+            {
+              type: "tool_use",
+              toolName: "noop",
+              toolInput: {},
+              toolUseId: `id-${callId}`,
+            },
+          ],
+          stopReason: "tool_use",
+          usage: { inputTokens: 10, outputTokens: 10 },
+          costUsd: 0.01,
+        }
+      },
+    }
+
+    const agent = makeAgent([noopTool], { maxTurns: 50 })
+
+    await expect(executeAgent(agent, "go", provider, "m", ctx)).rejects.toMatchObject({
+      code: "COST_LIMIT_EXCEEDED",
+    })
+    expect(callId).toBeLessThan(10)
   })
 
   it("caps large tool results at 8000 chars", async () => {

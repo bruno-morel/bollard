@@ -11,7 +11,7 @@ Bollard has completed **Stage 2** (adversarial verification infrastructure), **S
 The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md)):
 - **Stage 4c:** Java/Kotlin Wave 1 shipped (Part 2 — detector, `bollard-extract-java`, contract graph, PIT, JVM compose, prompts). (OpenAI + Google `chatStream` parity was Part 1.)
 - **Stage 4d:** DX & Agent Integrations: `bollard init --ide` generates platform-specific config for Cursor (rules, hooks, commands), Claude Code (commands, agents, hooks, CLAUDE.md augmentation), Codex, and Antigravity. MCP server v2 adds enriched tool descriptions, 6 resource endpoints (`bollard://profile`, etc.), and 3 prompt templates. `bollard watch` provides continuous verification with file watching. `--quiet` flag on `verify` enables machine-readable JSON output for hooks.
-- **Stage 5d (token economy):** Phase 1 DONE (TS import-graph context expansion). Phase 3 DONE (boundary-tester claims protocol + `assembleTestFile()`). Phase 3b DONE (deterministic code metrics + k6 load testing). Phase 4 DONE (`LocalProvider` + `dev-local` profile, opt-in). **Next:** Phase 4b (make local runtime fully opt-in — Cursor in progress). Phase 2 IN PROGRESS (verification-feedback patcher — tier 1→2→3). Phase 5 DONE (per-agent model assignment — Haiku for planner/testers/reviewer, Sonnet for coder). Phase 6 (cost regression CI). See [spec/stage5d-token-economy.md](../spec/stage5d-token-economy.md) and [spec/ROADMAP.md](../spec/ROADMAP.md).
+- **Stage 5d (token economy):** Phase 1 DONE (TS import-graph context expansion). Phase 3 DONE (boundary-tester claims protocol + `assembleTestFile()`). Phase 3b DONE (deterministic code metrics + k6 load testing). Phase 4 DONE (`LocalProvider` + `dev-local` profile, opt-in). **Next:** Phase 4b (make local runtime fully opt-in — Cursor in progress). Phase 2 IN PROGRESS (verification-feedback patcher — tier 1→2→3). Phase 5 DONE (per-agent model assignment — Haiku for planner/testers/reviewer, Sonnet for coder). **Phase 7 DONE** (coder turn reduction + `max_cost_usd` mid-run enforcement). Phase 6 (cost regression CI). See [spec/stage5d-token-economy.md](../spec/stage5d-token-economy.md) and [spec/ROADMAP.md](../spec/ROADMAP.md).
 - **Stage 5a (self-hosting):** Phase 1+2 DONE (run history + SQLite query layer). Next: Phase 3 (MCP history tools), Phase 4 (CI-aware verification + adversarial test promotion), Phase 5 (Bollard-on-Bollard CI), Phase 6 (protocol compliance CI).
 - **Stage 5b/5c:** Self-improvement (prompt regression gating, meta-verification, adaptive concern weights) and agent intelligence (MCP client for agents, parallel scope execution, agent memory) — after 5a is complete. See [spec/ROADMAP.md](../spec/ROADMAP.md).
 
@@ -372,7 +372,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** 9 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`, `behavioral-tester.md`
-- **Latest count (authoritative, 2026-05-13, post Stage 5d divide self-test):** `1000` passed, `6` skipped (1006 total). Skips: 6 LLM/local smoke tests (no key / opt-in).
+- **Latest count (authoritative, 2026-05-13, post Stage 5d Phase 7):** `1005` passed, `6` skipped (1011 total). Skips: 6 LLM/local smoke tests (no key / opt-in).
 - **Adversarial suite** (`vitest.adversarial.config.ts`): `335` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c). +4 from cleanup (audit/secretScan hook, rollback paths).
 - **Vitest + Vite 8:** you may see `esbuild` option deprecated in favor of `oxc` — harmless until Vitest defaults align; pin Vite 7.x if you need a silent log.
 
@@ -902,23 +902,28 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - **Opt-in only:** `llamacpp-builder` stage + `dev-local` Docker target are behind `docker compose --profile local`. `docker compose build dev` is unchanged — zero cmake overhead for contributors not using local inference. No pipeline node depends on `LocalProvider`; Phase 2 (patcher) and optional `provider: local` on agents are the first consumers; per-agent Haiku/Sonnet defaults (Phase 5) are config-only.
 - **Test count:** 982 passed / 6 skipped
 
-### Stage 5d Phase 4b (IN PROGRESS — Cursor) — Make Local Runtime Fully Opt-In:
-- Move `llamacpp-builder` stage after `dev-full` in Dockerfile (invisible to default builds)
-- Remove `COPY --from=llamacpp-builder` and `llama-cli --version` from `dev` target
-- Add `dev-local` service behind `profiles: ["local"]` in `compose.yaml`
-- Remove `bollard_models` volume mount from `dev` and `dev-full`
-- Add `isBinaryAvailable()` non-throwing probe to `local.ts`
-- `resolveConfig` warns when `provider: local` configured but binary absent
-- Update `CLAUDE.md` and `spec/stage5d-token-economy.md` to reflect opt-in model
+### Stage 5d Phase 4b (DONE) — Make Local Runtime Fully Opt-In:
+- `llamacpp-builder` stage moved after `dev-full` in Dockerfile (invisible to default builds); `dev-local` Stage F extends `dev`
+- `COPY --from=llamacpp-builder` and `llama-cli --version` removed from `dev` target
+- `dev-local` service added behind `profiles: ["local"]` in `compose.yaml`; `bollard_models` volume mount removed from `dev` and `dev-full`
+- `isBinaryAvailable()` non-throwing probe exported from `local.ts`
+- `resolveConfig` emits yellow warning when `provider: local` configured but binary absent
+- **Test count:** 986 passed / 6 skipped
 
-### Stage 5d Phase 2 (IN PROGRESS) — Verification-Feedback Patcher (Tier 1→2→3 pipeline):
+### Stage 5d Phase 2 (DONE) — Verification-Feedback Patcher (Tier 1→2→3 pipeline):
 
-- **Phase 2 — Verification-Feedback Patcher (Tier 1→2→3 pipeline):** Intercepts coder hook failures before they reach the frontier. Three stages: (1) `runDeterministicAutofix` runs `biome check --write --unsafe` and re-checks — pure deterministic, zero tokens; (2) `runLocalPatcher` sends remaining failures to Qwen2.5-Coder-1.5B via `LocalProvider` with a tight patch prompt and applies the resulting unified diff via `patch --strip=1`; (3) only if failures remain does the frontier coder consume a retry turn. `maxVerificationRetries: 3` continues to count only frontier escalations. New error codes: `PATCHER_PATCH_INVALID`, `PATCHER_NO_PROGRESS`. Activated automatically when `localModels` is present in `.bollard.yml` and RAM floor is met and `llama-cli` is on PATH; degrades gracefully to direct frontier escalation when the local tier is absent.
+- `runDeterministicAutofix` runs `biome check --write --unsafe` — pure deterministic, zero tokens; `runLocalPatcher` sends remaining failures to Qwen2.5-Coder-1.5B via `LocalProvider` with a tight patch prompt and applies the resulting unified diff via `patch --strip=1`; frontier coder only sees residual failures. `createVerificationHook` accepts `localModelsConfig`. Error codes: `PATCHER_PATCH_INVALID`, `PATCHER_NO_PROGRESS`. Degrades gracefully when local tier absent.
+- **Test count:** 997 passed / 6 skipped
 
 ### Stage 5d Phase 5 (DONE) — Per-Agent Model Assignment:
 
-- Baked Haiku defaults for `planner`, `boundary-tester`, `contract-tester`, `behavioral-tester`, `semantic-reviewer`; Sonnet for `coder`; Sonnet as fallback `llm.default` for unknown agent roles. All override-able per-agent in `.bollard.yml` `llm.agents` (file keys merge on top of defaults). `BollardConfig.llm.agentBudgets` added — parsed and shown in `config show --sources`; enforcement is Stage 6. Per-agent `provider`/`model` source annotations emitted from `resolveConfig`. `bollard init` generated `.bollard.yml` includes a commented `llm.agents` reference block.
-- **Test count:** 1000 passed / 6 skipped (1006 total)
+- Haiku defaults for `planner`, `boundary-tester`, `contract-tester`, `behavioral-tester`, `semantic-reviewer`; Sonnet for `coder`; Sonnet as fallback `llm.default`. All override-able per-agent in `.bollard.yml` `llm.agents`. `BollardConfig.llm.agentBudgets` added (parse-and-store; enforcement is Phase 6). Per-agent source annotations in `config show --sources`. Generated `.bollard.yml` template includes commented `llm.agents` reference block.
+- **Test count:** 1003 passed / 6 skipped
+
+### Stage 5d Phase 7 (DONE) — Coder Turn Reduction:
+
+Four changes: (7a) scope guard in `coder.md` — implement only what the plan says, no retrofitting adjacent methods, no rewriting existing test files; (7b) hard exit signals at turns 52 ("emit completion JSON NOW") and 58 (stop retrying) in `coder.md`; (7c) `maxTurns` 80→60 in `coder.ts`; (7d) `non_goals[]` field added to planner JSON schema. (7e) `COST_LIMIT_EXCEEDED` enforcement: mid-turn guard in `executeAgent` (committed + in-flight LLM cost vs `config.agent.max_cost_usd`), post-node check in `runBlueprint` after each node cost add, project root `.bollard.yml` sets `agent.max_cost_usd: 5` for self-tests. Success metric: coder turns < 40 on bounded single-method tasks, rollback rate = 0, cost < $3.00 per run.
+- **Test count:** 1005 passed / 6 skipped
 
 ### DO NOT build yet:
 - **New languages outside the current seven (TS/JS/Python/Go/Rust/Java/Kotlin)** — C#/.NET, Ruby, PHP, and further waves are sequenced (Stage 4c+ → 5+). Full design in [spec/07-adversarial-scopes.md §12.1](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md). Do not add language detectors, extractors, or verify images for any of these languages ad-hoc — each wave is coordinated so the dev image, `dev-full` image, mutation testing pattern, and contract graph all land together. Swift, Scala, Elixir, F#, Clojure, Haskell, OCaml, Nim, and Zig are explicit non-goals with no near-term timeline.
@@ -929,8 +934,8 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - **CI-aware verification** — `detectCIEnvironment`, JUnit XML reading, `--ci-passed` flag, `last-verified.json` SHA-match skip logic, optional pre-commit hook — Stage 5a Phase 4. See [spec/stage5a-self-hosting.md §12](spec/stage5a-self-hosting.md).
 - **Adversarial test promotion** — automatic candidate detection (bug-catcher + repeated-generation fingerprinting), promotion flow at `approve-pr` gate, `rewriteImportsForPromotion`, `.bollard/promoted.json` — Stage 5a Phase 4. See [spec/stage5a-self-hosting.md §13](spec/stage5a-self-hosting.md).
 - **Ollama / vLLM or any other inference runtime** — Do not add ad-hoc. The only supported local runtime is llama.cpp via `dev-local`. The decision rule for which work goes deterministic vs. local vs. frontier is in [ADR-0004](../spec/adr/0004-determinism-local-frontier-tiers.md).
-- **Phase 2 (patcher)** — depends on Phase 4b being complete and tested for local-runtime ergonomics. **Per-agent model defaults (Stage 5d Phase 5)** shipped independently (config layer only).
-- **fastembed-js embeddings** — deferred to Phase 5 when file-relevance scoring beyond import-graph ranking is needed.
+- **fastembed-js embeddings** — deferred; file-relevance scoring beyond import-graph ranking not yet needed.
+- **Phase 6 (cost regression CI)** — gated on Phase 7 shipped. Baseline metric is coder turns per run (primary) and total cost (derived).
 - MCP history tools (5a Phase 3), Bollard-on-Bollard CI (5a Phase 5), protocol compliance CI (5a Phase 6), self-improvement (5b), agent intelligence (5c) — Stage 5 (see [spec/ROADMAP.md](../spec/ROADMAP.md))
 
 ### Size (current):

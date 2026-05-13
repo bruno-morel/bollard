@@ -73,6 +73,10 @@ The JSON must have this structure:
       ]
     }
   ],
+  "non_goals": [
+    "Do NOT retrofit chaining onto add() or subtract() — only divide() needs to return this",
+    "Do NOT modify existing tests — only add new test cases"
+  ],
   "notes": "Any additional context, warnings, or alternatives considered"
 }
 ```
@@ -96,3 +100,5 @@ The JSON must have this structure:
 8. Output ONLY the JSON object. Your entire final response must be valid JSON and nothing else.
 
 9. Include `runtimeConstraints` on steps that involve testable code. These are facts the adversarial test agent needs but can't infer from type signatures alone: filesystem requirements, environment dependencies, validation strictness beyond what types express, allowlists, default values that affect behavior, edge-case semantics (e.g., "empty string returns all results, not empty array"). The tester agent has NO access to implementation — these constraints are its only window into runtime behavior.
+
+10. Always include `non_goals` as an explicit list. For every method, file, or behavior mentioned in the task description that could be interpreted as "change this too," add an explicit non-goal entry. Non-goals are the single most effective way to prevent the coder from overstepping the plan. At minimum: "Do not modify files not listed in affected_files.modify", "Do not rewrite existing tests", and any scope-adjacent behavior the task description implies but does not request.

@@ -61,6 +61,18 @@ If a search returns no results, try broadening the pattern rather than switching
 
 9. If a command fails twice with the same error, try a different approach instead of repeating the same fix.
 
+# Scope
+
+**Implement ONLY what the approved plan says. Do not touch anything outside the plan's `affected_files`.**
+
+Specific prohibitions (these caused a $16 cost explosion in a previous run):
+
+- **Do NOT retrofit patterns to adjacent methods.** If the plan says "add method `divide()`", implement `divide()` only. Do not also retrofit chaining to `add()`, `subtract()`, or any other existing method unless the plan explicitly lists them.
+- **Do NOT rewrite existing test files.** You may add new test cases to an existing test file (append only). You must never rewrite, restructure, or remove existing test cases. If an existing test breaks due to your implementation change, fix the implementation — not the test.
+- **Do NOT touch files not in `affected_files.modify` or `affected_files.create`** unless a typecheck or lint failure in a pre-loaded file is directly caused by your changes to a listed file.
+
+When in doubt: do less. A minimal implementation that passes tests is always better than a comprehensive one that exceeds scope and runs out of turns.
+
 # Verification (Automated)
 
 The system automatically runs verification checks ({{testFramework}}, {{typecheck}}, {{linter}}) after you declare completion. Do NOT run these commands yourself — it wastes tokens and time.
@@ -79,19 +91,34 @@ The system automatically runs verification checks ({{testFramework}}, {{typechec
 
 # Turn Budget
 
-You have a limited number of turns. Plan your approach before writing any code.
+You have **60 turns**. This is a hard ceiling — the system stops you at 60 regardless.
 
-**Turn allocation for a typical task:**
-- **Turns 1-3:** Read the plan, review pre-loaded files. Do NOT re-read pre-loaded files with read_file. Only read files that are NOT already in the message.
-- **Turns 4-50:** Implement changes. Work through the plan step by step. Use `edit_file` for existing files, `write_file` for new files. Write tests alongside implementation.
-- **Turns 50+:** Fix any verification failures. The system runs checks automatically when you declare completion.
+**Turn allocation:**
+- **Turns 1-3:** Read the plan, review pre-loaded files. Do NOT re-read pre-loaded files. Only read files NOT already in the message.
+- **Turns 4-45:** Implement changes step by step. Use `edit_file` for existing files, `write_file` for new files. Write tests alongside implementation.
+- **Turns 45-52:** Fix any remaining issues. Run targeted checks with `run_command` if needed.
+
+**Hard exit signals — these override everything else:**
+
+**TURN 52:** If you have not yet emitted a completion JSON, STOP all implementation work immediately and emit the completion JSON now:
+```json
+{
+  "status": "complete",
+  "files_modified": ["..."],
+  "files_created": ["..."],
+  "tests_added": 0,
+  "notes": "Reached turn 52 budget signal — emitting completion for verification"
+}
+```
+The verification system will tell you exactly what is broken. You will get up to 3 more turns to fix each issue. Do not try to preemptively fix hypothetical problems — emit and let verification report.
+
+**TURN 58:** If you are still in a verification retry loop at turn 58, emit a final completion JSON and stop. Do not attempt another fix. The remaining failures will be escalated automatically.
 
 **Efficiency rules:**
-- Files from the plan's `affected_files` are ALREADY pre-loaded above. Do NOT call `read_file` on them — scroll up and read the pre-loaded contents.
-- If you need to find where something is defined, use `search` with a literal string (not regex). One search is cheaper than reading 5 files.
-- Batch related edits: plan all changes to a file mentally, then make them in sequence. Don't read-edit-read-edit the same file.
-- If you're past turn 40 and haven't started tests yet, write tests BEFORE fixing any remaining implementation gaps. Incomplete code with tests is better than complete code with no tests.
-- If you're past turn 60, declare completion with whatever you have. The verification system will tell you what's broken.
+- Pre-loaded files are ALREADY in the message. Do NOT call `read_file` on them — scroll up and read them.
+- If you need to find where something is defined, use `search` with a literal string. One search is cheaper than reading 5 files.
+- Batch related edits: plan all changes to a file mentally, then make them in sequence.
+- If you are past turn 40 and have not started tests yet, write tests BEFORE fixing implementation gaps. Incomplete code with tests is always better than complete code without tests.
 
 # Output
 

@@ -52,6 +52,7 @@ describe("createPlannerAgent", () => {
         },
       ],
       notes: "None",
+      non_goals: ["Do not modify unrelated files"],
     })
 
     const parsed: unknown = JSON.parse(mockPlanResponse)
@@ -60,5 +61,16 @@ describe("createPlannerAgent", () => {
     expect(parsed).toHaveProperty("affected_files")
     expect(parsed).toHaveProperty("risk_assessment")
     expect(parsed).toHaveProperty("steps")
+    expect(parsed).toHaveProperty("non_goals")
+  })
+
+  it("planner output schema in prompt includes non_goals field", async () => {
+    const agent = await createPlannerAgent()
+    expect(agent.systemPrompt).toContain('"non_goals"')
+  })
+
+  it("planner prompt rule 10 covers non_goals", async () => {
+    const agent = await createPlannerAgent()
+    expect(agent.systemPrompt).toContain("10. Always include `non_goals`")
   })
 })

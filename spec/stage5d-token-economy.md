@@ -1,6 +1,6 @@
 # Stage 5d — Token Economy
 
-**Status:** Phases 1, 3, 3b, 4 DONE. Phase 4b in progress. Phases 2, 5, 6 pending.
+**Status:** Phases 1, 3, 3b, 4, 4b, 2, 5, 7 DONE. Phase 6 pending.
 **Owner:** Bruno (maintainer)
 **Related:** [ROADMAP.md](./ROADMAP.md), [01-architecture.md](./01-architecture.md), [06-toolchain-profiles.md](./06-toolchain-profiles.md), [adr/0004-determinism-local-frontier-tiers.md](./adr/0004-determinism-local-frontier-tiers.md)
 
@@ -118,6 +118,78 @@ The renderer is profile-driven — same `ToolchainProfile` Bollard already uses 
 
 **Implementation surface.** Schema extension in `BollardConfig.llm`, defaults in `bollard init` (`packages/cli/src/init-ide.ts` and the underlying `.bollard.yml` generator), CLI `cost-budget` command. The `patcher` role is new — `LLMClient.forAgent("patcher")` must resolve.
 
+## Phase 7 — Coder turn reduction (NEW — highest priority)
+
+**Problem.** The 2026-05-13 self-test cost $16.17 — 26× the $0.63 anchor — because the coder exhausted all 80 turns on attempt 1 (rollback triggered), then used 79 more turns on attempt 2. Phases 1–5 routing savings ($0.02–$0.05 on Haiku agents) are negligible compared to 159 Sonnet turns. The coder is the dominant cost driver and the problem is structural, not incidental.
+
+**Root causes identified from the 2026-05-13 run:**
+
+1. **Chaining drift.** The task description said "returns `this` for chaining" — the coder interpreted this as "retrofit chaining to `add()` too", cascading into test-file rewrites that consumed most turns. The task prompt was ambiguous.
+2. **Test file inflation.** The coder wrote a full new adversarial test file (`cost-tracker.adversarial.test.ts`) using `write_file` instead of editing the existing test file. This is a pattern: the coder treats test writing as "write a new file" rather than "add cases to the existing file", which creates large write operations and subsequent read/verify cycles.
+3. **No early exit on turn budget.** The coder prompt says "if you're past turn 60, declare completion with whatever you have" but this is advisory — the model ignores it under pressure. There is no hard signal forcing early completion.
+4. **Turn budget itself is too high.** 80 turns creates a psychological (and mechanical) "fill the budget" dynamic. A tighter ceiling with a cleaner exit signal would force earlier declaration and let the verification hook catch remaining issues.
+
+**Approach — four concrete changes, each independently shippable:**
+
+### 7a — Coder prompt: scope guard and explicit non-goals
+
+Add a "# Scope" section at the top of `coder.md` (immediately after `# What You Produce`) that instructs the coder to implement exactly what the plan says and nothing more:
+
+```
+# Scope
+
+Implement ONLY what the approved plan specifies. Do NOT:
+- Add chaining to methods not mentioned in the plan
+- Retrofit new patterns (e.g. fluent interface) to existing methods
+- Rewrite existing test files from scratch — add new test cases to existing files
+- Add new exports not in the plan's affected_files
+
+If the plan is ambiguous, implement the minimal interpretation. The adversarial testers will probe edge cases independently.
+```
+
+### 7b — Coder prompt: hard turn-budget signals
+
+Replace the current "Turns 50+" guidance with three hard signals:
+
+```
+# Turn Budget
+
+**Hard limits — the system enforces these:**
+- Turn 64 (80% of 80): verification hook stops running. Declare completion before this turn if possible.
+- Turn 72 (90% of 80): emit your completion JSON NOW regardless of what's left. The verification hook will catch remaining issues and feed them back.
+- Turn 80: hard stop. The pipeline rolls back and retries from scratch — a full retry costs 2× as much.
+
+**The single most expensive thing you can do is hit turn 80.**
+A partial implementation declared at turn 72 with tests costs less than a maxed-out run that triggers rollback.
+```
+
+### 7c — Coder agent: lower `maxTurns` from 80 to 60
+
+The 80-turn ceiling was set in Stage 4c to give the coder more room after the exact-match search death spiral fix. The line-range `edit_file` mode (also Stage 4c) eliminated that spiral. The ceiling never came back down.
+
+In `packages/agents/src/coder.ts`, change `maxTurns: 80` → `maxTurns: 60`. The executor's `deferPostCompletionVerifyFromTurn` is `floor(maxTurns * 0.8)` = 48, which is a reasonable implementation window. The verification hook feeds failures back; the coder has `maxVerificationRetries: 3` additional turns for fixes.
+
+This single change cuts the worst-case cost by 25% (60 vs 80 turns) and reduces the rollback-trigger probability on bounded tasks.
+
+### 7d — Planner: explicit "no-chaining" constraint in plan output
+
+The planner produces the plan the coder follows. Add a `non_goals` field to the planner's JSON output schema (alongside `summary`, `acceptance_criteria`, `steps`) that explicitly lists things the coder must not do. The planner prompt already produces `acceptance_criteria`; `non_goals` is the inverse. Example output for the divide task:
+
+```json
+{
+  "non_goals": [
+    "Do not add chaining to existing CostTracker methods (add, subtract, reset)",
+    "Do not rewrite existing test files — add new test cases only"
+  ]
+}
+```
+
+The coder receives this in the plan and the `# Scope` section references it. The planner is on Haiku — this is a cheap addition.
+
+**Expected savings:** Reducing maxTurns from 80→60 alone cuts worst-case cost from ~~$10/retry to ~$7.50/retry. Combined with scope guard (preventing chaining drift) and early-exit signals, a `CostTracker.divide`-class task should complete in 20–35 turns (~~$1.50–$3.00) rather than 79–80 turns. That's still above the $0.30 target, but the $0.30 target was set when we thought agent routing was the main cost lever. The revised target after this analysis: **below $3.00 per run on a bounded single-method task**, with a path to $1.00 once Phase 2 (local patcher) is wired to the verification hook and task descriptions are tightened.
+
+**Implementation surface.** `packages/agents/prompts/coder.md` (7a, 7b), `packages/agents/src/coder.ts` (7c), `packages/agents/prompts/planner.md` + planner output schema (7d). No new infrastructure; all changes are prompt and config.
+
 ## Phase 6 — Cost regression CI
 
 **Problem.** Without a feedback loop, prompt changes, blueprint additions, and provider switches will silently drift cost-per-run upward over time. Stage 5b is building prompt regression gating against eval scores; Stage 5d adds the cost dimension to the same machinery.
@@ -133,30 +205,31 @@ The renderer is profile-driven — same `ToolchainProfile` Bollard already uses 
 Phase 1 ships standalone (no local-model dependency) and validates the determinization principle on coder turn count. Phase 3 also ships standalone and validates the templating principle on tester output. Phases 1 and 3 together should drop p50 cost-per-run by ~30% before any local-model work begins. Phase 4 is the local runtime — a single integration that unlocks Phase 2 (patcher) and Phase 5 (semantic-reviewer tiering, patcher routing). Phase 6 closes the loop.
 
 ```
-Phase 1 ✅ (context expansion) ──┐
-Phase 3 ✅ (test scaffolding) ────┤
-Phase 3b ✅ (code metrics+k6) ───┤
-Phase 4 ✅ (local runtime) ───────┤── Phase 4b 🔄 (opt-in) ── Phase 2 (patcher) ──┐
-                                  └──────────────────────────── Phase 5 (per-agent) ─┤
-                                                                                      │
-                                                                          Phase 6 (cost regression CI)
+Phase 1 ✅ (context expansion)
+Phase 3 ✅ (test scaffolding)
+Phase 3b ✅ (code metrics+k6)
+Phase 4 ✅ (local runtime) ── Phase 4b ✅ (opt-in) ── Phase 2 ✅ (patcher)
+Phase 5 ✅ (per-agent routing)
+Phase 7 ✅ (coder turn reduction + cost-cap enforcement) ──┐
+                                     └── Phase 6 (cost regression CI)
 ```
 
-Phases 1, 3, 3b are fully independent and shipped without any local-model dependency. Phase 4 ships the `LocalProvider` code + `dev-local` image. Phase 4b makes the opt-in story clean (no build overhead for default contributors). Phase 2 and Phase 5 are the first consumers of the local tier and require Phase 4b to be validated first.
+Phases 1, 3, 3b, 5 are routing/context/templating work — they reduce cost by improving what gets sent to models. Phase 7 is the new critical path: it attacks the dominant cost driver (coder turns) directly through prompt discipline and a lower turn ceiling. Phase 6 closes the loop with CI gating. Phase 2's local patcher provides additional savings once Phase 7 has brought turn counts into a range where individual verification failures (not rollbacks) are the margin.
 
-Validation order matches: each phase has a Bollard-on-Bollard self-test on a real change (the `CostTracker.subtract()` and `bollard_watch_status` patterns from Stage 4c/4d worked well; reuse them) before the next phase starts.
+Self-test cadence: each phase has a Bollard-on-Bollard run before the next phase starts. Self-tests should use a deliberately narrow task description (no ambiguous "returns this for chaining" language) to avoid scope drift. Always check that coder turns < maxTurns before declaring the self-test valid.
 
 ## Success metrics
 
-Validation gate before declaring Stage 5d GREEN:
+**Revised after 2026-05-13 self-test ($16.17, 159 coder turns, rollback).** The original $0.30 target was set before measuring a real run. The actual cost floor is driven by coder turns, not agent routing. Updated targets:
 
-- **Cost per implement-feature run on the `CostTracker.subtract()` validation task** drops below $0.30, measured as the median of three back-to-back self-test runs. This is anchored against the existing $0.63 self-test datum in CLAUDE.md (Stage 4c Part 1 hardening), so a 50%+ reduction is the threshold; "$0.30" is the target.
-- **Coder turn count on the same validation task** drops by at least 30% compared to a pre-Stage-5d baseline run captured immediately before Phase 1 ships. No absolute number — we capture both runs and compare.
-- **Verification retries** (post-completion hook → coder) drop to zero on the validation task. The autofix + local patcher should fully absorb verification failures on a `CostTracker.subtract()`-class change.
-- **No regression** on adversarial test quality: `verify-claim-grounding` drop rate stays at zero on the validation task (it was already zero in Stage 3a/3b/4a self-tests), mutation score stays at or above its current band, semantic-review finding rate is non-zero (we want the reviewer to still flag things).
-- **Phase 6 CI** catches a synthesized cost regression on a test PR — i.e., we deliberately add a tier-3 call where a tier-2 call would do, push it to a branch, and confirm CI fails. This is the Stage 5d analogue of the Bollard-on-Bollard self-test pattern from Stages 2/4c/4d.
+- **Coder turns per run** (primary metric): below 40 turns on a bounded single-method task (e.g. `CostTracker.divide`). The 2026-05-13 run used 80+79=159. Phase 7 changes (maxTurns 80→60, scope guard, hard exit signals) should bring this to 20–35 on the same task class.
+- **Cost per run** (derived): below $3.00 on a bounded single-method task after Phase 7. Below $1.00 once Phase 2 local patcher is active. The $0.30 original target was unrealistic — the coder alone at 20 turns × Sonnet ≈ $0.60–$1.50 depending on token density.
+- **Rollback rate**: 0 on bounded tasks. A rollback (coder hitting maxTurns) doubles cost. Phase 7's lower ceiling and scope guard should eliminate rollbacks on single-method tasks.
+- **Verification retries** (post-completion hook → coder): 0 on the validation task once Phase 2 local patcher is active.
+- **No regression** on adversarial test quality: `verify-claim-grounding` drop rate stays at zero (it was 0/15 boundary and 0/10 contract in the 2026-05-13 run — grounding held), mutation score stays at or above current band.
+- **Phase 6 CI** catches a synthesized cost regression (deliberately add a frontier call where a local call would do, confirm CI fails).
 
-Once `bollard history summary` has accumulated 50+ implement-feature runs across the broader user base, the validation threshold tightens to a population-level median rather than a single-task anchor.
+Once `bollard history summary` has accumulated 20+ implement-feature runs, the validation threshold tightens to a median over the distribution rather than a single-task anchor.
 
 ## Non-goals
 
@@ -172,3 +245,4 @@ Once `bollard history summary` has accumulated 50+ implement-feature runs across
 - **Cache eviction.** `/var/cache/bollard/models` will accumulate over time. LRU with a configurable size cap is the right shape; the cap belongs in `BollardConfig.localModels.cacheSizeGb`.
 - **Embedding model swap.** `bge-small-en-v1.5` is English-only. For multilingual codebases (uncommon but exists), a multilingual model would be needed. Defer until a real user needs it.
 - **Patcher escalation criteria.** The Phase 2 design says "fall through to frontier coder after 2 patcher rounds." Is 2 the right number, or should it be adaptive (escalate sooner if the patcher's first round did not reduce error count)? Decide during Phase 2 implementation, with telemetry.
+

@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { createCoderAgent } from "../src/coder.js"
 import { createPlannerAgent } from "../src/planner.js"
@@ -27,14 +30,26 @@ describe("createCoderAgent", () => {
     expect(toolNames).toContain("run_command")
   })
 
-  it("has 80 max turns", async () => {
+  it("has 60 max turns", async () => {
     const coder = await createCoderAgent()
-    expect(coder.maxTurns).toBe(80)
+    expect(coder.maxTurns).toBe(60)
   })
 
   it("has more turns than the planner", async () => {
     const coder = await createCoderAgent()
     const planner = await createPlannerAgent()
     expect(coder.maxTurns).toBeGreaterThan(planner.maxTurns)
+  })
+
+  it("coder prompt template includes scope guard section", async () => {
+    const dir = dirname(fileURLToPath(import.meta.url))
+    const raw = await readFile(resolve(dir, "../prompts/coder.md"), "utf-8")
+    expect(raw).toContain("Do NOT retrofit patterns to adjacent methods")
+  })
+
+  it("coder prompt template includes turn 52 hard exit signal", async () => {
+    const dir = dirname(fileURLToPath(import.meta.url))
+    const raw = await readFile(resolve(dir, "../prompts/coder.md"), "utf-8")
+    expect(raw).toContain("TURN 52")
   })
 })

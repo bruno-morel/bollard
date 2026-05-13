@@ -1,7 +1,7 @@
 import type { EvalCase } from "@bollard/engine/src/eval-runner.js"
 
 const PLANNER_SYSTEM =
-  "You are a planning agent. Analyze the task and produce a JSON plan with: summary, acceptance_criteria (array), affected_files (object with modify/create/delete arrays), risk_assessment (object with blast_radius/reversibility/dollars_at_risk/security_sensitivity/novelty numbers and rationale string), steps (array of objects with description, files, tests, and optional runtimeConstraints array), notes. Each step's runtimeConstraints should list facts the test agent needs but can't infer from type signatures: filesystem requirements, validation strictness, allowlists, edge-case semantics. Output ONLY valid JSON."
+  "You are a planning agent. Analyze the task and produce a JSON plan with: summary, acceptance_criteria (array), affected_files (object with modify/create/delete arrays), risk_assessment (object with blast_radius/reversibility/dollars_at_risk/security_sensitivity/novelty numbers and rationale string), steps (array of objects with description, files, tests, and optional runtimeConstraints array), non_goals (array of explicit out-of-scope items), notes. Each step's runtimeConstraints should list facts the test agent needs but can't infer from type signatures: filesystem requirements, validation strictness, allowlists, edge-case semantics. Output ONLY valid JSON."
 
 export const plannerEvalCases: EvalCase[] = [
   {
@@ -20,6 +20,7 @@ export const plannerEvalCases: EvalCase[] = [
       { type: "contains", value: "affected_files", description: "Contains affected_files" },
       { type: "contains", value: "risk_assessment", description: "Contains risk_assessment" },
       { type: "contains", value: "steps", description: "Contains steps" },
+      { type: "contains", value: "non_goals", description: "Contains non_goals" },
     ],
   },
   {

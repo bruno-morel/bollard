@@ -17,7 +17,7 @@ export async function createCoderAgent(profile?: ToolchainProfile): Promise<Agen
     role: "coder",
     systemPrompt,
     tools: ALL_TOOLS,
-    maxTurns: 80,
+    maxTurns: 60, // Stage 5d Phase 7: lowered from 80 to enforce budget discipline
     temperature: 0.3,
     maxTokens: 16384,
   }

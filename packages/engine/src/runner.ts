@@ -167,6 +167,17 @@ export async function runBlueprint(
         if (lastResult.cost_usd) {
           ctx.costTracker.add(lastResult.cost_usd)
         }
+        if (ctx.costTracker.exceeded()) {
+          throw new BollardError({
+            code: "COST_LIMIT_EXCEEDED",
+            message: `Cost limit of $${config.agent.max_cost_usd} exceeded after node "${node.id}"`,
+            context: {
+              totalCost: ctx.costTracker.total(),
+              limit: config.agent.max_cost_usd,
+              nodeId: node.id,
+            },
+          })
+        }
         if (lastResult.status !== "fail") break
       }
 
