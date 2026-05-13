@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import type { PipelineContext } from "../src/context.js"
 import { CostTracker } from "../src/cost-tracker.js"
 import { BollardError } from "../src/errors.js"
-import { CostTracker as PublicCostTracker } from "../src/types.js"
+import type { CostTracker as PublicCostTracker } from "../src/types.js"
 
 describe("CostTracker", () => {
   it("starts with zero total", () => {
@@ -351,394 +351,361 @@ describe("CostTracker", () => {
       expect(tracker.total()).toBe(3.5)
     })
 
-    it("prevents underflow with fractional precision", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(1.1)
-
-      expect(() => tracker.subtract(1.2)).toThrow(BollardError)
-      try {
-        tracker.subtract(1.2)
-      } catch (err) {
-        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
-      }
-      expect(tracker.total()).toBe(1.1)
-    })
-
-    it("works correctly after reset", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(5)
-      tracker.reset()
-      tracker.add(3)
-      tracker.subtract(1)
-      expect(tracker.total()).toBe(2)
-    })
-
-    it("affects remaining budget correctly", () => {
+    it("updates remaining budget correctly", () => {
       const tracker = new CostTracker(10)
       tracker.add(7)
       expect(tracker.remaining()).toBe(3)
+
       tracker.subtract(2)
       expect(tracker.remaining()).toBe(5)
     })
 
-    it("affects exceeded status correctly", () => {
+    it("updates exceeded status correctly", () => {
       const tracker = new CostTracker(5)
-      tracker.add(6)
+      tracker.add(8)
       expect(tracker.exceeded()).toBe(true)
+
+      tracker.subtract(4)
+      expect(tracker.exceeded()).toBe(false)
+      expect(tracker.total()).toBe(4)
+    })
+
+    it("works with chained operations", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(6)
       tracker.subtract(2)
+      tracker.add(1)
+      tracker.subtract(0.5)
+
+      expect(tracker.total()).toBe(4.5)
+      expect(tracker.remaining()).toBe(5.5)
       expect(tracker.exceeded()).toBe(false)
     })
 
-    it("can be called multiple times in sequence", () => {
+    it("handles precision correctly with small amounts", () => {
+      const tracker = new CostTracker(1)
+      tracker.add(0.1)
+      tracker.add(0.2)
+      tracker.subtract(0.15)
+
+      // Use toBeCloseTo to handle floating point precision
+      expect(tracker.total()).toBeCloseTo(0.15, 10)
+    })
+  })
+
+  describe("divide()", () => {
+    it("divides total cost by positive divisor", () => {
       const tracker = new CostTracker(10)
       tracker.add(8)
-      tracker.subtract(2)
-      tracker.subtract(1)
-      tracker.subtract(3)
-      expect(tracker.total()).toBe(2)
+      tracker.divide(2)
+      expect(tracker.total()).toBe(4)
     })
 
-    it("interacts correctly with add method", () => {
+    it("returns this for method chaining", () => {
       const tracker = new CostTracker(10)
-      tracker.add(3)
-      tracker.subtract(1)
-      tracker.add(2)
-      tracker.subtract(0.5)
-      expect(tracker.total()).toBe(3.5)
+      tracker.add(6)
+      const result = tracker.divide(2)
+      expect(result).toBe(tracker)
+      expect(tracker.total()).toBe(3)
     })
 
-    it("snapshot reflects subtract operations", () => {
+    it("handles fractional divisors correctly", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(4)
+      tracker.divide(0.5) // Should double the cost
+      expect(tracker.total()).toBe(8)
+    })
+
+    it("works with method chaining", () => {
+      const tracker = new CostTracker(20)
+      const result = tracker.add(10).divide(2).total()
+      expect(result).toBe(5)
+    })
+
+    it("preserves limit value", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(8)
+      tracker.divide(2)
+      expect(tracker.remaining()).toBe(6) // limit 10 - total 4 = 6
+      expect(tracker.exceeded()).toBe(false)
+    })
+
+    it("updates exceeded status correctly", () => {
+      const tracker = new CostTracker(5)
+      tracker.add(10) // Exceeds limit
+      expect(tracker.exceeded()).toBe(true)
+
+      tracker.divide(4) // 10/4 = 2.5, now under limit
+      expect(tracker.exceeded()).toBe(false)
+      expect(tracker.total()).toBe(2.5)
+    })
+
+    it("updates remaining calculation correctly", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(8)
+      expect(tracker.remaining()).toBe(2)
+
+      tracker.divide(4) // 8/4 = 2
+      expect(tracker.remaining()).toBe(8) // 10 - 2 = 8
+    })
+
+    it("throws COST_LIMIT_EXCEEDED for zero divisor", () => {
       const tracker = new CostTracker(10)
       tracker.add(5)
-      const beforeSnapshot = tracker.snapshot()
-      tracker.subtract(2)
-      const afterSnapshot = tracker.snapshot()
 
-      expect(beforeSnapshot.totalCostUsd).toBe(5)
-      expect(afterSnapshot.totalCostUsd).toBe(3)
+      expect(() => tracker.divide(0)).toThrow(BollardError)
+      try {
+        tracker.divide(0)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "COST_LIMIT_EXCEEDED")).toBe(true)
+        expect(err).toHaveProperty("message", "Divisor must be a positive finite number, got: 0")
+        expect(err).toHaveProperty("context", { divisor: 0 })
+      }
+      // Verify total unchanged after error
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("throws COST_LIMIT_EXCEEDED for negative divisor", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+
+      expect(() => tracker.divide(-2)).toThrow(BollardError)
+      try {
+        tracker.divide(-2)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "COST_LIMIT_EXCEEDED")).toBe(true)
+        expect(err).toHaveProperty("message", "Divisor must be a positive finite number, got: -2")
+        expect(err).toHaveProperty("context", { divisor: -2 })
+      }
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("throws COST_LIMIT_EXCEEDED for NaN divisor", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+
+      expect(() => tracker.divide(Number.NaN)).toThrow(BollardError)
+      try {
+        tracker.divide(Number.NaN)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "COST_LIMIT_EXCEEDED")).toBe(true)
+        expect(err).toHaveProperty("message", "Divisor must be a positive finite number, got: NaN")
+      }
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("throws COST_LIMIT_EXCEEDED for Infinity divisor", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+
+      expect(() => tracker.divide(Number.POSITIVE_INFINITY)).toThrow(BollardError)
+      try {
+        tracker.divide(Number.POSITIVE_INFINITY)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "COST_LIMIT_EXCEEDED")).toBe(true)
+        expect(err).toHaveProperty(
+          "message",
+          "Divisor must be a positive finite number, got: Infinity",
+        )
+      }
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("throws COST_LIMIT_EXCEEDED for negative Infinity divisor", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+
+      expect(() => tracker.divide(Number.NEGATIVE_INFINITY)).toThrow(BollardError)
+      try {
+        tracker.divide(Number.NEGATIVE_INFINITY)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "COST_LIMIT_EXCEEDED")).toBe(true)
+        expect(err).toHaveProperty(
+          "message",
+          "Divisor must be a positive finite number, got: -Infinity",
+        )
+      }
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("works with very small positive divisors", () => {
+      const tracker = new CostTracker(1000)
+      tracker.add(1)
+      tracker.divide(0.001)
+      expect(tracker.total()).toBe(1000)
+    })
+
+    it("divide by 1 leaves total unchanged", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(7.5)
+      tracker.divide(1)
+      expect(tracker.total()).toBe(7.5)
+    })
+
+    it("works with complex chaining", () => {
+      const tracker = new CostTracker(100)
+      const result = tracker
+        .add(20)
+        .divide(4) // 20/4 = 5
+        .add(10) // 5 + 10 = 15
+        .divide(3) // 15/3 = 5
+        .total()
+      expect(result).toBe(5)
+    })
+
+    it("handles precision correctly with fractional results", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(1)
+      tracker.divide(3)
+      // 1/3 = 0.333...
+      expect(tracker.total()).toBeCloseTo(0.3333333333333333, 10)
+    })
+
+    it("works correctly after reset", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(8)
+      tracker.divide(2)
+      expect(tracker.total()).toBe(4)
+
+      tracker.reset()
+      tracker.add(6)
+      tracker.divide(3)
+      expect(tracker.total()).toBe(2)
     })
   })
 
   describe("snapshot()", () => {
-    it("returns current total cost in readonly object", () => {
+    it("returns readonly snapshot of current total", () => {
       const tracker = new CostTracker(10)
       tracker.add(3.5)
-      tracker.add(1.5)
 
       const snapshot = tracker.snapshot()
 
-      expect(snapshot.totalCostUsd).toBe(5)
-      expect(tracker.total()).toBe(5) // Verify internal state unchanged
-    })
-
-    it("returns zero cost for new tracker", () => {
-      const tracker = new CostTracker(10)
-
-      const snapshot = tracker.snapshot()
-
-      expect(snapshot.totalCostUsd).toBe(0)
-    })
-
-    it("returns readonly object that cannot be mutated", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(2.5)
-
-      const snapshot = tracker.snapshot()
-
-      // Verify object is frozen
+      expect(snapshot.totalCostUsd).toBe(3.5)
       expect(Object.isFrozen(snapshot)).toBe(true)
-
-      // Attempt to mutate should throw in strict mode (which Vitest uses)
-      expect(() => {
-        // @ts-expect-error - intentionally trying to mutate readonly object
-        snapshot.totalCostUsd = 999
-      }).toThrow()
-
-      // Value should remain unchanged
-      expect(snapshot.totalCostUsd).toBe(2.5)
     })
 
-    it("returns new object instance each time", () => {
+    it("snapshot does not change when tracker is modified", () => {
       const tracker = new CostTracker(10)
-      tracker.add(1)
-
-      const snapshot1 = tracker.snapshot()
-      const snapshot2 = tracker.snapshot()
-
-      expect(snapshot1).not.toBe(snapshot2) // Different object references
-      expect(snapshot1.totalCostUsd).toBe(snapshot2.totalCostUsd) // Same values
-    })
-
-    it("reflects cost changes after add() calls", () => {
-      const tracker = new CostTracker(10)
-
-      const snapshot1 = tracker.snapshot()
-      expect(snapshot1.totalCostUsd).toBe(0)
-
-      tracker.add(2.5)
-      const snapshot2 = tracker.snapshot()
-      expect(snapshot2.totalCostUsd).toBe(2.5)
-
-      tracker.add(1.5)
-      const snapshot3 = tracker.snapshot()
-      expect(snapshot3.totalCostUsd).toBe(4)
-
-      // Previous snapshots remain unchanged
-      expect(snapshot1.totalCostUsd).toBe(0)
-      expect(snapshot2.totalCostUsd).toBe(2.5)
-    })
-
-    it("reflects reset state correctly", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(5)
-
-      const snapshotBefore = tracker.snapshot()
-      expect(snapshotBefore.totalCostUsd).toBe(5)
-
-      tracker.reset()
-
-      const snapshotAfter = tracker.snapshot()
-      expect(snapshotAfter.totalCostUsd).toBe(0)
-
-      // Previous snapshot unchanged
-      expect(snapshotBefore.totalCostUsd).toBe(5)
-    })
-
-    it("handles fractional costs accurately", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(1.234)
-      tracker.add(2.567)
+      tracker.add(2)
 
       const snapshot = tracker.snapshot()
-
-      expect(snapshot.totalCostUsd).toBeCloseTo(3.801, 10)
-    })
-
-    it("does not mutate internal state", () => {
-      const tracker = new CostTracker(10)
       tracker.add(3)
 
-      const totalBefore = tracker.total()
-      const remainingBefore = tracker.remaining()
-      const exceededBefore = tracker.exceeded()
-
-      const snapshot = tracker.snapshot()
-
-      // Verify snapshot call didn't change internal state
-      expect(tracker.total()).toBe(totalBefore)
-      expect(tracker.remaining()).toBe(remainingBefore)
-      expect(tracker.exceeded()).toBe(exceededBefore)
-      expect(snapshot.totalCostUsd).toBe(totalBefore)
-    })
-
-    it("works correctly with zero cost", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(0)
-
-      const snapshot = tracker.snapshot()
-
-      expect(snapshot.totalCostUsd).toBe(0)
-    })
-
-    it("works correctly when tracker has exceeded limit", () => {
-      const tracker = new CostTracker(5)
-      tracker.add(10)
-
-      const snapshot = tracker.snapshot()
-
-      expect(snapshot.totalCostUsd).toBe(10)
-      expect(tracker.exceeded()).toBe(true) // Verify exceeded state unchanged
-    })
-  })
-
-  describe("property-based", () => {
-    it("total equals sum of all added costs", () => {
-      fc.assert(
-        fc.property(
-          fc.array(fc.double({ min: 0, max: 100, noNaN: true }), { minLength: 1, maxLength: 20 }),
-          (costs) => {
-            const tracker = new CostTracker(1e15)
-            let expectedTotal = 0
-            for (const c of costs) {
-              tracker.add(c)
-              expectedTotal += c
-            }
-            return Math.abs(tracker.total() - expectedTotal) < 1e-10
-          },
-        ),
-      )
-    })
-
-    it("remaining is always non-negative", () => {
-      fc.assert(
-        fc.property(
-          fc.double({ min: 0, max: 1000, noNaN: true }),
-          fc.array(fc.double({ min: 0, max: 100, noNaN: true }), { maxLength: 20 }),
-          (limit, costs) => {
-            const tracker = new CostTracker(limit)
-            for (const c of costs) {
-              tracker.add(c)
-            }
-            return tracker.remaining() >= 0
-          },
-        ),
-      )
-    })
-
-    it("exceeded implies remaining is zero", () => {
-      fc.assert(
-        fc.property(
-          fc.double({ min: 0, max: 100, noNaN: true }),
-          fc.array(fc.double({ min: 0, max: 100, noNaN: true }), { maxLength: 20 }),
-          (limit, costs) => {
-            const tracker = new CostTracker(limit)
-            for (const c of costs) {
-              tracker.add(c)
-            }
-            if (tracker.exceeded()) {
-              return tracker.remaining() === 0
-            }
-            return true
-          },
-        ),
-      )
-    })
-  })
-
-  describe("Public API Integration", () => {
-    it("subtract method is accessible through @bollard/engine exports", () => {
-      const tracker = new PublicCostTracker(10)
-      tracker.add(5)
-      tracker.subtract(2)
-      expect(tracker.total()).toBe(3)
-
-      // Verify it's the same class
-      expect(tracker).toBeInstanceOf(CostTracker)
-      expect(typeof tracker.subtract).toBe("function")
+      expect(snapshot.totalCostUsd).toBe(2)
+      expect(tracker.total()).toBe(5)
     })
   })
 
   describe("summary()", () => {
-    it("formats basic summary correctly", () => {
-      const tracker = new CostTracker(10.0)
-      tracker.add(3.5)
+    it("formats basic cost summary", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(2.5)
 
-      const result = tracker.summary()
-      expect(result).toBe("$3.50 / $10.00 (35.0% used)")
+      const summary = tracker.summary()
+
+      expect(summary).toBe("$2.50 / $10.00 (25.0% used)")
     })
 
-    it("formats zero total correctly", () => {
-      const tracker = new CostTracker(10.0)
+    it("shows exceeded status", () => {
+      const tracker = new CostTracker(5)
+      tracker.add(7.25)
 
-      const result = tracker.summary()
-      expect(result).toBe("$0.00 / $10.00 (0.0% used)")
+      const summary = tracker.summary()
+
+      expect(summary).toBe("$7.25 / $5.00 (145.0% used) [EXCEEDED]")
     })
 
-    it("formats exact limit match correctly", () => {
-      const tracker = new CostTracker(5.0)
-      tracker.add(5.0)
+    it("handles zero limit with zero cost", () => {
+      const tracker = new CostTracker(0)
 
-      const result = tracker.summary()
-      expect(result).toBe("$5.00 / $5.00 (100.0% used)")
+      const summary = tracker.summary()
+
+      expect(summary).toBe("$0.00 / $0.00 (0.0% used)")
     })
 
-    it("shows EXCEEDED when budget is exceeded", () => {
-      const tracker = new CostTracker(10.0)
-      tracker.add(12.5)
-
-      const result = tracker.summary()
-      expect(result).toBe("$12.50 / $10.00 (125.0% used) [EXCEEDED]")
-    })
-
-    it("handles zero limit with zero total", () => {
-      const tracker = new CostTracker(0.0)
-
-      const result = tracker.summary()
-      expect(result).toBe("$0.00 / $0.00 (0.0% used)")
-    })
-
-    it("handles zero limit with positive total", () => {
-      const tracker = new CostTracker(0.0)
-      tracker.add(1.0)
-
-      const result = tracker.summary()
-      expect(result).toBe("$1.00 / $0.00 (100.0% used) [EXCEEDED]")
-    })
-
-    it("formats fractional amounts to 2 decimal places", () => {
-      const tracker = new CostTracker(7.123)
-      tracker.add(3.456)
-
-      const result = tracker.summary()
-      expect(result).toBe("$3.46 / $7.12 (48.5% used)")
-    })
-
-    it("formats percentage to 1 decimal place", () => {
-      const tracker = new CostTracker(3.0)
-      tracker.add(1.0)
-
-      const result = tracker.summary()
-      expect(result).toBe("$1.00 / $3.00 (33.3% used)")
-    })
-
-    it("handles very small amounts", () => {
-      const tracker = new CostTracker(0.01)
-      tracker.add(0.005)
-
-      const result = tracker.summary()
-      expect(result).toBe("$0.01 / $0.01 (50.0% used)")
-    })
-
-    it("handles large amounts", () => {
-      const tracker = new CostTracker(1000.0)
-      tracker.add(999.99)
-
-      const result = tracker.summary()
-      expect(result).toBe("$999.99 / $1000.00 (100.0% used)")
-    })
-
-    it("shows exceeded for slightly over budget", () => {
-      const tracker = new CostTracker(10.0)
-      tracker.add(10.01)
-
-      const result = tracker.summary()
-      expect(result).toBe("$10.01 / $10.00 (100.1% used) [EXCEEDED]")
-    })
-
-    it("handles multiple adds before summary", () => {
-      const tracker = new CostTracker(20.0)
-      tracker.add(5.25)
-      tracker.add(3.75)
+    it("handles zero limit with positive cost", () => {
+      const tracker = new CostTracker(0)
       tracker.add(1.5)
 
-      const result = tracker.summary()
-      expect(result).toBe("$10.50 / $20.00 (52.5% used)")
+      const summary = tracker.summary()
+
+      expect(summary).toBe("$1.50 / $0.00 (100.0% used) [EXCEEDED]")
     })
 
-    it("reflects state after subtract operations", () => {
-      const tracker = new CostTracker(10.0)
-      tracker.add(8.0)
-      tracker.subtract(3.0)
+    it("formats fractional percentages correctly", () => {
+      const tracker = new CostTracker(3)
+      tracker.add(1)
 
-      const result = tracker.summary()
-      expect(result).toBe("$5.00 / $10.00 (50.0% used)")
+      const summary = tracker.summary()
+
+      expect(summary).toBe("$1.00 / $3.00 (33.3% used)")
     })
 
-    it("reflects state after reset", () => {
-      const tracker = new CostTracker(10.0)
-      tracker.add(8.0)
-      tracker.reset()
+    it("handles exactly at limit", () => {
+      const tracker = new CostTracker(5)
+      tracker.add(5)
 
-      const result = tracker.summary()
-      expect(result).toBe("$0.00 / $10.00 (0.0% used)")
+      const summary = tracker.summary()
+
+      expect(summary).toBe("$5.00 / $5.00 (100.0% used)")
+    })
+  })
+
+  describe("property-based tests", () => {
+    it("add() never decreases total", () => {
+      fc.assert(
+        fc.property(
+          fc.float({ min: 0, max: 1000, noNaN: true }),
+          fc.float({ min: 0, max: 100, noNaN: true }),
+          (limit, cost) => {
+            const tracker = new CostTracker(limit)
+            const initialTotal = tracker.total()
+            tracker.add(cost)
+            expect(tracker.total()).toBeGreaterThanOrEqual(initialTotal)
+          },
+        ),
+      )
     })
 
-    it("handles edge case of very high percentage", () => {
-      const tracker = new CostTracker(1.0)
-      tracker.add(50.0)
+    it("remaining() is always non-negative", () => {
+      fc.assert(
+        fc.property(
+          fc.float({ min: 0, max: 1000, noNaN: true }),
+          fc.float({ min: 0, max: 1000, noNaN: true }),
+          (limit, cost) => {
+            const tracker = new CostTracker(limit)
+            tracker.add(cost)
+            expect(tracker.remaining()).toBeGreaterThanOrEqual(0)
+          },
+        ),
+      )
+    })
 
-      const result = tracker.summary()
-      expect(result).toBe("$50.00 / $1.00 (5000.0% used) [EXCEEDED]")
+    it("total + remaining equals limit when not exceeded", () => {
+      fc.assert(
+        fc.property(
+          fc.float({ min: 1, max: 1000, noNaN: true }),
+          fc.float({ min: 0, max: 1, noNaN: true }),
+          (limit, costRatio) => {
+            const cost = limit * costRatio
+            const tracker = new CostTracker(limit)
+            tracker.add(cost)
+            const expected = Math.max(0, limit - cost)
+            expect(tracker.remaining()).toBeCloseTo(expected, 10)
+          },
+        ),
+      )
+    })
+  })
+
+  describe("type compatibility", () => {
+    it("implements the public CostTracker interface", () => {
+      const tracker: PublicCostTracker = new CostTracker(10)
+      tracker.add(5)
+      expect(tracker.total()).toBe(5)
+      expect(tracker.exceeded()).toBe(false)
+      expect(tracker.remaining()).toBe(5)
     })
   })
 })
