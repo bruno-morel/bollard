@@ -16,7 +16,7 @@ export class CostTracker {
     this._limit = limitUsd
   }
 
-  add(costUsd: number, ctx?: PipelineContext): void {
+  add(costUsd: number, ctx?: PipelineContext): CostTracker {
     ctx?.log?.debug?.("cost:add")
     if (!Number.isFinite(costUsd) || costUsd < 0) {
       throw new BollardError({
@@ -26,6 +26,7 @@ export class CostTracker {
       })
     }
     this._total += costUsd
+    return this
   }
 
   subtract(usd: number): void {
@@ -62,6 +63,18 @@ export class CostTracker {
     const previousTotal = this._total
     this._total = 0
     return previousTotal
+  }
+
+  divide(divisor: number): CostTracker {
+    if (!Number.isFinite(divisor) || divisor <= 0) {
+      throw new BollardError({
+        code: "COST_LIMIT_EXCEEDED",
+        message: `Divisor must be a positive finite number, got: ${divisor}`,
+        context: { divisor },
+      })
+    }
+    this._total = this._total / divisor
+    return this
   }
 
   snapshot(): Readonly<{ totalCostUsd: number }> {

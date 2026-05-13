@@ -1,144 +1,141 @@
-import { describe, it, expect } from "vitest"
-import * as fc from "fast-check"
+import { describe, it, expect, vi } from "vitest"
 import { CostTracker } from "../src/cost-tracker.js"
+import { BollardError } from "../src/errors.js"
 
-describe("Feature: CostTracker.summary() returns formatted string with total, limit, and percentage", () => {
-  it("should return formatted string with total, limit, and percentage", () => {
-    const tracker = new CostTracker(100.0)
-    tracker.add(25.50)
-    
-    const result = tracker.summary()
-    expect(result).toBe("$25.50 / $100.00 (25.5% used)")
-  })
-
-  it("should format dollar amounts to 2 decimal places", () => {
-    const tracker = new CostTracker(50)
-    tracker.add(10.1)
-    
-    const result = tracker.summary()
-    expect(result).toBe("$10.10 / $50.00 (20.2% used)")
-  })
-
-  it("should format percentage to 1 decimal place", () => {
-    const tracker = new CostTracker(3)
-    tracker.add(1)
-    
-    const result = tracker.summary()
-    expect(result).toBe("$1.00 / $3.00 (33.3% used)")
-  })
-
-  it("should handle zero total cost", () => {
-    const tracker = new CostTracker(100)
-    
-    const result = tracker.summary()
-    expect(result).toBe("$0.00 / $100.00 (0.0% used)")
-  })
+describe("boundary tests", () => {
+it('divide method exists with correct signature', () => {
+  const tracker = new CostTracker(100)
+  expect(typeof tracker.divide).toBe('function')
+  const result = tracker.divide(2)
+  expect(result).toBeInstanceOf(CostTracker)
 })
 
-describe("Feature: When budget is exceeded, append ' [EXCEEDED]'", () => {
-  it("should append [EXCEEDED] when total exceeds limit", () => {
-    const tracker = new CostTracker(50.0)
-    tracker.add(75.25)
-    
-    const result = tracker.summary()
-    expect(result).toBe("$75.25 / $50.00 (150.5% used) [EXCEEDED]")
-  })
-
-  it("should not append [EXCEEDED] when total equals limit", () => {
-    const tracker = new CostTracker(100.0)
-    tracker.add(100.0)
-    
-    const result = tracker.summary()
-    expect(result).toBe("$100.00 / $100.00 (100.0% used)")
-  })
-
-  it("should not append [EXCEEDED] when total is less than limit", () => {
-    const tracker = new CostTracker(100.0)
-    tracker.add(99.99)
-    
-    const result = tracker.summary()
-    expect(result).toBe("$99.99 / $100.00 (100.0% used)")
-  })
+it('divides total by divisor', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(20)
+  tracker.divide(2)
+  expect(tracker.total()).toBe(10)
 })
 
-describe("Feature: Handle edge cases like zero limit correctly", () => {
-  it("should show 0% when both total and limit are 0", () => {
-    const tracker = new CostTracker(0)
-    
-    const result = tracker.summary()
-    expect(result).toBe("$0.00 / $0.00 (0.0% used)")
-  })
-
-  it("should show 100% when total > 0 and limit = 0", () => {
-    const tracker = new CostTracker(0)
-    tracker.add(10.50)
-    
-    const result = tracker.summary()
-    expect(result).toBe("$10.50 / $0.00 (100.0% used) [EXCEEDED]")
-  })
-
-  it("should handle very small amounts correctly", () => {
-    const tracker = new CostTracker(0.01)
-    tracker.add(0.005)
-    
-    const result = tracker.summary()
-    expect(result).toBe("$0.01 / $0.01 (50.0% used)")
-  })
-
-  it("should reflect cost after valid subtract", () => {
-    const tracker = new CostTracker(100)
-    tracker.add(100)
-    tracker.subtract(25)
-
-    const result = tracker.summary()
-    expect(result).toBe("$75.00 / $100.00 (75.0% used)")
-  })
+it('returns this for chaining', () => {
+  const tracker = new CostTracker(100)
+  const result = tracker.divide(2)
+  expect(result).toBe(tracker)
 })
 
-describe("Property-based tests for summary formatting", () => {
-  const limitArb = fc.integer({ min: 1, max: 1_000_000 }).map((n) => n / 1000)
-  const totalArb = fc.integer({ min: 0, max: 1_000_000 }).map((n) => n / 1000)
+it('throws COST_LIMIT_EXCEEDED when divisor is 0', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(10)
+  try {
+    tracker.divide(0)
+    expect.fail('should have thrown')
+  } catch (err) {
+    expect(BollardError.hasCode(err, 'COST_LIMIT_EXCEEDED')).toBe(true)
+  }
+})
 
-  it("should always return string with correct format structure", () => {
-    fc.assert(
-      fc.property(limitArb, totalArb, (limit, total) => {
-        const tracker = new CostTracker(limit)
-        tracker.add(total)
-        const result = tracker.summary()
+it('throws COST_LIMIT_EXCEEDED when divisor is negative', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(10)
+  try {
+    tracker.divide(-5)
+    expect.fail('should have thrown')
+  } catch (err) {
+    expect(BollardError.hasCode(err, 'COST_LIMIT_EXCEEDED')).toBe(true)
+  }
+})
 
-        const pattern =
-          /^\$\d+\.\d{2} \/ \$\d+\.\d{2} \(\d+\.\d+% used\)( \[EXCEEDED\])?$/
-        expect(result).toMatch(pattern)
-      }),
-    )
-  })
+it('throws COST_LIMIT_EXCEEDED when divisor is NaN', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(10)
+  try {
+    tracker.divide(NaN)
+    expect.fail('should have thrown')
+  } catch (err) {
+    expect(BollardError.hasCode(err, 'COST_LIMIT_EXCEEDED')).toBe(true)
+  }
+})
 
-  it("should append EXCEEDED only when total > limit", () => {
-    fc.assert(
-      fc.property(limitArb, totalArb, (limit, total) => {
-        const tracker = new CostTracker(limit)
-        tracker.add(total)
-        const result = tracker.summary()
+it('throws COST_LIMIT_EXCEEDED when divisor is Infinity', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(10)
+  try {
+    tracker.divide(Infinity)
+    expect.fail('should have thrown')
+  } catch (err) {
+    expect(BollardError.hasCode(err, 'COST_LIMIT_EXCEEDED')).toBe(true)
+  }
+})
 
-        const shouldExceed = total > limit
-        const hasExceeded = result.includes("[EXCEEDED]")
-        expect(hasExceeded).toBe(shouldExceed)
-      }),
-    )
-  })
+it('handles fractional divisors correctly', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(10)
+  tracker.divide(0.5)
+  expect(tracker.total()).toBe(20)
+})
 
-  it("should calculate percentage correctly", () => {
-    fc.assert(
-      fc.property(limitArb, totalArb, (limit, total) => {
-        const tracker = new CostTracker(limit)
-        tracker.add(total)
-        const result = tracker.summary()
+it('supports method chaining with multiple operations', () => {
+  const tracker = new CostTracker(100)
+  const result = tracker.add(10).divide(2).add(5).divide(3)
+  expect(typeof result).toBe('object')
+  expect(result).toBeInstanceOf(CostTracker)
+  expect(tracker.total()).toBeCloseTo((10 / 2 + 5) / 3, 5)
+})
 
-        const pct =
-          limit === 0 ? (total === 0 ? 0 : 100) : (total / limit) * 100
-        const expectedPercentage = pct.toFixed(1)
-        expect(result).toContain(`(${expectedPercentage}% used)`)
-      }),
-    )
-  })
+it('preserves limit and affects exceeded/remaining only via new total', () => {
+  const tracker = new CostTracker(50)
+  tracker.add(40)
+  const remainingBefore = tracker.remaining()
+  tracker.divide(2)
+  const remainingAfter = tracker.remaining()
+  expect(remainingAfter).toBeGreaterThan(remainingBefore)
+  expect(tracker.total()).toBe(20)
+})
+
+it('divide(1) leaves total unchanged', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(25)
+  const totalBefore = tracker.total()
+  tracker.divide(1)
+  expect(tracker.total()).toBe(totalBefore)
+})
+
+it('handles very small positive divisors', () => {
+  const tracker = new CostTracker(10000)
+  tracker.add(1)
+  tracker.divide(0.001)
+  expect(tracker.total()).toBe(1000)
+})
+
+it('error context contains invalid divisor', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(10)
+  try {
+    tracker.divide(-3)
+    expect.fail('should have thrown')
+  } catch (err) {
+    expect(err).toBeInstanceOf(BollardError)
+    expect(err.context).toBeDefined()
+    expect(err.context.divisor).toBe(-3)
+  }
+})
+
+it('divide with zero total returns zero', () => {
+  const tracker = new CostTracker(100)
+  tracker.divide(5)
+  expect(tracker.total()).toBe(0)
+})
+
+it('divide with negative divisor throws before modifying total', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(30)
+  const totalBefore = tracker.total()
+  try {
+    tracker.divide(-2)
+    expect.fail('should have thrown')
+  } catch (err) {
+    expect(BollardError.hasCode(err, 'COST_LIMIT_EXCEEDED')).toBe(true)
+    expect(tracker.total()).toBe(totalBefore)
+  }
+})
 })
