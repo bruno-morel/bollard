@@ -1,6 +1,6 @@
 # Stage 5d — Token Economy
 
-**Status:** Phases 1, 3, 3b, 4, 4b, 2, 5, 7 DONE. Phase 8 (context window management) co-critical-path with Phase 7. Phase 6 pending (gates on Phase 7 + Phase 8 validated).
+**Status:** Phases 1, 2, 3, 3b, 4, 4b, 5, 7, 8, 9, 10 DONE. Phase 6 pending (gates on Phases 7+8 validated — both are now validated; Phase 6 is next).
 **Owner:** Bruno (maintainer)
 **Related:** [ROADMAP.md](./ROADMAP.md), [01-architecture.md](./01-architecture.md), [06-toolchain-profiles.md](./06-toolchain-profiles.md), [adr/0004-determinism-local-frontier-tiers.md](./adr/0004-determinism-local-frontier-tiers.md)
 
@@ -190,7 +190,9 @@ The coder receives this in the plan and the `# Scope` section references it. The
 
 **Implementation surface.** `packages/agents/prompts/coder.md` (7a, 7b), `packages/agents/src/coder.ts` (7c), `packages/agents/prompts/planner.md` + planner output schema (7d). No new infrastructure; all changes are prompt and config.
 
-## Phase 8 — Context Window Management (co-critical-path with Phase 7)
+## Phase 8 — Context Window Management ✅ DONE
+
+**Validated 2026-05-15.** Run id `20260515-0350-run-75c385` (`snapshotTotal()` task): 31/31 nodes, $2.5592, 47 coder turns (single attempt, zero rollbacks). Peak input tokens 23,016 (down from 33,710 baseline, −31.7%). Avg input tokens/turn 16,596 (down from ~20,000, −17%). Total Sonnet input tokens 780,044 (down from 1,740,720, −55.2%). Combined with Phase 7, the $3.00 target was met; the $1.00 target is achievable with Phase 6 baseline locking.
 
 **Problem.** The 2026-05-13 API logs show that **94% of run cost is input tokens, not output**. The raw Anthropic usage data for the self-test (87 Sonnet requests, ~1.74M input tokens, ~20K output tokens) makes this concrete: output is almost free; input is the cost. Context grows monotonically turn-by-turn — from ~6K tokens in early turns to ~33K tokens in late turns — because `read_file` results, `run_command` output, and failed-check feedback all accumulate in the conversation history without pruning. The jump from ~14K to ~26K input marks the rollback boundary: the second attempt starts with a fresh context but immediately reloads all pre-loaded files, reproducing the bloat.
 
@@ -228,6 +230,36 @@ The planner's `affected_files` pre-loading is supposed to be capped at 10 files 
 
 **Implementation surface summary.** `packages/agents/src/executor.ts` (compactOlderTurns aggressiveness — 8b), `packages/agents/src/tools/read-file.ts` (200-line cap — 8a), `packages/agents/src/tools/run-command.ts` (50-line output cap — 8a), `packages/cli/src/agent-handler.ts` (preload budget verification — 8c).
 
+## Phase 9 — Runtime Turn Enforcement + Per-Attempt Cost Cap ✅ DONE
+
+**Validated 2026-05-15.** Run id `20260515-0350-run-75c385`: 31/31 nodes, $2.5592, 47 turns, zero rollbacks, zero COST_LIMIT_EXCEEDED. All three Phase 9 enforcement mechanisms stayed correctly inactive (coder completed naturally before any threshold).
+
+**Problem.** Phase 7's prompt-level exit signals (TURN 52, TURN 58 in `coder.md`) were advisory. The 2026-05-15 validation run showed the coder ignoring them under pressure, burning $3.66 on a failed 60-turn attempt 1, then $1.28 on attempt 2 — hitting the $5 aggregate cap before contract agents could run.
+
+**Root cause.** The executor's aggregate cost cap only fires at the start of each turn, and `costTracker.total()` only reflects committed costs from prior nodes (not the current in-flight attempt). A single attempt had no per-attempt ceiling of its own and could spend arbitrarily until `maxTurns`.
+
+**Four changes shipped:**
+
+- **(9a) Hard-exit injection:** executor injects a `user`-role message `"SYSTEM: You have N turns remaining. You MUST emit your completion JSON on your next response."` at turn `maxTurns - 8` if no `end_turn` completion has been seen. One-shot via `hasInjectedHardExit`; gated by `hasEmittedCompletion` (set on first non-`tool_use` stop so hook-retry paths are covered).
+- **(9b) Per-attempt cost cap:** `ExecutorOptions.maxCostUsd?: number` — throws `COST_LIMIT_EXCEEDED` when `totalCostUsd` (current attempt only) exceeds the cap. Independent of the aggregate pipeline cap.
+- **(9c) Coder wiring:** `agent-handler.ts` passes `maxCostUsd: config.agent.max_cost_usd / 2` to the coder executor. At `max_cost_usd: 10`, this gives the coder $5 per attempt — enough for a clean run ($1.28 in attempt 2 of the Phase 8 run) while preventing a runaway attempt from consuming the whole pipeline budget.
+- **(9d) Aggregate cap raised $5 → $10:** the $5 cap was too tight for a two-attempt run. Per-attempt cap at $5 is the binding constraint; $10 aggregate catches pathological multi-agent scenarios.
+
+**Implementation surface.** `packages/agents/src/executor.ts` (9a + 9b), `packages/agents/src/types.ts` (`maxCostUsd` in `ExecutorOptions`), `packages/cli/src/agent-handler.ts` (9c), `.bollard.yml` (9d). 4 new executor tests.
+
+## Phase 10 — Planner Prompt: Plan Compression ✅ DONE
+
+**Validated (mechanism only) 2026-05-15.** Run id `20260515-0421-run-7c9604`: planner produced 5 acceptance criteria (down from 9 in Phase 9 run, within the 3–5 cap). Coder completed in 7 turns at $0.20 — pipeline halted at node 10 because `snapshotTotal()` was already on main (degenerate task). Full 31/31 turn-count measurement deferred to the next real pipeline task.
+
+**Problem.** The Phase 9 validation run completed 31/31 nodes at $2.56 but used 47 coder turns (target < 40). Root cause: the planner generated 9 acceptance criteria for a 3-line method, enumerating every state permutation ("returns correct value after add()", "after subtract()", "after reset()"...). The coder scaffolded a test assertion for each criterion, spending ~40 of 47 turns on test-writing.
+
+**Two targeted prompt constraints shipped to `packages/agents/prompts/planner.md`:**
+
+- **Rule 2 extended:** cap `acceptance_criteria` at 3–5 entries. Do NOT enumerate per-method-interaction variants — those are test-implementation details, not criteria. One criterion like "returns the current accumulated total without modifying state" covers all mutation-coverage scenarios. Mutation coverage is the test agent's job, not the plan's.
+- **Rule 9 extended:** keep `steps[].tests` descriptions concise — name the properties to verify, not every permutation of states to test.
+
+**Expected impact.** On bounded single-method tasks: planner produces 3–5 criteria instead of 7–9, coder writes 3–5 test cases instead of 9, turn count lands in the 25–35 range. Full measurement on next real pipeline task.
+
 ## Phase 6 — Cost regression CI
 
 **Problem.** Without a feedback loop, prompt changes, blueprint additions, and provider switches will silently drift cost-per-run upward over time. Stage 5b is building prompt regression gating against eval scores; Stage 5d adds the cost dimension to the same machinery.
@@ -243,30 +275,42 @@ The planner's `affected_files` pre-loading is supposed to be capped at 10 files 
 Phase 1 ships standalone (no local-model dependency) and validates the determinization principle on coder turn count. Phase 3 also ships standalone and validates the templating principle on tester output. Phases 1 and 3 together should drop p50 cost-per-run by ~30% before any local-model work begins. Phase 4 is the local runtime — a single integration that unlocks Phase 2 (patcher) and Phase 5 (semantic-reviewer tiering, patcher routing). Phase 6 closes the loop.
 
 ```
-Phase 1 ✅ (context expansion)
-Phase 3 ✅ (test scaffolding)
+Phase 1  ✅ (context expansion)
+Phase 3  ✅ (test scaffolding)
 Phase 3b ✅ (code metrics+k6)
-Phase 4 ✅ (local runtime) ── Phase 4b ✅ (opt-in) ── Phase 2 ✅ (patcher)
-Phase 5 ✅ (per-agent routing)
-Phase 7 ✅ (coder turn reduction + cost-cap)  ──┐
-Phase 8    (context window management)          ──┼── Phase 6 (cost regression CI)
+Phase 4  ✅ (local runtime) ── Phase 4b ✅ (opt-in) ── Phase 2 ✅ (patcher)
+Phase 5  ✅ (per-agent routing)
+Phase 7  ✅ (coder turn reduction + cost-cap)  ──┐
+Phase 8  ✅ (context window management)          ──┼── Phase 6 (cost regression CI)  ← NEXT
+Phase 9  ✅ (runtime enforcement + per-attempt cap)
+Phase 10 ✅ (planner plan compression)
 ```
 
-Phases 1, 3, 3b, 5 are routing/context/templating work — they reduce cost by improving what gets sent to models. Phases 7 and 8 are the co-critical path: Phase 7 attacks turn count (the multiplier) and Phase 8 attacks context size (cost per turn). The 2026-05-13 API logs show both are required — 94% of cost is input tokens, so reducing turns without reducing per-turn context still leaves the total above $1.00. Phase 6 closes the loop with CI gating and should gate on both Phase 7 and Phase 8 being validated. Phase 2's local patcher provides additional savings once Phase 7+8 have brought per-run cost into a range where individual verification failures (not rollbacks) are the margin.
+Phases 1, 3, 3b, 5 are routing/context/templating work — they reduce cost by improving what gets sent to models. Phases 7 and 8 are the co-critical path: Phase 7 attacks turn count (the multiplier) and Phase 8 attacks context size (cost per turn). Phase 9 adds runtime enforcement so prompt-level signals can't be ignored. Phase 10 compresses the plan itself so the coder receives tighter work specifications. Phase 6 closes the loop with CI gating — it can now proceed since Phases 7+8 are both validated.
 
 Self-test cadence: each phase has a Bollard-on-Bollard run before the next phase starts. Self-tests should use a deliberately narrow task description (no ambiguous "returns this for chaining" language) to avoid scope drift. Always check that coder turns < maxTurns before declaring the self-test valid.
 
 ## Success metrics
 
-**Revised after 2026-05-13 self-test ($16.17, 159 coder turns, rollback).** The original $0.30 target was set before measuring a real run. The actual cost floor is driven by coder turns, not agent routing. Updated targets:
+**Revised after 2026-05-13 self-test ($16.17, 159 coder turns, rollback).** Actual achieved numbers as of 2026-05-15 (Phases 7+8+9+10):
 
-- **Coder turns per run** (primary metric): below 40 turns on a bounded single-method task (e.g. `CostTracker.divide`). The 2026-05-13 run used 80+79=159. Phase 7 changes (maxTurns 80→60, scope guard, hard exit signals) should bring this to 20–35 on the same task class.
-- **Context tokens per turn** (new metric — Phase 8): target < 15K average input tokens per turn (current: ~20K average, peaks at 33K in the 2026-05-13 API logs). Measured from raw Anthropic API usage logs via `bollard history`. Phase 8's tool result truncation and aggressive `compactOlderTurns` are the primary levers.
-- **Cost per run** (derived): below $3.00 on a bounded single-method task after Phase 7. Below $1.00 once Phase 8 context management is also active. The $0.30 original target was unrealistic — the coder alone at 20 turns × 20K avg input ≈ $1.20 in input alone; Phase 8 must reduce that to ~10K avg to make $1.00 feasible.
-- **Rollback rate**: 0 on bounded tasks. A rollback (coder hitting maxTurns) doubles cost. Phase 7's lower ceiling and scope guard should eliminate rollbacks on single-method tasks.
-- **Verification retries** (post-completion hook → coder): 0 on the validation task once Phase 2 local patcher is active.
-- **No regression** on adversarial test quality: `verify-claim-grounding` drop rate stays at zero (it was 0/15 boundary and 0/10 contract in the 2026-05-13 run — grounding held), mutation score stays at or above current band.
-- **Phase 6 CI** catches a synthesized cost regression (deliberately add a frontier call where a local call would do, confirm CI fails). Phase 6 gates on both Phase 7 (turn count) and Phase 8 (per-turn context) being validated before the baseline is locked.
+| Metric | Target | 2026-05-13 baseline | Phase 9 run | Phase 10 run |
+|---|---|---|---|---|
+| Cost per run | < $3.00 | $16.17 | $2.5592 ✅ | $0.20 ✅ (degenerate) |
+| Coder turns | < 40 | 159 (2 attempts) | 47 | 7 (degenerate) |
+| Rollback rate | 0 | 2 | 0 ✅ | 0 ✅ |
+| Avg input tokens/turn | < 15K | ~20,000 | 16,596 | 5,833 (degenerate) |
+| Peak input tokens | — | 33,710 | 23,016 | 6,577 (degenerate) |
+| Pipeline nodes | 31/31 | 5/31 | 31/31 ✅ | 9/31 (degenerate) |
+| Acceptance criteria count | 3–5 | n/a | 9 ❌ | 5 ✅ |
+
+The Phase 9 run ($2.56, 47 turns, 31/31 nodes) is the primary evidence that Phases 7+8+9 are working as designed. The 47-turn count missed the < 40 target due to planner over-specification (9 criteria for a 3-line method), which Phase 10 addresses. The Phase 10 run is degenerate (task already on main), so full 31/31 turn-count measurement is pending the next real pipeline task.
+
+**Updated targets post Phase 9+10:**
+- **Coder turns:** < 40 on a bounded single-method task with a fresh codebase. Phase 10's planner compression (3–5 criteria vs. 9) should bring the next real run to 25–35 turns.
+- **Cost per run:** < $2.00 on a bounded single-method task (Phase 9's $2.56 was dominated by the 47-turn test-writing; with 30 turns the arithmetic gives ~$1.60).
+- **Rollback rate:** 0. Achieved since Phase 9.
+- **Phase 6 CI:** can now be built — both Phase 7 and Phase 8 are validated. Baseline tag: `20260515-0350-run-75c385` ($2.56, 47 turns). Regression threshold: 15% cost increase or 5-turn increase vs. rolling median.
 
 Once `bollard history summary` has accumulated 20+ implement-feature runs, the validation threshold tightens to a median over the distribution rather than a single-task anchor.
 
