@@ -1,6 +1,8 @@
 export type { BollardErrorCode } from "./errors.js"
 export { BollardError } from "./errors.js"
 export { CostTracker } from "./cost-tracker.js"
+export type { CostBaseline, CostBaselineComparison } from "./cost-baseline.js"
+export { compareToBaseline, readBaseline, writeBaseline } from "./cost-baseline.js"
 export type {
   NodeType,
   NodeResultError,

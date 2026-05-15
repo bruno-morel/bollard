@@ -13,6 +13,7 @@ import { runStaticChecks } from "@bollard/verify/src/static.js"
 import { buildProjectTree, createAgenticHandler } from "./agent-handler.js"
 import { resolveConfig } from "./config.js"
 import { collectAffectedPathsFromPlan } from "./contract-plan.js"
+import { runCostBaselineCommand } from "./cost-baseline.js"
 import { diffToolchainProfile } from "./diff.js"
 import { formatDoctorReport, runDoctor } from "./doctor.js"
 import { getHeadSha } from "./git-utils.js"
@@ -854,6 +855,12 @@ async function main(): Promise<void> {
     return
   }
 
+  if (command === "cost-baseline") {
+    const workDir = resolveWorkspaceDirFromArgs(rest)
+    await runCostBaselineCommand(rest, workDir)
+    return
+  }
+
   if (command === "history") {
     const workDir = resolveWorkspaceDirFromArgs(rest)
     await runHistoryCommand(rest, workDir)
@@ -916,6 +923,9 @@ async function main(): Promise<void> {
   )
   log(
     `  ${BOLD}history${RESET} [list|show|compare|summary|rebuild]  Run history (list/show/compare/summary/rebuild)`,
+  )
+  log(
+    `  ${BOLD}cost-baseline${RESET} tag|show|diff      Cost regression baseline (${DIM}diff exits 1 on fail${RESET})`,
   )
   log(
     `  ${BOLD}contract${RESET} [--plan <file>]         Print ContractContext JSON (optional planner plan)`,

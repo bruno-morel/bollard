@@ -11,7 +11,7 @@ Bollard has completed **Stage 2** (adversarial verification infrastructure), **S
 The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md)):
 - **Stage 4c:** Java/Kotlin Wave 1 shipped (Part 2 — detector, `bollard-extract-java`, contract graph, PIT, JVM compose, prompts). (OpenAI + Google `chatStream` parity was Part 1.)
 - **Stage 4d:** DX & Agent Integrations: `bollard init --ide` generates platform-specific config for Cursor (rules, hooks, commands), Claude Code (commands, agents, hooks, CLAUDE.md augmentation), Codex, and Antigravity. MCP server v2 adds enriched tool descriptions, 6 resource endpoints (`bollard://profile`, etc.), and 3 prompt templates. `bollard watch` provides continuous verification with file watching. `--quiet` flag on `verify` enables machine-readable JSON output for hooks.
-- **Stage 5d (token economy):** Phase 1 DONE (TS import-graph context expansion). Phase 3 DONE (boundary-tester claims protocol + `assembleTestFile()`). Phase 3b DONE (deterministic code metrics + k6 load testing). Phase 4 DONE (`LocalProvider` + `dev-local` profile, opt-in). **Next:** Phase 4b (make local runtime fully opt-in — Cursor in progress). Phase 2 IN PROGRESS (verification-feedback patcher — tier 1→2→3). Phase 5 DONE (per-agent model assignment — Haiku for planner/testers/reviewer, Sonnet for coder). **Phase 7 DONE** (coder turn reduction + `max_cost_usd` mid-run enforcement). **Phase 8 DONE** (context window management — `read_file`/`run_command` caps + tighter executor compaction). **Phase 9 DONE** (runtime forced-completion injection + per-attempt cost cap for coder). **Phase 10 DONE** (planner prompt plan compression — cap acceptance criteria at 3–5, no state-permutation enumeration). Phase 6 (cost regression CI). See [spec/stage5d-token-economy.md](../spec/stage5d-token-economy.md) and [spec/ROADMAP.md](../spec/ROADMAP.md).
+- **Stage 5d (token economy):** Phase 1 DONE (TS import-graph context expansion). Phase 3 DONE (boundary-tester claims protocol + `assembleTestFile()`). Phase 3b DONE (deterministic code metrics + k6 load testing). Phase 4 DONE (`LocalProvider` + `dev-local` profile, opt-in). **Next:** Phase 4b (make local runtime fully opt-in — Cursor in progress). Phase 2 IN PROGRESS (verification-feedback patcher — tier 1→2→3). Phase 5 DONE (per-agent model assignment — Haiku for planner/testers/reviewer, Sonnet for coder). **Phase 7 DONE** (coder turn reduction + `max_cost_usd` mid-run enforcement). **Phase 8 DONE** (context window management — `read_file`/`run_command` caps + tighter executor compaction). **Phase 9 DONE** (runtime forced-completion injection + per-attempt cost cap for coder). **Phase 10 DONE** (planner prompt plan compression — cap acceptance criteria at 3–5, no state-permutation enumeration). **Phase 6 DONE** (cost regression CI — baseline file, `cost-baseline` CLI, GitHub Action). See [spec/stage5d-token-economy.md](../spec/stage5d-token-economy.md) and [spec/ROADMAP.md](../spec/ROADMAP.md).
 - **Stage 5a (self-hosting):** Phase 1+2 DONE (run history + SQLite query layer). Next: Phase 3 (MCP history tools), Phase 4 (CI-aware verification + adversarial test promotion), Phase 5 (Bollard-on-Bollard CI), Phase 6 (protocol compliance CI).
 - **Stage 5b/5c:** Self-improvement (prompt regression gating, meta-verification, adaptive concern weights) and agent intelligence (MCP client for agents, parallel scope execution, agent memory) — after 5a is complete. See [spec/ROADMAP.md](../spec/ROADMAP.md).
 
@@ -52,6 +52,10 @@ docker compose run --rm dev --filter @bollard/cli run start -- history show <run
 docker compose run --rm dev --filter @bollard/cli run start -- history compare <id-a> <id-b>
 docker compose run --rm dev --filter @bollard/cli run start -- history summary
 docker compose run --rm dev --filter @bollard/cli run start -- history rebuild
+
+# Cost baseline (tag / show / diff — diff exits 1 on regression)
+docker compose run --rm dev --filter @bollard/cli run start -- cost-baseline show
+docker compose run --rm dev --filter @bollard/cli run start -- cost-baseline diff
 
 # Doctor with run history health
 docker compose run --rm dev --filter @bollard/cli run start -- doctor --history
@@ -212,6 +216,7 @@ bollard/
 │   │   │   ├── runner.ts         # runBlueprint, AgenticHandler, HumanGateHandler, ProgressCallback, RunBlueprintCompleteCallback
 │   │   │   ├── run-history.ts    # RunRecord, VerifyRecord, RunSummary, FileRunHistoryStore (JSONL + SQLite), RunComparison
 │   │   │   ├── run-history-db.ts # SqliteIndex, createSqliteIndex — SQLite derived layer (dynamic import)
+│   │   │   ├── cost-baseline.ts  # CostBaseline JSON file, compareToBaseline vs run history
 │   │   │   ├── proper-lockfile.d.ts  # Type declarations for proper-lockfile
 │   │   │   ├── cost-tracker.ts   # CostTracker class
 │   │   │   └── eval-runner.ts    # runEvals — eval case runner for agent prompts
@@ -219,6 +224,7 @@ bollard/
 │   │       ├── runner.test.ts
 │   │       ├── run-history.test.ts  # Phase 1 tests + Phase 2 summary/rebuild
 │   │       ├── run-history-db.test.ts  # 16 tests — SQLite schema, round-trips, filters, summary, rebuild
+│   │       ├── cost-baseline.test.ts  # cost baseline read/write/compare
 │   │       ├── errors.test.ts
 │   │       ├── context.test.ts
 │   │       ├── cost-tracker.test.ts
@@ -325,6 +331,7 @@ bollard/
 │   │   │   ├── diff.ts           # diffToolchainProfile — compare profile vs Stage 1 defaults
 │   │   │   ├── human-gate.ts     # Interactive human approval via stdin
 │   │   │   ├── history.ts        # runHistoryCommand — CLI list/show/compare/summary/rebuild with table output
+│   │   │   ├── cost-baseline.ts  # cost-baseline tag/show/diff CLI
 │   │   │   ├── history-record.ts # buildRunRecord, buildVerifyRecord — assemble history records from pipeline results
 │   │   │   ├── git-utils.ts      # getHeadSha — git rev-parse HEAD helper
 │   │   │   ├── template-renderer.ts  # renderTemplate — profile-driven config file generation
@@ -339,6 +346,7 @@ bollard/
 │   │   │       └── codex.ts
 │   │   └── tests/
 │   │       ├── config.test.ts    # 10 tests — defaults, detection, YAML, profile
+│   │       ├── cost-baseline.test.ts  # cost-baseline CLI
 │   │       ├── profile-flag.test.ts  # 2 tests — verify --profile flag
 │   │       ├── diff.test.ts      # 6 tests — diff helper
 │   │       └── config.adversarial.test.ts
@@ -372,7 +380,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** 9 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`, `behavioral-tester.md`
-- **Latest count (authoritative, 2026-05-15, post Stage 5d Phase 10 + snapshotTotal validation merge):** `1039` passed, `6` skipped (1045 total). Skips: 6 LLM/local smoke tests (no key / opt-in).
+- **Latest count (authoritative, 2026-05-15, post Stage 5d Phase 6 cost-baseline):** `1052` passed, `6` skipped (1058 total). Skips: 6 LLM/local smoke tests (no key / opt-in).
 - **Adversarial suite** (`vitest.adversarial.config.ts`): `335` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c). +4 from cleanup (audit/secretScan hook, rollback paths).
 - **Vitest + Vite 8:** you may see `esbuild` option deprecated in favor of `oxc` — harmless until Vitest defaults align; pin Vite 7.x if you need a silent log.
 
@@ -666,6 +674,7 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 | `flag` (`set`, `list`, `kill`) | File-based flags (`.bollard/flags/flags.json`) |
 | `drift` (`check`, `watch`) | Git drift vs `.bollard/observe/last-verified.json` |
 | `history` [list\|show\|compare\|summary\|rebuild] | Run history — list/show/compare/summary/rebuild (`--json`, `--limit`, `--status`, `--blueprint`) |
+| `cost-baseline` (`tag`, `show`, `diff`) | Tagged cost baseline + regression check (`diff` exits 1 on fail; needs ≥ 3 successful runs since baseline) |
 
 All commands output colored, structured progress to stderr. JSON results go to stdout.
 
@@ -938,6 +947,12 @@ Phase 7's prompt-level exit signals (TURN 52, TURN 58) were advisory — the 202
 ### Stage 5d Phase 10 (DONE) — Planner Prompt: Plan Compression:
 
 The 2026-05-15 Phase 9 validation run (run id `20260515-0350-run-75c385`, `snapshotTotal(): number` task) achieved 31/31 nodes, $2.5592, zero rollbacks — but 47 coder turns vs the < 40 target. Root cause: the planner generated 9 acceptance criteria for a 3-line method, enumerating every state permutation ("returns correct value after add()", "after subtract()", "after reset()", "after divide()", "after multiple calls"...). The coder dutifully scaffolded a test assertion for each criterion, spending ~40 of 47 turns on test-writing. Phase 10 adds two targeted constraints to `packages/agents/prompts/planner.md`: (a) Rule 2 — cap `acceptance_criteria` at 3–5 entries; do NOT enumerate per-method-interaction variants (those are test-implementation details, not criteria); one criterion like "returns current total without modifying state" covers all mutation-coverage scenarios; (b) Rule 9 — `steps[].tests` descriptions should name the properties to verify, not every state permutation. Both changes are in-prompt instructions with no code changes required. Planner mechanism validated 2026-05-15 (run id `20260515-0421-run-7c9604`): planner produced exactly 5 acceptance criteria (down from 9, within the 3–5 cap) using consolidating phrasing ("returns the current accumulated total without modifying any state") instead of per-mutation enumeration. Coder completed in 7 turns at $0.20 total — pipeline halted at node 10 (`write-tests`) because `snapshotTotal()` was already on main from the Phase 9 merge (degenerate scenario). Full 31/31 turn-count measurement deferred to the next real pipeline task.
+- **Test count:** 1039 passed / 6 skipped
+
+### Stage 5d Phase 6 (DONE) — Cost Regression CI:
+
+Closes the token-economy loop. `CostBaseline` store at `.bollard/cost-baseline.json` records a tagged snapshot (run id, cost, threshold). `bollard cost-baseline tag/show/diff` CLI commands. `compareToBaseline` queries `FileRunHistoryStore` for runs since the baseline timestamp, computes average cost, returns `pass/fail/insufficient_data` (never fail on < 3 runs). `.github/workflows/cost-regression.yml`: `workflow_dispatch` + weekly Monday 04:00 UTC schedule; runs `bollard-metrics-run.sh` with a `runCount()` task (always fresh on main), then `bollard cost-baseline diff` (exits 1 on regression). Baseline tag `phase9-validated` set from run `20260515-0350-run-75c385` ($2.5592, threshold 15%).
+- **Test count:** 1052 passed / 6 skipped
 
 ### DO NOT build yet:
 - **New languages outside the current seven (TS/JS/Python/Go/Rust/Java/Kotlin)** — C#/.NET, Ruby, PHP, and further waves are sequenced (Stage 4c+ → 5+). Full design in [spec/07-adversarial-scopes.md §12.1](../spec/07-adversarial-scopes.md) and [spec/ROADMAP.md](../spec/ROADMAP.md). Do not add language detectors, extractors, or verify images for any of these languages ad-hoc — each wave is coordinated so the dev image, `dev-full` image, mutation testing pattern, and contract graph all land together. Swift, Scala, Elixir, F#, Clojure, Haskell, OCaml, Nim, and Zig are explicit non-goals with no near-term timeline.
@@ -949,7 +964,6 @@ The 2026-05-15 Phase 9 validation run (run id `20260515-0350-run-75c385`, `snaps
 - **Adversarial test promotion** — automatic candidate detection (bug-catcher + repeated-generation fingerprinting), promotion flow at `approve-pr` gate, `rewriteImportsForPromotion`, `.bollard/promoted.json` — Stage 5a Phase 4. See [spec/stage5a-self-hosting.md §13](spec/stage5a-self-hosting.md).
 - **Ollama / vLLM or any other inference runtime** — Do not add ad-hoc. The only supported local runtime is llama.cpp via `dev-local`. The decision rule for which work goes deterministic vs. local vs. frontier is in [ADR-0004](../spec/adr/0004-determinism-local-frontier-tiers.md).
 - **fastembed-js embeddings** — deferred; file-relevance scoring beyond import-graph ranking not yet needed.
-- **Phase 6 (cost regression CI)** — gated on Phase 7 + Phase 8 shipped. Baseline metric is coder turns per run (primary) and total cost (derived).
 - MCP history tools (5a Phase 3), Bollard-on-Bollard CI (5a Phase 5), protocol compliance CI (5a Phase 6), self-improvement (5b), agent intelligence (5c) — Stage 5 (see [spec/ROADMAP.md](../spec/ROADMAP.md))
 
 ### Size (current):
