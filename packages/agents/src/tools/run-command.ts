@@ -5,6 +5,15 @@ import type { AgentTool } from "../types.js"
 
 const execFileAsync = promisify(execFile)
 
+const MAX_OUTPUT_LINES = 100
+
+function truncateStream(stream: string, label: "stdout" | "stderr"): string {
+  const streamLines = stream.split("\n")
+  const truncated = streamLines.length > MAX_OUTPUT_LINES
+  const displayed = streamLines.slice(0, MAX_OUTPUT_LINES).join("\n")
+  return `${label}:\n${displayed}${truncated ? `\n[...truncated: ${streamLines.length - MAX_OUTPUT_LINES} more lines not shown]` : ""}\n`
+}
+
 const DEFAULT_ALLOWED_COMMANDS = [
   "pnpm",
   "npx",
@@ -73,13 +82,16 @@ export const runCommandTool: AgentTool = {
         env: { ...process.env, NODE_ENV: "test" },
       })
       let result = ""
-      if (stdout) result += `stdout:\n${stdout}\n`
-      if (stderr) result += `stderr:\n${stderr}\n`
+      if (stdout) result += truncateStream(stdout, "stdout")
+      if (stderr) result += truncateStream(stderr, "stderr")
       return result || "(no output)"
     } catch (err: unknown) {
       if (err && typeof err === "object" && "stdout" in err) {
         const e = err as { stdout: string; stderr: string; code: number }
-        return `Command failed (exit ${String(e.code)}):\nstdout:\n${e.stdout}\nstderr:\n${e.stderr}`
+        let body = ""
+        if (e.stdout) body += truncateStream(e.stdout, "stdout")
+        if (e.stderr) body += truncateStream(e.stderr, "stderr")
+        return `Command failed (exit ${String(e.code)}):\n${body}`
       }
       throw err
     }

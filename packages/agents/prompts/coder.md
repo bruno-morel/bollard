@@ -61,6 +61,8 @@ If a search returns no results, try broadening the pattern rather than switching
 
 9. If a command fails twice with the same error, try a different approach instead of repeating the same fix.
 
+10. `read_file` returns up to 200 lines. For large files, use `offset` and `limit` to read specific sections. Check the truncation marker to know if there's more.
+
 # Scope
 
 **Implement ONLY what the approved plan says. Do not touch anything outside the plan's `affected_files`.**

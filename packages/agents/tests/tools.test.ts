@@ -43,6 +43,41 @@ describe("read_file", () => {
       "Path traversal",
     )
   })
+
+  it("returns all lines with no marker when file has exactly 200 lines", async () => {
+    const content = Array.from({ length: 200 }, (_, i) => `line ${i + 1}`).join("\n")
+    writeFileSync(join(tempDir, "two-hundred.txt"), content)
+    const result = await readFileTool.execute({ path: "two-hundred.txt" }, ctx)
+    expect(result.split("\n")).toHaveLength(200)
+    expect(result).not.toContain("[...truncated")
+  })
+
+  it("truncates at 200 lines with marker when file has 250 lines", async () => {
+    const content = Array.from({ length: 250 }, (_, i) => `line ${i + 1}`).join("\n")
+    writeFileSync(join(tempDir, "two-fifty.txt"), content)
+    const result = await readFileTool.execute({ path: "two-fifty.txt" }, ctx)
+    expect(result).toContain("[...truncated: showing lines 1–200 of 250")
+    expect(result).toContain("Use offset=201 to read more.")
+    const beforeMarker = result.split("\n[...truncated")[0] ?? ""
+    expect(beforeMarker.split("\n")).toHaveLength(200)
+  })
+
+  it("paginates with offset and limit for large files", async () => {
+    const content = Array.from({ length: 250 }, (_, i) => `line ${i + 1}`).join("\n")
+    writeFileSync(join(tempDir, "paginate.txt"), content)
+    const result = await readFileTool.execute({ path: "paginate.txt", offset: 201, limit: 50 }, ctx)
+    expect(result).toBe(Array.from({ length: 50 }, (_, i) => `line ${201 + i}`).join("\n"))
+    expect(result).not.toContain("[...truncated")
+  })
+
+  it("caps limit at 200 even when caller requests more", async () => {
+    const content = Array.from({ length: 250 }, (_, i) => `line ${i + 1}`).join("\n")
+    writeFileSync(join(tempDir, "cap-limit.txt"), content)
+    const result = await readFileTool.execute({ path: "cap-limit.txt", limit: 300 }, ctx)
+    expect(result).toContain("[...truncated: showing lines 1–200 of 250")
+    const beforeMarker = result.split("\n[...truncated")[0] ?? ""
+    expect(beforeMarker.split("\n")).toHaveLength(200)
+  })
 })
 
 describe("write_file", () => {
@@ -171,6 +206,33 @@ describe("run_command", () => {
     await expect(
       runCommandTool.execute({ command: "node -v", cwd: "../../../" }, ctx),
     ).rejects.toThrow("Path traversal")
+  })
+
+  it("truncates stdout beyond 100 lines", async () => {
+    writeFileSync(join(tempDir, "emit150.js"), "for (let i = 0; i < 150; i++) console.log(i)\n")
+    const result = await runCommandTool.execute({ command: "node emit150.js" }, ctx)
+    expect(result).toContain("stdout:")
+    expect(result).toContain("51 more lines not shown")
+  })
+
+  it("does not truncate stdout when 80 lines or fewer", async () => {
+    writeFileSync(join(tempDir, "emit80.js"), "for (let i = 0; i < 80; i++) console.log(i)\n")
+    const result = await runCommandTool.execute({ command: "node emit80.js" }, ctx)
+    expect(result).toContain("stdout:")
+    expect(result).not.toContain("more lines not shown")
+    for (let i = 0; i < 80; i++) {
+      expect(result).toContain(String(i))
+    }
+  })
+
+  it("truncates stdout on failed command path", async () => {
+    writeFileSync(
+      join(tempDir, "emit200fail.js"),
+      "for (let i = 0; i < 200; i++) console.log(i)\nprocess.exit(1)\n",
+    )
+    const result = await runCommandTool.execute({ command: "node emit200fail.js" }, ctx)
+    expect(result).toContain("Command failed")
+    expect(result).toContain("101 more lines not shown")
   })
 })
 

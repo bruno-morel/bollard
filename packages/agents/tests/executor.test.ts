@@ -239,7 +239,7 @@ describe("executeAgent", () => {
     expect(callId).toBeLessThan(10)
   })
 
-  it("caps large tool results at 8000 chars", async () => {
+  it("caps large tool results at MAX_TOOL_RESULT_CHARS", async () => {
     const largeTool: AgentTool = {
       name: "large",
       description: "Returns large output",
@@ -361,7 +361,7 @@ describe("compactOlderTurns", () => {
     compactOlderTurns(messages)
 
     const oldResult = (messages[2]?.content as LLMContentBlock[])[0]
-    expect(oldResult?.text?.length).toBeLessThan(600)
+    expect(oldResult?.text?.length).toBeLessThan(900)
     expect(oldResult?.text).toContain("[...truncated for token efficiency]")
 
     const recentResult = (messages[8]?.content as LLMContentBlock[])[0]
@@ -398,6 +398,32 @@ describe("compactOlderTurns", () => {
     const content = writeBlock?.toolInput?.["content"] as string
     expect(content.length).toBeLessThan(300)
     expect(content).toContain("[...file content truncated]")
+  })
+
+  it("truncates early tool_result after five tool rounds (keep window = 4)", () => {
+    const longText = "x".repeat(2000)
+    const messages: LLMMessage[] = [
+      { role: "user", content: "task" },
+      { role: "assistant", content: [{ type: "tool_use", toolName: "read", toolUseId: "t1" }] },
+      { role: "user", content: [{ type: "tool_result", toolUseId: "t1", text: longText }] },
+      { role: "assistant", content: [{ type: "tool_use", toolName: "read", toolUseId: "t2" }] },
+      { role: "user", content: [{ type: "tool_result", toolUseId: "t2", text: longText }] },
+      { role: "assistant", content: [{ type: "tool_use", toolName: "read", toolUseId: "t3" }] },
+      { role: "user", content: [{ type: "tool_result", toolUseId: "t3", text: longText }] },
+      { role: "assistant", content: [{ type: "tool_use", toolName: "read", toolUseId: "t4" }] },
+      { role: "user", content: [{ type: "tool_result", toolUseId: "t4", text: longText }] },
+      { role: "assistant", content: [{ type: "tool_use", toolName: "read", toolUseId: "t5" }] },
+      { role: "user", content: [{ type: "tool_result", toolUseId: "t5", text: longText }] },
+    ]
+
+    compactOlderTurns(messages)
+
+    const firstRoundResult = (messages[2]?.content as LLMContentBlock[])[0]
+    expect(firstRoundResult?.text?.length).toBeLessThanOrEqual(900)
+    expect(firstRoundResult?.text).toContain("[...truncated for token efficiency]")
+
+    const lastRoundResult = (messages[10]?.content as LLMContentBlock[])[0]
+    expect(lastRoundResult?.text).toBe(longText)
   })
 
   it("preserves the initial user message", () => {

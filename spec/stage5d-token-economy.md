@@ -1,6 +1,6 @@
 # Stage 5d — Token Economy
 
-**Status:** Phases 1, 3, 3b, 4, 4b, 2, 5, 7 DONE. Phase 6 pending.
+**Status:** Phases 1, 3, 3b, 4, 4b, 2, 5, 7 DONE. Phase 8 (context window management) co-critical-path with Phase 7. Phase 6 pending (gates on Phase 7 + Phase 8 validated).
 **Owner:** Bruno (maintainer)
 **Related:** [ROADMAP.md](./ROADMAP.md), [01-architecture.md](./01-architecture.md), [06-toolchain-profiles.md](./06-toolchain-profiles.md), [adr/0004-determinism-local-frontier-tiers.md](./adr/0004-determinism-local-frontier-tiers.md)
 
@@ -190,6 +190,44 @@ The coder receives this in the plan and the `# Scope` section references it. The
 
 **Implementation surface.** `packages/agents/prompts/coder.md` (7a, 7b), `packages/agents/src/coder.ts` (7c), `packages/agents/prompts/planner.md` + planner output schema (7d). No new infrastructure; all changes are prompt and config.
 
+## Phase 8 — Context Window Management (co-critical-path with Phase 7)
+
+**Problem.** The 2026-05-13 API logs show that **94% of run cost is input tokens, not output**. The raw Anthropic usage data for the self-test (87 Sonnet requests, ~1.74M input tokens, ~20K output tokens) makes this concrete: output is almost free; input is the cost. Context grows monotonically turn-by-turn — from ~6K tokens in early turns to ~33K tokens in late turns — because `read_file` results, `run_command` output, and failed-check feedback all accumulate in the conversation history without pruning. The jump from ~14K to ~26K input marks the rollback boundary: the second attempt starts with a fresh context but immediately reloads all pre-loaded files, reproducing the bloat.
+
+Even a perfect 25-turn run at ~20K average input/turn = 500K input tokens = **$1.50 in input alone**. To get below $1.00, turns must decrease (Phase 7) AND cost-per-turn must decrease (Phase 8). Neither alone is sufficient.
+
+**Three context inflators (in observed order of severity):**
+
+1. **Accumulated `read_file` results.** Every file read stays in every subsequent turn's context window. A coder that reads 15 files over 30 turns carries all 15 files' contents through turns 16–30, even if most are no longer relevant.
+2. **Verbose `run_command` output.** `tsc`, `biome`, and `vitest` output can run to 2–5K tokens per invocation (especially failure output with full file paths, line numbers, and context). These are retained in history across turns.
+3. **Monotonic conversation growth.** `compactOlderTurns` exists in `packages/agents/src/executor.ts` but may not be aggressive enough — old tool call pairs from early turns should be pruned once the coder has moved past that step.
+
+**Approach — three concrete changes:**
+
+### 8a — Tool result truncation
+
+Cap `read_file` output at 200 lines with a `... (truncated, N total lines — use search to find specific sections)` marker appended. Cap `run_command` output at 50 lines of errors/warnings, dropping noise lines (e.g. full vitest module resolution traces). The marker tells the coder how to get more detail without re-reading the full file.
+
+**Implementation surface:** `packages/agents/src/tools/read-file.ts` (add `MAX_LINES = 200` cap before returning content), `packages/agents/src/tools/run-command.ts` (add `MAX_OUTPUT_LINES = 50` cap on the result string).
+
+### 8b — Aggressive `compactOlderTurns`
+
+Review and tighten the compaction policy in `packages/agents/src/executor.ts`. Current behavior: compacts older turns but retains tool results. Target behavior: keep only the last 10 turns + the current step's tool calls + the system prompt. Early tool call pairs (call + result from turns 1–(N-10)) should be replaced with a compact summary entry: `[tool_result: read_file "src/foo.ts" — 120 lines, retained in turn 3]`. The coder can re-read a file if needed; it does not need the full content replayed in every subsequent turn.
+
+**Implementation surface:** `packages/agents/src/executor.ts` — update `compactOlderTurns` policy. No new error codes; compaction is transparent to the pipeline.
+
+### 8c — Pre-load budget verification and enforcement
+
+The planner's `affected_files` pre-loading is supposed to be capped at 10 files / 10K chars per file in `packages/cli/src/agent-handler.ts`. Verify these limits are actually enforced (not just documented). If a pre-loaded file exceeds 10K chars, truncate to 10K and append a marker. If the total pre-loaded file count exceeds 10, drop the lowest-priority files (by import fan-in from Phase 1's `expandAffectedFiles`).
+
+**Implementation surface:** `packages/cli/src/agent-handler.ts` — `preloadAffectedFiles` function. Verify and enforce existing documented limits.
+
+**Expected savings.** If average context per turn drops from ~20K to ~10K tokens (truncation + compaction), input cost halves. A 25-turn run goes from $1.50 to $0.75 in input. Combined with Phase 7 (fewer turns — target < 40 on bounded tasks), the arithmetic is: 30 turns × 10K avg input = 300K input tokens ≈ **$0.90 in input**, leaving room for output + non-coder agents within the $1.00 target.
+
+**Why this unblocks the $1.00 target.** Phase 7 reduces turn count; Phase 8 reduces cost per turn. Both are required. Phase 7 alone at 30 turns × 20K avg input = $1.80 in input — still above $1.00. Phase 8 alone at 87 turns × 10K avg input = $0.52 in input, but the $0.52 is multiplied by the rollback frequency. Only together do they make the $1.00 target structurally achievable.
+
+**Implementation surface summary.** `packages/agents/src/executor.ts` (compactOlderTurns aggressiveness — 8b), `packages/agents/src/tools/read-file.ts` (200-line cap — 8a), `packages/agents/src/tools/run-command.ts` (50-line output cap — 8a), `packages/cli/src/agent-handler.ts` (preload budget verification — 8c).
+
 ## Phase 6 — Cost regression CI
 
 **Problem.** Without a feedback loop, prompt changes, blueprint additions, and provider switches will silently drift cost-per-run upward over time. Stage 5b is building prompt regression gating against eval scores; Stage 5d adds the cost dimension to the same machinery.
@@ -210,11 +248,11 @@ Phase 3 ✅ (test scaffolding)
 Phase 3b ✅ (code metrics+k6)
 Phase 4 ✅ (local runtime) ── Phase 4b ✅ (opt-in) ── Phase 2 ✅ (patcher)
 Phase 5 ✅ (per-agent routing)
-Phase 7 ✅ (coder turn reduction + cost-cap enforcement) ──┐
-                                     └── Phase 6 (cost regression CI)
+Phase 7 ✅ (coder turn reduction + cost-cap)  ──┐
+Phase 8    (context window management)          ──┼── Phase 6 (cost regression CI)
 ```
 
-Phases 1, 3, 3b, 5 are routing/context/templating work — they reduce cost by improving what gets sent to models. Phase 7 is the new critical path: it attacks the dominant cost driver (coder turns) directly through prompt discipline and a lower turn ceiling. Phase 6 closes the loop with CI gating. Phase 2's local patcher provides additional savings once Phase 7 has brought turn counts into a range where individual verification failures (not rollbacks) are the margin.
+Phases 1, 3, 3b, 5 are routing/context/templating work — they reduce cost by improving what gets sent to models. Phases 7 and 8 are the co-critical path: Phase 7 attacks turn count (the multiplier) and Phase 8 attacks context size (cost per turn). The 2026-05-13 API logs show both are required — 94% of cost is input tokens, so reducing turns without reducing per-turn context still leaves the total above $1.00. Phase 6 closes the loop with CI gating and should gate on both Phase 7 and Phase 8 being validated. Phase 2's local patcher provides additional savings once Phase 7+8 have brought per-run cost into a range where individual verification failures (not rollbacks) are the margin.
 
 Self-test cadence: each phase has a Bollard-on-Bollard run before the next phase starts. Self-tests should use a deliberately narrow task description (no ambiguous "returns this for chaining" language) to avoid scope drift. Always check that coder turns < maxTurns before declaring the self-test valid.
 
@@ -223,11 +261,12 @@ Self-test cadence: each phase has a Bollard-on-Bollard run before the next phase
 **Revised after 2026-05-13 self-test ($16.17, 159 coder turns, rollback).** The original $0.30 target was set before measuring a real run. The actual cost floor is driven by coder turns, not agent routing. Updated targets:
 
 - **Coder turns per run** (primary metric): below 40 turns on a bounded single-method task (e.g. `CostTracker.divide`). The 2026-05-13 run used 80+79=159. Phase 7 changes (maxTurns 80→60, scope guard, hard exit signals) should bring this to 20–35 on the same task class.
-- **Cost per run** (derived): below $3.00 on a bounded single-method task after Phase 7. Below $1.00 once Phase 2 local patcher is active. The $0.30 original target was unrealistic — the coder alone at 20 turns × Sonnet ≈ $0.60–$1.50 depending on token density.
+- **Context tokens per turn** (new metric — Phase 8): target < 15K average input tokens per turn (current: ~20K average, peaks at 33K in the 2026-05-13 API logs). Measured from raw Anthropic API usage logs via `bollard history`. Phase 8's tool result truncation and aggressive `compactOlderTurns` are the primary levers.
+- **Cost per run** (derived): below $3.00 on a bounded single-method task after Phase 7. Below $1.00 once Phase 8 context management is also active. The $0.30 original target was unrealistic — the coder alone at 20 turns × 20K avg input ≈ $1.20 in input alone; Phase 8 must reduce that to ~10K avg to make $1.00 feasible.
 - **Rollback rate**: 0 on bounded tasks. A rollback (coder hitting maxTurns) doubles cost. Phase 7's lower ceiling and scope guard should eliminate rollbacks on single-method tasks.
 - **Verification retries** (post-completion hook → coder): 0 on the validation task once Phase 2 local patcher is active.
 - **No regression** on adversarial test quality: `verify-claim-grounding` drop rate stays at zero (it was 0/15 boundary and 0/10 contract in the 2026-05-13 run — grounding held), mutation score stays at or above current band.
-- **Phase 6 CI** catches a synthesized cost regression (deliberately add a frontier call where a local call would do, confirm CI fails).
+- **Phase 6 CI** catches a synthesized cost regression (deliberately add a frontier call where a local call would do, confirm CI fails). Phase 6 gates on both Phase 7 (turn count) and Phase 8 (per-turn context) being validated before the baseline is locked.
 
 Once `bollard history summary` has accumulated 20+ implement-feature runs, the validation threshold tightens to a median over the distribution rather than a single-task anchor.
 

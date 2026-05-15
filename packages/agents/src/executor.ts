@@ -19,9 +19,9 @@ import type {
 const MAX_RETRIES = 3
 const BASE_DELAY_MS = 15_000
 
-const MAX_TOOL_RESULT_CHARS = 8_000
-const COMPACT_KEEP_RECENT = 6
-const COMPACTED_MAX_CHARS = 500
+const MAX_TOOL_RESULT_CHARS = 4_000
+const COMPACT_KEEP_RECENT = 4
+const COMPACTED_MAX_CHARS = 800
 
 function emitProgress(ctx: AgentContext, ev: AgentProgressEvent): void {
   try {
@@ -298,7 +298,7 @@ export async function executeAgent(
           })
           const cappedOutput =
             output.length > MAX_TOOL_RESULT_CHARS
-              ? `${output.slice(0, MAX_TOOL_RESULT_CHARS)}\n[...output truncated at 8000 chars]`
+              ? `${output.slice(0, MAX_TOOL_RESULT_CHARS)}\n[...output truncated at ${MAX_TOOL_RESULT_CHARS} chars]`
               : output
           toolCallHistory.push({
             tool: block.toolName,
