@@ -160,6 +160,13 @@ function getWorkDirFlag(args: string[]): string | undefined {
   return idx !== -1 ? args[idx + 1] : undefined
 }
 
+/** Per-turn token lines on stderr; also `BOLLARD_METRICS=1` / `true` / `yes`. */
+function isCliMetricsEnabled(args: string[]): boolean {
+  if (args.includes("--metrics")) return true
+  const v = process.env["BOLLARD_METRICS"]
+  return v === "1" || v === "true" || v === "yes"
+}
+
 /** Monorepo root for config detection when running via `pnpm --filter` (cwd may be a package dir). */
 function resolveWorkspaceDirFromArgs(args: string[]): string {
   const explicit = getWorkDirFlag(args)
@@ -197,7 +204,7 @@ function printRunSummary(result: {
 async function runPlanCommand(args: string[]): Promise<void> {
   const task = getTaskFlag(args)
   if (!task) {
-    log("Usage: bollard plan --task <task>")
+    log("Usage: bollard plan --task <task> [--work-dir <path>] [--metrics]")
     process.exit(1)
   }
 
@@ -223,7 +230,8 @@ async function runPlanCommand(args: string[]): Promise<void> {
   const projectTree = await buildProjectTree(workDir)
   const plannerMessage = projectTree ? `Task: ${task}\n\n${projectTree}` : `Task: ${task}`
   const ctx = createContext(task, "plan-only", config)
-  const spinner = createAgentSpinner()
+  const metrics = isCliMetricsEnabled(args)
+  const spinner = createAgentSpinner({ metrics })
   let result: AgentResult
   try {
     result = await executeAgent(planner, plannerMessage, provider, model, {
@@ -425,7 +433,7 @@ async function runRunCommand(args: string[]): Promise<void> {
   const task = getTaskFlag(args)
 
   if (!blueprintName || !task) {
-    log("Usage: bollard run <blueprint> --task <task>")
+    log("Usage: bollard run <blueprint> --task <task> [--work-dir <path>] [--metrics]")
     process.exit(1)
   }
 
@@ -461,7 +469,8 @@ async function runRunCommand(args: string[]): Promise<void> {
 
   if (blueprintName === "implement-feature") {
     const workDir = configCwd
-    const { handler, llmConfig } = await createAgenticHandler(config, workDir, profile)
+    const metrics = isCliMetricsEnabled(args)
+    const { handler, llmConfig } = await createAgenticHandler(config, workDir, profile, { metrics })
     const blueprint = createImplementFeatureBlueprint(workDir, {
       provider: llmConfig.provider,
       model: llmConfig.model,
@@ -474,6 +483,11 @@ async function runRunCommand(args: string[]): Promise<void> {
     log(
       `${DIM}Limits:${RESET}    $${blueprint.maxCostUsd} cost / ${blueprint.maxDurationMinutes}min`,
     )
+    if (metrics) {
+      log(
+        `${DIM}Metrics:${RESET} stderr includes ${DIM}BOLLARD_METRICS${RESET} lines per agent turn (input/output tokens). Export ${DIM}BOLLARD_METRICS=1${RESET} or pass ${DIM}--metrics${RESET}.`,
+      )
+    }
     log("")
 
     const result = await runBlueprint(
@@ -891,8 +905,12 @@ async function main(): Promise<void> {
 
   log(`\n${BOLD}${CYAN}bollard${RESET} — artifact integrity framework\n`)
   log("Commands:\n")
-  log(`  ${BOLD}run${RESET} <blueprint> --task <task>   Run a blueprint`)
-  log(`  ${BOLD}plan${RESET} --task <task>              Generate a plan without implementing`)
+  log(
+    `  ${BOLD}run${RESET} <blueprint> --task <task>   Run a blueprint (${DIM}--metrics${RESET} or ${DIM}BOLLARD_METRICS=1${RESET}: per-turn tokens on stderr)`,
+  )
+  log(
+    `  ${BOLD}plan${RESET} --task <task>              Generate a plan (${DIM}[--metrics]${RESET})`,
+  )
   log(
     `  ${BOLD}verify${RESET} [--profile] [--quiet]   Run static checks (or show profile; --quiet JSON on fail)`,
   )

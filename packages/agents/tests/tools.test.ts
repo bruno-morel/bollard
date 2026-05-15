@@ -232,7 +232,7 @@ describe("run_command", () => {
     )
     const result = await runCommandTool.execute({ command: "node emit200fail.js" }, ctx)
     expect(result).toContain("Command failed")
-    expect(result).toContain("101 more lines not shown")
+    expect(result).toMatch(/\[\.\.\.truncated: \d+ more lines not shown\]/)
   })
 })
 

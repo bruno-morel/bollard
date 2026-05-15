@@ -1,7 +1,7 @@
 import { PassThrough } from "node:stream"
 import type { AgentProgressEvent } from "@bollard/agents/src/types.js"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { createAgentSpinner, toolInputHint } from "../src/spinner.js"
+import { createAgentSpinner, formatBollardMetricsLine, toolInputHint } from "../src/spinner.js"
 
 function turnStart(turn = 1, max = 60, role = "coder"): AgentProgressEvent {
   return { type: "turn_start", turn, maxTurns: max, role }
@@ -38,6 +38,18 @@ describe("toolInputHint", () => {
 
   it("returns command hint for run_command", () => {
     expect(toolInputHint("run_command", { command: "pnpm test" })).toContain("pnpm")
+  })
+})
+
+describe("formatBollardMetricsLine", () => {
+  it("emits stable key=value tokens for log parsing", () => {
+    const line = formatBollardMetricsLine(turnEnd(3, 60, "coder", 1000, 0.01, 2, "tool_use"), 0.55)
+    expect(line.startsWith("BOLLARD_METRICS ")).toBe(true)
+    expect(line).toContain("role=coder")
+    expect(line).toContain("turn=3")
+    expect(line).toContain("input_tokens=1")
+    expect(line).toContain("output_tokens=1")
+    expect(line).toContain("cumulative_cost_usd=0.5500")
   })
 })
 
@@ -127,6 +139,21 @@ describe("createAgentSpinner", () => {
     const afterFinalize = chunks.length
     spinner.handleEvent(turnEnd(1, 5, "coder", 1000, 0, 0, "end_turn"))
     expect(chunks.length).toBe(afterFinalize)
+  })
+
+  it("non-TTY with metrics: emits BOLLARD_METRICS line after turn_end", () => {
+    const stream = new PassThrough()
+    Object.defineProperty(stream, "isTTY", { value: false, configurable: true })
+    const chunks: string[] = []
+    stream.on("data", (c: Buffer) => chunks.push(c.toString()))
+
+    const spinner = createAgentSpinner({ stream, tty: false, metrics: true })
+    spinner.handleEvent(turnStart(1, 5, "coder"))
+    spinner.handleEvent(turnEnd(1, 5, "coder", 1000, 0.02, 1, "end_turn"))
+    const out = chunks.join("")
+    expect(out).toContain("BOLLARD_METRICS")
+    expect(out).toContain("input_tokens=1")
+    spinner.finalize()
   })
 
   it("non-TTY: no ANSI escapes in output", () => {

@@ -440,10 +440,16 @@ export interface AgenticHandlerResult {
   llmConfig: { provider: import("@bollard/llm/src/types.js").LLMProvider; model: string }
 }
 
+export interface CreateAgenticHandlerOptions {
+  /** Per-turn token/cost lines on stderr (`grep ^BOLLARD_METRICS`). Also enable with `BOLLARD_METRICS=1`. */
+  metrics?: boolean
+}
+
 export async function createAgenticHandler(
   config: BollardConfig,
   workDir: string,
   profile?: ToolchainProfile,
+  options?: CreateAgenticHandlerOptions,
 ): Promise<AgenticHandlerResult> {
   const llmClient = new LLMClient(config)
   const agents = {
@@ -514,7 +520,7 @@ export async function createAgenticHandler(
     }
 
     const { provider, model } = llmClient.forAgent(agentRole)
-    const spinner = createAgentSpinner()
+    const spinner = createAgentSpinner({ metrics: options?.metrics === true })
     const agentCtx: AgentContext = {
       pipelineCtx: ctx,
       workDir,

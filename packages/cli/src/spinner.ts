@@ -7,6 +7,8 @@ export interface AgentSpinnerOptions {
   stream?: NodeJS.WritableStream
   tty?: boolean
   intervalMs?: number
+  /** When true, emit a machine-parseable `BOLLARD_METRICS …` line on every `turn_end` (stderr). */
+  metrics?: boolean
 }
 
 export interface AgentSpinner {
@@ -54,10 +56,30 @@ function safeWrite(stream: NodeJS.WritableStream, chunk: string): void {
   }
 }
 
+/** One line per LLM turn for log analysis (`grep ^BOLLARD_METRICS`). Cumulative cost is after this turn. */
+export function formatBollardMetricsLine(
+  event: Extract<AgentProgressEvent, { type: "turn_end" }>,
+  cumulativeCostUsd: number,
+): string {
+  return [
+    "BOLLARD_METRICS",
+    `role=${event.role}`,
+    `turn=${event.turn}`,
+    `max_turns=${event.maxTurns}`,
+    `input_tokens=${event.inputTokens}`,
+    `output_tokens=${event.outputTokens}`,
+    `turn_cost_usd=${event.costUsd.toFixed(4)}`,
+    `cumulative_cost_usd=${cumulativeCostUsd.toFixed(4)}`,
+    `stop=${event.stopReason}`,
+    `tools=${event.toolCallsThisTurn}`,
+  ].join(" ")
+}
+
 export function createAgentSpinner(opts?: AgentSpinnerOptions): AgentSpinner {
   const stream = opts?.stream ?? process.stderr
   const isTTY = opts?.tty ?? (stream as NodeJS.WriteStream).isTTY === true
   const intervalMs = opts?.intervalMs ?? 80
+  const metrics = opts?.metrics === true
 
   let frameIndex = 0
   let ticker: ReturnType<typeof setInterval> | undefined
@@ -168,6 +190,9 @@ export function createAgentSpinner(opts?: AgentSpinnerOptions): AgentSpinner {
             stream,
             `[${event.role}] turn ${event.turn}/${event.maxTurns} done in ${elapsedSec}s · $${cumulativeCostUsd.toFixed(2)} · ${event.toolCallsThisTurn} tools · stop=${event.stopReason}\n`,
           )
+        }
+        if (metrics) {
+          safeWrite(stream, `${formatBollardMetricsLine(event, cumulativeCostUsd)}\n`)
         }
         return
       }
