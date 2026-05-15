@@ -51,6 +51,10 @@ export class CostTracker {
     return this._total
   }
 
+  peek(): number {
+    return this._total
+  }
+
   exceeded(): boolean {
     return this._total > this._limit
   }

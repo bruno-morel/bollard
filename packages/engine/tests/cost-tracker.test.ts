@@ -18,6 +18,30 @@ describe("CostTracker", () => {
     expect(tracker.total()).toBe(4)
   })
 
+  it("peek() returns current total without modifying state", () => {
+    const tracker = new CostTracker(10)
+    expect(tracker.peek()).toBe(0)
+
+    tracker.add(3.5)
+    expect(tracker.peek()).toBe(3.5)
+    expect(tracker.total()).toBe(3.5) // verify peek didn't change anything
+
+    tracker.add(1.5)
+    expect(tracker.peek()).toBe(5)
+    expect(tracker.total()).toBe(5)
+  })
+
+  it("peek() returns same value as total()", () => {
+    const tracker = new CostTracker(10)
+    expect(tracker.peek()).toBe(tracker.total())
+
+    tracker.add(2.5)
+    expect(tracker.peek()).toBe(tracker.total())
+
+    tracker.subtract(1)
+    expect(tracker.peek()).toBe(tracker.total())
+  })
+
   it("reports remaining budget correctly", () => {
     const tracker = new CostTracker(5)
     tracker.add(2)
