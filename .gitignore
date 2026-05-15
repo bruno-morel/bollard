@@ -5,6 +5,8 @@ dist/
 .env
 .pnpm-store/
 .bollard/runs/history.db
+.bollard/runs/history.db-wal
+.bollard/runs/history.db-shm
 .bollard/runs/.history.lock
 .bollard/runs/.history.lock.*
 .bollard/.metrics-run-task.txt
