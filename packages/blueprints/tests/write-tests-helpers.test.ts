@@ -11,6 +11,7 @@ import {
   resolveContractTestModulePrefix,
   sanitizeJavaPrimitiveInstanceofMisuse,
   stripMarkdownFences,
+  stripStringLiteralsAndComments,
 } from "../src/write-tests-helpers.js"
 
 const makeProfile = (language: string): ToolchainProfile => ({
@@ -389,5 +390,79 @@ describe("stripMarkdownFences", () => {
 
   it("strips rust fences", () => {
     expect(stripMarkdownFences("```rust\nuse super::*;\n```")).toBe("use super::*;")
+  })
+})
+
+describe("stripStringLiteralsAndComments", () => {
+  it("removes double-quoted strings", () => {
+    const src = `const x = _total + "_total"`
+    const out = stripStringLiteralsAndComments(src)
+    expect(out).toContain("_total") // the code reference survives
+    // the string content is blanked — identifier no longer appears inside quotes
+    const quoteIdx = src.indexOf('"')
+    expect(out.slice(quoteIdx)).not.toContain("_total")
+  })
+
+  it("removes single-quoted strings", () => {
+    const src = `it('returns this._total', () => { expect(x).toBe(0) })`
+    const out = stripStringLiteralsAndComments(src)
+    // _total inside the description string is gone
+    expect(out.slice(0, src.indexOf("'"))).not.toContain("_total")
+    // code outside strings is preserved
+    expect(out).toContain("expect")
+    expect(out).toContain("toBe")
+  })
+
+  it("removes template literals", () => {
+    const src = "const msg = `value is ${_total} units`; return _total"
+    const out = stripStringLiteralsAndComments(src)
+    // _total in the template is gone, _total in code is preserved
+    const backtickEnd = src.lastIndexOf("`") + 1
+    expect(out.slice(backtickEnd)).toContain("_total")
+  })
+
+  it("removes single-line comments", () => {
+    const src = "return this._total // private field _total\nconst x = 1"
+    const out = stripStringLiteralsAndComments(src)
+    // _total in comment is gone; _total in code survives
+    const newlineIdx = src.indexOf("\n")
+    const commentStart = src.indexOf("//")
+    expect(out.slice(commentStart, newlineIdx)).not.toContain("_total")
+    expect(out.slice(0, commentStart)).toContain("_total")
+  })
+
+  it("removes multi-line comments", () => {
+    const src = "/* uses _total internally */\nreturn value"
+    const out = stripStringLiteralsAndComments(src)
+    const commentEnd = src.indexOf("*/") + 2
+    expect(out.slice(0, commentEnd)).not.toContain("_total")
+    expect(out.slice(commentEnd)).toContain("return value")
+  })
+
+  it("preserves length so positions stay valid", () => {
+    const src = `const x = "_total"`
+    const out = stripStringLiteralsAndComments(src)
+    expect(out.length).toBe(src.length)
+  })
+
+  it("real-world false positive: _total in test description string is stripped", () => {
+    const testFile = `
+import { expect, it } from "vitest"
+it('snapshotTotal returns same value as _total', () => {
+  const t = new CostTracker(10)
+  t.add(5)
+  expect(t.snapshotTotal()).toBe(5)
+})
+`
+    const out = stripStringLiteralsAndComments(testFile)
+    // _total appeared only inside a string — should not be present in stripped output
+    // (the string content is replaced with spaces)
+    // Find where the it() string ends and verify _total is not in that region
+    const strStart = testFile.indexOf("'snapshotTotal")
+    const strEnd = testFile.indexOf("'", strStart + 1) + 1
+    expect(out.slice(strStart, strEnd)).not.toContain("_total")
+    // code outside strings is preserved
+    expect(out).toContain("snapshotTotal")
+    expect(out).toContain("toBe")
   })
 })

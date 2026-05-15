@@ -247,6 +247,28 @@ export function deriveAdversarialTestPath(
   }
 }
 
+/**
+ * Strip string literals and single/multi-line comments from source text before
+ * running the private-identifier leak scan. Prevents false positives where a
+ * private field name appears only inside a test description string or comment
+ * (e.g. `it('returns this._total', ...)`) rather than in actual code.
+ *
+ * Content is replaced with spaces to preserve character positions.
+ */
+export function stripStringLiteralsAndComments(src: string): string {
+  // Multi-line comments /* ... */
+  let out = src.replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length))
+  // Single-line comments // ...
+  out = out.replace(/\/\/[^\n]*/g, (m) => " ".repeat(m.length))
+  // Template literals `...` (simplified: doesn't handle nested ${} — sufficient for leak scan)
+  out = out.replace(/`[^`]*`/g, (m) => " ".repeat(m.length))
+  // Double-quoted strings
+  out = out.replace(/"(?:[^"\\]|\\.)*"/g, (m) => " ".repeat(m.length))
+  // Single-quoted strings
+  out = out.replace(/'(?:[^'\\]|\\.)*'/g, (m) => " ".repeat(m.length))
+  return out
+}
+
 export function stripMarkdownFences(output: string): string {
   let result = output.trim()
   result = result.replace(/^```\w*\n/, "")

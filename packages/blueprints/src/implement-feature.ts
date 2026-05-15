@@ -42,6 +42,7 @@ import { assembleTestFile } from "./test-assembler.js"
 import {
   normalizeJvmWrittenTestClassName,
   sanitizeJavaPrimitiveInstanceofMisuse,
+  stripStringLiteralsAndComments,
 } from "./write-tests-helpers.js"
 
 const execFileAsync = promisify(execFile)
@@ -607,12 +608,13 @@ export function createImplementFeatureBlueprint(
           }
 
           const leakedTokens: string[] = []
+          const toWriteCode = stripStringLiteralsAndComments(toWrite)
           for (const filePath of files) {
             try {
               const source = await readFile(resolve(workDir, filePath), "utf-8")
               const privateIds = extractPrivateIdentifiers(filePath, source)
               for (const id of privateIds) {
-                if (toWrite.includes(id)) {
+                if (toWriteCode.includes(id)) {
                   leakedTokens.push(id)
                 }
               }
@@ -927,13 +929,14 @@ export function createImplementFeatureBlueprint(
           const { fileContent, testPath } = assembled
 
           const leakedTokens: string[] = []
+          const fileContentCode = stripStringLiteralsAndComments(fileContent)
           for (const filePath of files) {
             try {
               const source = await readFile(resolve(workDir, filePath), "utf-8")
               if (!filePath.endsWith(".ts") && !filePath.endsWith(".tsx")) continue
               const privateIds = extractPrivateIdentifiers(filePath, source)
               for (const id of privateIds) {
-                if (fileContent.includes(id)) leakedTokens.push(id)
+                if (fileContentCode.includes(id)) leakedTokens.push(id)
               }
             } catch {
               /* skip */
@@ -1166,13 +1169,14 @@ export function createImplementFeatureBlueprint(
           const { fileContent, testPath } = assembled
 
           const leakedTokens: string[] = []
+          const fileContentCode = stripStringLiteralsAndComments(fileContent)
           for (const filePath of files) {
             try {
               const source = await readFile(resolve(workDir, filePath), "utf-8")
               if (!filePath.endsWith(".ts") && !filePath.endsWith(".tsx")) continue
               const privateIds = extractPrivateIdentifiers(filePath, source)
               for (const id of privateIds) {
-                if (fileContent.includes(id)) leakedTokens.push(id)
+                if (fileContentCode.includes(id)) leakedTokens.push(id)
               }
             } catch {
               /* skip */
