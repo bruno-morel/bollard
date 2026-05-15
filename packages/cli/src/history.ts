@@ -262,7 +262,13 @@ async function cmdShow(workDir: string, runId: string, json: boolean): Promise<v
 
 async function cmdSummary(workDir: string, parsed: ParsedHistoryCli): Promise<void> {
   const store = new FileRunHistoryStore(workDir)
-  const summary = await store.summary(parsed.sinceMs)
+  const summaryFilter = {
+    ...(parsed.sinceMs !== undefined ? { since: parsed.sinceMs } : {}),
+    ...(parsed.untilMs !== undefined ? { until: parsed.untilMs } : {}),
+  }
+  const summary = await store.summary(
+    parsed.sinceMs !== undefined || parsed.untilMs !== undefined ? summaryFilter : undefined,
+  )
   if (parsed.json) {
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`)
     return
@@ -270,6 +276,9 @@ async function cmdSummary(workDir: string, parsed: ParsedHistoryCli): Promise<vo
   header("history summary")
   if (parsed.sinceMs !== undefined) {
     log(`${DIM}Since:${RESET} ${new Date(parsed.sinceMs).toISOString().slice(0, 10)}\n`)
+  }
+  if (parsed.untilMs !== undefined) {
+    log(`${DIM}Until:${RESET} ${new Date(parsed.untilMs).toISOString().slice(0, 10)}\n`)
   }
   log(`${BOLD}Total runs:${RESET}     ${summary.totalRuns}`)
   log(`${BOLD}Success rate:${RESET}   ${(summary.successRate * 100).toFixed(1)}%`)

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
+import type { HistoryFilter, RunRecord, SummaryFilter } from "@bollard/engine/src/run-history.js"
 import { z } from "zod"
 
 export interface McpToolDefinition {
@@ -36,12 +37,30 @@ const profileInputSchema = z.object({
 })
 
 async function handleVerify(input: Record<string, unknown>, workDir: string): Promise<unknown> {
+  const startedAt = Date.now()
   const parsed = verifyInputSchema.parse(input)
   const dir = parsed.workDir ?? workDir
   const { resolveConfig } = await import("@bollard/cli/src/config.js")
   const { runStaticChecks } = await import("@bollard/verify/src/static.js")
   const { profile } = await resolveConfig(undefined, dir)
   const { results, allPassed } = await runStaticChecks(dir, profile)
+
+  try {
+    const { FileRunHistoryStore } = await import("@bollard/engine/src/run-history.js")
+    const { buildVerifyRecord } = await import("@bollard/cli/src/history-record.js")
+    const store = new FileRunHistoryStore(dir)
+    const record = buildVerifyRecord({
+      workDir: dir,
+      profile,
+      results,
+      allPassed,
+      startedAt,
+      source: "mcp",
+    })
+    await store.record(record).catch(() => undefined)
+  } catch {
+    // history must never fail verify
+  }
 
   const summary = allPassed
     ? `All ${results.length} checks passed`
@@ -310,6 +329,99 @@ async function handleWatchStatus(
   }
 }
 
+const HISTORY_STATUSES = ["success", "failure", "handed_to_human"] as const
+
+const historyInputSchema = z.object({
+  workDir: z.string().optional(),
+  limit: z.number().optional(),
+  offset: z.number().optional(),
+  status: z.string().optional(),
+  blueprintId: z.string().optional(),
+  since: z.string().optional(),
+  runId: z.string().optional(),
+})
+
+async function handleHistory(input: Record<string, unknown>, workDir: string): Promise<unknown> {
+  try {
+    const parsed = historyInputSchema.parse(input)
+    const dir = parsed.workDir ?? workDir
+    const runId = parsed.runId?.trim()
+    const { FileRunHistoryStore } = await import("@bollard/engine/src/run-history.js")
+    const store = new FileRunHistoryStore(dir)
+
+    if (runId) {
+      const record = await store.findByRunId(runId)
+      return { record: record ?? null, runId }
+    }
+
+    const filter: HistoryFilter = {
+      limit: parsed.limit ?? 10,
+      offset: parsed.offset ?? 0,
+    }
+    if (
+      parsed.status !== undefined &&
+      (HISTORY_STATUSES as readonly string[]).includes(parsed.status)
+    ) {
+      filter.status = parsed.status as RunRecord["status"]
+    }
+    if (parsed.blueprintId !== undefined && parsed.blueprintId.trim() !== "") {
+      filter.blueprintId = parsed.blueprintId.trim()
+    }
+    if (parsed.since !== undefined && parsed.since.trim() !== "") {
+      const ms = Date.parse(parsed.since)
+      if (!Number.isNaN(ms)) {
+        filter.since = ms
+      }
+    }
+
+    const records = await store.query(filter)
+    return { records, count: records.length, filter }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
+    const runIdRaw = input["runId"]
+    const runIdOpt = typeof runIdRaw === "string" ? runIdRaw.trim() : ""
+    if (runIdOpt) {
+      return { record: null, runId: runIdOpt, error: message }
+    }
+    return { records: [], count: 0, error: message }
+  }
+}
+
+const historySummaryInputSchema = z.object({
+  workDir: z.string().optional(),
+  since: z.string().optional(),
+  until: z.string().optional(),
+})
+
+async function handleHistorySummary(
+  input: Record<string, unknown>,
+  workDir: string,
+): Promise<unknown> {
+  try {
+    const parsed = historySummaryInputSchema.parse(input)
+    const dir = parsed.workDir ?? workDir
+    const filter: SummaryFilter = {}
+    if (parsed.since !== undefined && parsed.since.trim() !== "") {
+      const ms = Date.parse(parsed.since)
+      if (!Number.isNaN(ms)) {
+        filter.since = ms
+      }
+    }
+    if (parsed.until !== undefined && parsed.until.trim() !== "") {
+      const ms = Date.parse(parsed.until)
+      if (!Number.isNaN(ms)) {
+        filter.until = ms
+      }
+    }
+    const { FileRunHistoryStore } = await import("@bollard/engine/src/run-history.js")
+    const store = new FileRunHistoryStore(dir)
+    const hasWindow = filter.since !== undefined || filter.until !== undefined
+    return await store.summary(hasWindow ? filter : undefined)
+  } catch (err: unknown) {
+    return { error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
 function zodToJsonSchema(schema: z.ZodObject<z.ZodRawShape>): Record<string, unknown> {
   const shape = schema.shape
   const properties: Record<string, unknown> = {}
@@ -330,6 +442,8 @@ function zodToJsonSchema(schema: z.ZodObject<z.ZodRawShape>): Record<string, unk
       properties[key] = { type: "string" }
     } else if (inner instanceof z.ZodBoolean) {
       properties[key] = { type: "boolean" }
+    } else if (inner instanceof z.ZodNumber) {
+      properties[key] = { type: "number" }
     } else {
       properties[key] = { type: "string" }
     }
@@ -440,5 +554,19 @@ export const tools: McpToolDefinition[] = [
       "Check the status of Bollard's continuous verification watcher — whether it's running, what files changed since last verify, and when verification last ran.",
     inputSchema: zodToJsonSchema(watchStatusInputSchema),
     handler: handleWatchStatus,
+  },
+  {
+    name: "bollard_history",
+    description:
+      "Show Bollard's run history — implement-feature pipeline runs and static verify events. Returns structured RunRecord and VerifyRecord objects with cost, duration, node-by-node status, test counts, scope results (boundary/contract/behavioral grounding rates), and mutation scores. Use to answer what the last pipeline run cost, which nodes failed, or whether cost has been trending up. Pass runId for a single-record lookup. Filters: status, blueprintId, since (ISO date), limit, offset.",
+    inputSchema: zodToJsonSchema(historyInputSchema),
+    handler: handleHistory,
+  },
+  {
+    name: "bollard_history_summary",
+    description:
+      "Show aggregate statistics for Bollard pipeline runs: total runs, success rate, average cost, average duration, cost trend (increasing/stable/decreasing), and per-blueprint breakdowns. Use to answer whether the pipeline is getting more expensive or what the success rate is for a time window. Pass since and until as ISO date strings to scope the window.",
+    inputSchema: zodToJsonSchema(historySummaryInputSchema),
+    handler: handleHistorySummary,
   },
 ]

@@ -8,8 +8,8 @@ import { tools } from "../src/tools.js"
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 
 describe("MCP tool definitions", () => {
-  it("registers exactly 14 tools", () => {
-    expect(tools).toHaveLength(14)
+  it("registers exactly 16 tools", () => {
+    expect(tools).toHaveLength(16)
   })
 
   it("all tools have name, description, inputSchema, and handler", () => {
@@ -189,6 +189,62 @@ describe("MCP tool definitions", () => {
         message: string
       }
       expect(result).toEqual({ active: false, message: "bollard watch is not running" })
+    } finally {
+      await rm(emptyDir, { recursive: true })
+    }
+  })
+
+  it("includes bollard_history tool", () => {
+    const tool = tools.find((t) => t.name === "bollard_history")
+    expect(tool).toBeDefined()
+    const verb = /^(Run|Generate|Analyze|Show|Detect|Build|Execute|Record|Set|Check)\b/
+    expect(tool?.description).toBeTruthy()
+    expect(verb.test(tool?.description ?? "")).toBe(true)
+  })
+
+  it("bollard_history handler returns records array on empty store", async () => {
+    const emptyDir = await mkdtemp(join(tmpdir(), "bollard-mcp-history-"))
+    try {
+      const tool = tools.find((t) => t.name === "bollard_history")
+      const result = (await tool?.handler({ workDir: emptyDir }, "/app")) as {
+        records: unknown[]
+        count: number
+        filter?: unknown
+      }
+      expect(result.records).toEqual([])
+      expect(result.count).toBe(0)
+      expect(result.filter).toBeDefined()
+    } finally {
+      await rm(emptyDir, { recursive: true })
+    }
+  })
+
+  it("bollard_history handler show mode returns null for missing runId", async () => {
+    const tool = tools.find((t) => t.name === "bollard_history")
+    const result = (await tool?.handler({ runId: "nonexistent" }, REPO_ROOT)) as {
+      record: null
+      runId: string
+    }
+    expect(result.record).toBeNull()
+    expect(result.runId).toBe("nonexistent")
+  })
+
+  it("includes bollard_history_summary tool", () => {
+    expect(tools.find((t) => t.name === "bollard_history_summary")).toBeDefined()
+  })
+
+  it("bollard_history_summary handler returns summary shape on empty dir", async () => {
+    const emptyDir = await mkdtemp(join(tmpdir(), "bollard-mcp-hsum-"))
+    try {
+      const tool = tools.find((t) => t.name === "bollard_history_summary")
+      const result = (await tool?.handler({ workDir: emptyDir }, "/app")) as {
+        totalRuns: number
+        successRate: number
+        costTrend: string
+      }
+      expect(result.totalRuns).toBe(0)
+      expect(result.successRate).toBe(0)
+      expect(result.costTrend).toBe("stable")
     } finally {
       await rm(emptyDir, { recursive: true })
     }

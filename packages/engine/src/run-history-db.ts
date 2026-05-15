@@ -4,6 +4,7 @@ import type {
   HistoryRecord,
   RunRecord,
   RunSummary,
+  SummaryFilter,
   VerifyRecord,
 } from "./run-history.js"
 import { computeCostTrend, parseHistoryLine } from "./run-history.js"
@@ -75,7 +76,7 @@ export interface SqliteIndex {
   insert(record: HistoryRecord): void
   query(filter?: HistoryFilter): HistoryRecord[]
   findByRunId(runId: string): HistoryRecord | undefined
-  summary(since?: number): RunSummary
+  summary(filter?: SummaryFilter): RunSummary
   rebuild(records: HistoryRecord[]): { runCount: number; durationMs: number }
   recordCount(): number
   purge(before: number): { purged: number }
@@ -271,8 +272,9 @@ export function createSqliteIndex(dbPath: string): SqliteIndex {
     return parseHistoryLine(row.raw_json) ?? undefined
   }
 
-  const summary = (since?: number): RunSummary => {
-    const sinceParam = since ?? null
+  const summary = (filter?: SummaryFilter): RunSummary => {
+    const sinceParam = filter?.since ?? null
+    const untilParam = filter?.until ?? null
     const row = db
       .prepare(
         `SELECT
@@ -283,9 +285,11 @@ export function createSqliteIndex(dbPath: string): SqliteIndex {
           AVG(COALESCE(test_passed, 0) + COALESCE(test_skipped, 0) + COALESCE(test_failed, 0)) as avg_tests,
           AVG(mutation_score) as avg_mutation
         FROM runs
-        WHERE type = 'run' AND (? IS NULL OR timestamp >= ?)`,
+        WHERE type = 'run'
+          AND (@since IS NULL OR timestamp >= @since)
+          AND (@until IS NULL OR timestamp <= @until)`,
       )
-      .get(sinceParam, sinceParam) as {
+      .get({ since: sinceParam, until: untilParam }) as {
       total_runs: number
       successes: number | null
       avg_cost: number | null
@@ -318,11 +322,13 @@ export function createSqliteIndex(dbPath: string): SqliteIndex {
     const costRows = db
       .prepare(
         `SELECT total_cost_usd FROM runs
-         WHERE type = 'run' AND (? IS NULL OR timestamp >= ?)
+         WHERE type = 'run'
+           AND (@since IS NULL OR timestamp >= @since)
+           AND (@until IS NULL OR timestamp <= @until)
          ORDER BY timestamp DESC
          LIMIT 5`,
       )
-      .all(sinceParam, sinceParam) as { total_cost_usd: number }[]
+      .all({ since: sinceParam, until: untilParam }) as { total_cost_usd: number }[]
     const costsChrono = [...costRows].reverse().map((r) => r.total_cost_usd)
     const costTrend = computeCostTrend(costsChrono)
 
@@ -333,10 +339,12 @@ export function createSqliteIndex(dbPath: string): SqliteIndex {
           SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successes,
           SUM(total_cost_usd) as sum_cost
         FROM runs
-        WHERE type = 'run' AND blueprint_id IS NOT NULL AND (? IS NULL OR timestamp >= ?)
+        WHERE type = 'run' AND blueprint_id IS NOT NULL
+          AND (@since IS NULL OR timestamp >= @since)
+          AND (@until IS NULL OR timestamp <= @until)
         GROUP BY blueprint_id`,
       )
-      .all(sinceParam, sinceParam) as Array<{
+      .all({ since: sinceParam, until: untilParam }) as Array<{
       blueprint_id: string
       runs: number
       successes: number | null

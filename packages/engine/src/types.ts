@@ -38,6 +38,7 @@ export type {
   VerifyRecord,
   HistoryRecord,
   HistoryFilter,
+  SummaryFilter,
   RunComparison,
   RunHistoryStore,
 } from "./run-history.js"

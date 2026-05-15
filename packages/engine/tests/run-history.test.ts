@@ -243,7 +243,7 @@ describe("FileRunHistoryStore", () => {
     const store = new FileRunHistoryStore(dir)
     await store.record(minimalRun({ runId: "old", timestamp: 10, totalCostUsd: 1 }))
     await store.record(minimalRun({ runId: "new", timestamp: 1000, totalCostUsd: 9 }))
-    const s = await store.summary(100)
+    const s = await store.summary({ since: 100 })
     expect(s.totalRuns).toBe(1)
     expect(s.avgCostUsd).toBe(9)
   })

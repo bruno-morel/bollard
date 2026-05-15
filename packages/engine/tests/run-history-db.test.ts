@@ -192,9 +192,26 @@ describe("createSqliteIndex", () => {
     idx.insert(
       makeRunRecord({ runId: "new", timestamp: 1000, totalCostUsd: 5, totalDurationMs: 50 }),
     )
-    const s = idx.summary(100)
+    const s = idx.summary({ since: 100 })
     expect(s.totalRuns).toBe(1)
     expect(s.avgCostUsd).toBe(5)
+    idx.close()
+  })
+
+  it("summary with since and until includes only runs in window", () => {
+    const idx = createSqliteIndex(dbPath)
+    idx.insert(
+      makeRunRecord({ runId: "early", timestamp: 100, totalCostUsd: 1, totalDurationMs: 10 }),
+    )
+    idx.insert(
+      makeRunRecord({ runId: "mid", timestamp: 200, totalCostUsd: 2, totalDurationMs: 20 }),
+    )
+    idx.insert(
+      makeRunRecord({ runId: "late", timestamp: 300, totalCostUsd: 3, totalDurationMs: 30 }),
+    )
+    const s = idx.summary({ since: 100, until: 200 })
+    expect(s.totalRuns).toBe(2)
+    expect(s.avgCostUsd).toBe(1.5)
     idx.close()
   })
 

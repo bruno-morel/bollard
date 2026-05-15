@@ -1,8 +1,10 @@
 import { watch } from "node:fs"
 import { resolve } from "node:path"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
+import { FileRunHistoryStore } from "@bollard/engine/src/run-history.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
 import type { StaticCheckResult } from "@bollard/verify/src/static.js"
+import { buildVerifyRecord } from "./history-record.js"
 import { BOLD, DIM, GREEN, RED, RESET, YELLOW } from "./terminal-styles.js"
 
 export interface WatchOptions {
@@ -142,7 +144,23 @@ export async function runWatch(options: WatchOptions): Promise<void> {
     try {
       const staticOpts =
         checks !== undefined && checks.length > 0 ? { onlyChecks: checks } : undefined
+      const startedAt = Date.now()
       const { results, allPassed } = await runStaticChecks(resolvedDir, profile, staticOpts)
+
+      try {
+        const store = new FileRunHistoryStore(resolvedDir)
+        const record = buildVerifyRecord({
+          workDir: resolvedDir,
+          profile,
+          results,
+          allPassed,
+          startedAt,
+          source: "watch",
+        })
+        await store.record(record).catch(() => undefined)
+      } catch {
+        // non-fatal history write
+      }
 
       if (json) {
         process.stdout.write(`${JSON.stringify(buildJsonWatchOutput(results, allPassed))}\n`)

@@ -78,6 +78,12 @@ export interface HistoryFilter {
   offset?: number
 }
 
+/** Optional time window for aggregate `summary()` (pipeline runs only). */
+export interface SummaryFilter {
+  since?: number
+  until?: number
+}
+
 export interface RunComparison {
   runA: RunRecord
   runB: RunRecord
@@ -120,7 +126,7 @@ export interface RunHistoryStore {
   query(filter?: HistoryFilter): Promise<HistoryRecord[]>
   findByRunId(runId: string): Promise<HistoryRecord | undefined>
   compare(runIdA: string, runIdB: string): Promise<RunComparison>
-  summary(since?: number): Promise<RunSummary>
+  summary(filter?: SummaryFilter): Promise<RunSummary>
   rebuild(): Promise<{ runCount: number; durationMs: number }>
 }
 
@@ -200,10 +206,15 @@ export function computeCostTrend(costs: number[]): "increasing" | "stable" | "de
   return "stable"
 }
 
-function computeSummaryFromRecords(records: HistoryRecord[], since?: number): RunSummary {
-  const runs = records.filter(
-    (r): r is RunRecord => r.type === "run" && (since === undefined || r.timestamp >= since),
-  )
+function computeSummaryFromRecords(records: HistoryRecord[], filter?: SummaryFilter): RunSummary {
+  const since = filter?.since
+  const until = filter?.until
+  const runs = records.filter((r): r is RunRecord => {
+    if (r.type !== "run") return false
+    if (since !== undefined && r.timestamp < since) return false
+    if (until !== undefined && r.timestamp > until) return false
+    return true
+  })
   if (runs.length === 0) {
     return {
       totalRuns: 0,
@@ -367,13 +378,13 @@ export class FileRunHistoryStore implements RunHistoryStore {
     return all.find((r) => r.runId === runId)
   }
 
-  async summary(since?: number): Promise<RunSummary> {
+  async summary(filter?: SummaryFilter): Promise<RunSummary> {
     const idx = await this.ensureDbCurrent()
     if (idx) {
-      return idx.summary(since)
+      return idx.summary(filter)
     }
     const all = await this.readAllRecords()
-    return computeSummaryFromRecords(all, since)
+    return computeSummaryFromRecords(all, filter)
   }
 
   async rebuild(): Promise<{ runCount: number; durationMs: number }> {
