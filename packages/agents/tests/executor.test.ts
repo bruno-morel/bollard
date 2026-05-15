@@ -5,6 +5,7 @@ import type {
   LLMContentBlock,
   LLMMessage,
   LLMProvider,
+  LLMRequest,
   LLMResponse,
 } from "@bollard/llm/src/types.js"
 import { describe, expect, it } from "vitest"
@@ -66,6 +67,33 @@ function makeAgent(tools: AgentTool[] = [], overrides?: Partial<AgentDefinition>
     temperature: 0,
     ...overrides,
   }
+}
+
+function cloneMessages(messages: LLMMessage[]): LLMMessage[] {
+  return JSON.parse(JSON.stringify(messages)) as LLMMessage[]
+}
+
+function hardExitUserMessageCountInTranscript(messages: LLMMessage[]): number {
+  let n = 0
+  for (const m of messages) {
+    if (
+      m.role === "user" &&
+      typeof m.content === "string" &&
+      m.content.includes("SYSTEM: You have")
+    ) {
+      n++
+    }
+  }
+  return n
+}
+
+const noopTool: AgentTool = {
+  name: "noop",
+  description: "No-op",
+  inputSchema: { type: "object" },
+  async execute() {
+    return "ok"
+  },
 }
 
 describe("executeAgent", () => {
@@ -201,15 +229,6 @@ describe("executeAgent", () => {
       workDir: "/tmp/test",
     }
 
-    const noopTool: AgentTool = {
-      name: "noop",
-      description: "No-op",
-      inputSchema: { type: "object" },
-      async execute() {
-        return "ok"
-      },
-    }
-
     let callId = 0
     const provider: LLMProvider = {
       name: "burn-per-turn",
@@ -237,6 +256,175 @@ describe("executeAgent", () => {
       code: "COST_LIMIT_EXCEEDED",
     })
     expect(callId).toBeLessThan(10)
+  })
+
+  it("injects forced-completion user message once at maxTurns-8 when stuck in tool_use", async () => {
+    const recorded: LLMMessage[][] = []
+    let callId = 0
+    const provider: LLMProvider = {
+      name: "record-tool-loop",
+      async chat(req: LLMRequest) {
+        recorded.push(cloneMessages(req.messages))
+        callId++
+        return {
+          content: [
+            {
+              type: "tool_use",
+              toolName: "noop",
+              toolInput: {},
+              toolUseId: `id-${callId}`,
+            },
+          ],
+          stopReason: "tool_use",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          costUsd: 0,
+        }
+      },
+    }
+    const agent = makeAgent([noopTool], { maxTurns: 10 })
+
+    await expect(executeAgent(agent, "go", provider, "m", makeCtx())).rejects.toMatchObject({
+      code: "NODE_EXECUTION_FAILED",
+    })
+
+    const lastTranscript = recorded[recorded.length - 1] ?? []
+    expect(hardExitUserMessageCountInTranscript(lastTranscript)).toBe(1)
+
+    let injectionSeenAt = -1
+    for (let i = 0; i < recorded.length; i++) {
+      const prev = i > 0 ? hardExitUserMessageCountInTranscript(recorded[i - 1] ?? []) : 0
+      const cur = hardExitUserMessageCountInTranscript(recorded[i] ?? [])
+      if (cur > prev) {
+        injectionSeenAt = i
+        break
+      }
+    }
+    expect(injectionSeenAt).toBeGreaterThanOrEqual(0)
+    for (let i = injectionSeenAt + 1; i < recorded.length; i++) {
+      expect(hardExitUserMessageCountInTranscript(recorded[i] ?? [])).toBe(1)
+    }
+  })
+
+  it("throws COST_LIMIT_EXCEEDED from per-attempt cap before maxTurns", async () => {
+    let callId = 0
+    const provider: LLMProvider = {
+      name: "burn-per-attempt",
+      async chat() {
+        callId++
+        return {
+          content: [
+            {
+              type: "tool_use",
+              toolName: "noop",
+              toolInput: {},
+              toolUseId: `id-${callId}`,
+            },
+          ],
+          stopReason: "tool_use",
+          usage: { inputTokens: 10, outputTokens: 10 },
+          costUsd: 0.01,
+        }
+      },
+    }
+    const agent = makeAgent([noopTool], { maxTurns: 50 })
+
+    await expect(
+      executeAgent(agent, "go", provider, "m", makeCtx(), { maxCostUsd: 0.025 }),
+    ).rejects.toMatchObject({
+      code: "COST_LIMIT_EXCEEDED",
+    })
+
+    expect(callId).toBe(3)
+  })
+
+  it("applies per-attempt cost cap before aggregate pipeline cap", async () => {
+    const highAggregateConfig = {
+      llm: { default: { provider: "mock", model: "test" } },
+      agent: { max_cost_usd: 1, max_duration_minutes: 30 },
+    }
+    const ctx: AgentContext = {
+      pipelineCtx: createContext("test", "bp", highAggregateConfig),
+      workDir: "/tmp/test",
+    }
+
+    let callId = 0
+    const provider: LLMProvider = {
+      name: "burn-under-high-aggregate",
+      async chat() {
+        callId++
+        return {
+          content: [
+            {
+              type: "tool_use",
+              toolName: "noop",
+              toolInput: {},
+              toolUseId: `id-${callId}`,
+            },
+          ],
+          stopReason: "tool_use",
+          usage: { inputTokens: 10, outputTokens: 10 },
+          costUsd: 0.01,
+        }
+      },
+    }
+    const agent = makeAgent([noopTool], { maxTurns: 200 })
+
+    let caught: unknown
+    try {
+      await executeAgent(agent, "go", provider, "m", ctx, { maxCostUsd: 0.049 })
+    } catch (e: unknown) {
+      caught = e
+    }
+
+    expect(BollardError.is(caught)).toBe(true)
+    if (BollardError.is(caught)) {
+      expect(caught.message).toContain("Per-attempt cost limit")
+    }
+    expect(callId).toBe(5)
+  })
+
+  it("does not inject hard exit after end_turn with hook continuation", async () => {
+    const recorded: LLMMessage[][] = []
+    let callId = 0
+    let hookRound = 0
+    const provider: LLMProvider = {
+      name: "completion-then-tools",
+      async chat(req: LLMRequest) {
+        recorded.push(cloneMessages(req.messages))
+        callId++
+        if (callId === 1) {
+          return textResponse("phase1", 0.001)
+        }
+        return {
+          content: [
+            {
+              type: "tool_use",
+              toolName: "noop",
+              toolInput: {},
+              toolUseId: `id-${callId}`,
+            },
+          ],
+          stopReason: "tool_use",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          costUsd: 0.001,
+        }
+      },
+    }
+    const options: ExecutorOptions = {
+      postCompletionHook: async () => {
+        hookRound++
+        return hookRound === 1 ? "fix tests" : null
+      },
+    }
+    const agent = makeAgent([noopTool], { maxTurns: 10 })
+
+    await expect(
+      executeAgent(agent, "go", provider, "m", makeCtx(), options),
+    ).rejects.toMatchObject({
+      code: "NODE_EXECUTION_FAILED",
+    })
+
+    expect(hardExitUserMessageCountInTranscript(recorded[recorded.length - 1] ?? [])).toBe(0)
   })
 
   it("caps large tool results at MAX_TOOL_RESULT_CHARS", async () => {

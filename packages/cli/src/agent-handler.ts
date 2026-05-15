@@ -545,6 +545,7 @@ export async function createAgenticHandler(
         postCompletionHook: createVerificationHook(workDir, profile, config.localModels),
         maxVerificationRetries: 3,
         deferPostCompletionVerifyFromTurn: Math.floor(agents.coder.maxTurns * 0.8),
+        maxCostUsd: config.agent.max_cost_usd / 2,
       }
     }
 

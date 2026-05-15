@@ -69,4 +69,6 @@ export interface ExecutorOptions {
   maxVerificationRetries?: number
   /** When set, skip post-completion verification once `turns` reaches this value (0-based turn counter inside the executor). */
   deferPostCompletionVerifyFromTurn?: number
+  /** Per-attempt cost ceiling in USD. Independent of `config.agent.max_cost_usd` aggregate cap. */
+  maxCostUsd?: number
 }

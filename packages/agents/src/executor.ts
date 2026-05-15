@@ -135,6 +135,9 @@ export async function executeAgent(
   let totalCostUsd = 0
   let turns = 0
   let verificationRetries = 0
+  let hasEmittedCompletion = false
+  let hasInjectedHardExit = false
+  const hardExitTurn = agent.maxTurns > 8 ? agent.maxTurns - 8 : Number.POSITIVE_INFINITY
   const maxVerificationRetries = options?.maxVerificationRetries ?? 3
   const toolCallHistory: AgentResult["toolCalls"] = []
 
@@ -160,6 +163,19 @@ export async function executeAgent(
           turn: turns + 1,
           costUsd: liveCostUsd,
           limitUsd: capUsd,
+        },
+      })
+    }
+
+    if (options?.maxCostUsd !== undefined && totalCostUsd > options.maxCostUsd) {
+      throw new BollardError({
+        code: "COST_LIMIT_EXCEEDED",
+        message: `Per-attempt cost limit of $${options.maxCostUsd} exceeded in agent "${agent.role}" at turn ${turns + 1}`,
+        context: {
+          agentRole: agent.role,
+          turn: turns + 1,
+          attemptCostUsd: totalCostUsd,
+          limitUsd: options.maxCostUsd,
         },
       })
     }
@@ -205,6 +221,7 @@ export async function executeAgent(
     const hasToolUseBlocks = response.content.some((b) => b.type === "tool_use")
 
     if (response.stopReason !== "tool_use" && !hasToolUseBlocks) {
+      hasEmittedCompletion = true
       const text = response.content
         .filter((b) => b.type === "text")
         .map((b) => b.text ?? "")
@@ -246,6 +263,23 @@ export async function executeAgent(
         turns,
         toolCalls: toolCallHistory,
       }
+    }
+
+    if (
+      turns >= hardExitTurn &&
+      response.stopReason === "tool_use" &&
+      !hasEmittedCompletion &&
+      !hasInjectedHardExit
+    ) {
+      hasInjectedHardExit = true
+      messages.push({ role: "assistant", content: response.content })
+      messages.push({
+        role: "user",
+        content: `SYSTEM: You have ${agent.maxTurns - turns} turns remaining. You MUST emit your completion JSON on your next response. Do not make any more tool calls. Emit the completion JSON now.`,
+      })
+      compactOlderTurns(messages)
+      turns++
+      continue
     }
 
     const toolTurn = displayTurn
