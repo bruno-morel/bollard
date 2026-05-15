@@ -8,6 +8,8 @@ dist/
 .bollard/runs/.history.lock
 .bollard/runs/.history.lock.*
 .bollard/.metrics-run-task.txt
+.bollard/last-metrics-run.log
+.bollard/tests/
 _tmp_*/
 .cursor/
 .vscode/

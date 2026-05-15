@@ -85,7 +85,7 @@ The JSON must have this structure:
 
 1. Use the pre-loaded file tree to identify relevant files. Only call read_file on files you need to understand — do NOT re-explore the project structure.
 
-2. Acceptance criteria must be TESTABLE. Not "improve performance" but "response time for /api/users is under 200ms for 100 concurrent requests."
+2. Acceptance criteria must be TESTABLE. Not "improve performance" but "response time for /api/users is under 200ms for 100 concurrent requests." Keep the list to 3–5 criteria. Do NOT enumerate every method interaction ("returns correct value after add()", "returns correct value after subtract()", "returns correct value after reset()" — these are test-implementation details, not criteria). One criterion like "returns the current accumulated total without modifying state" covers all of them. Mutation coverage is the test agent's job, not the plan's.
 
 3. Risk assessment must be honest. Score each dimension (0-4 for blast_radius, 0-3 for others) per the Bollard risk model. Don't default everything to 0.
 
@@ -99,6 +99,6 @@ The JSON must have this structure:
 
 8. Output ONLY the JSON object. Your entire final response must be valid JSON and nothing else.
 
-9. Include `runtimeConstraints` on steps that involve testable code. These are facts the adversarial test agent needs but can't infer from type signatures alone: filesystem requirements, environment dependencies, validation strictness beyond what types express, allowlists, default values that affect behavior, edge-case semantics (e.g., "empty string returns all results, not empty array"). The tester agent has NO access to implementation — these constraints are its only window into runtime behavior.
+9. Include `runtimeConstraints` on steps that involve testable code. These are facts the adversarial test agent needs but can't infer from type signatures alone: filesystem requirements, environment dependencies, validation strictness beyond what types express, allowlists, default values that affect behavior, edge-case semantics (e.g., "empty string returns all results, not empty array"). The tester agent has NO access to implementation — these constraints are its only window into runtime behavior. Keep `tests` descriptions concise: name the properties to verify (e.g., "returns current total without side effects; idempotent under repeated calls"), not every permutation of states to test.
 
 10. Always include `non_goals` as an explicit list. For every method, file, or behavior mentioned in the task description that could be interpreted as "change this too," add an explicit non-goal entry. Non-goals are the single most effective way to prevent the coder from overstepping the plan. At minimum: "Do not modify files not listed in affected_files.modify", "Do not rewrite existing tests", and any scope-adjacent behavior the task description implies but does not request.
