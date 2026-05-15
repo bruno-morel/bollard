@@ -732,4 +732,119 @@ describe("CostTracker", () => {
       expect(tracker.remaining()).toBe(5)
     })
   })
+
+  describe("snapshotTotal()", () => {
+    it("returns zero for newly constructed tracker", () => {
+      const tracker = new CostTracker(10)
+      expect(tracker.snapshotTotal()).toBe(0)
+    })
+
+    it("returns same value as total() at moment of call", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(3.5)
+
+      expect(tracker.snapshotTotal()).toBe(tracker.total())
+      expect(tracker.snapshotTotal()).toBe(3.5)
+    })
+
+    it("returns accumulated value after add() calls", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(1.5)
+      tracker.add(2.5)
+
+      expect(tracker.snapshotTotal()).toBe(4)
+      expect(tracker.snapshotTotal()).toBe(tracker.total())
+    })
+
+    it("returns adjusted value after subtract() calls", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+      tracker.subtract(2)
+
+      expect(tracker.snapshotTotal()).toBe(3)
+      expect(tracker.snapshotTotal()).toBe(tracker.total())
+    })
+
+    it("returns adjusted value after reset() calls", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+      tracker.reset()
+
+      expect(tracker.snapshotTotal()).toBe(0)
+      expect(tracker.snapshotTotal()).toBe(tracker.total())
+    })
+
+    it("returns adjusted value after divide() calls", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(8)
+      tracker.divide(2)
+
+      expect(tracker.snapshotTotal()).toBe(4)
+      expect(tracker.snapshotTotal()).toBe(tracker.total())
+    })
+
+    it("can be called multiple times and returns same value if total unchanged", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(3.5)
+
+      const first = tracker.snapshotTotal()
+      const second = tracker.snapshotTotal()
+      const third = tracker.snapshotTotal()
+
+      expect(first).toBe(3.5)
+      expect(second).toBe(3.5)
+      expect(third).toBe(3.5)
+      expect(first).toBe(second)
+      expect(second).toBe(third)
+    })
+
+    it("does not modify any internal state", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+
+      const totalBefore = tracker.total()
+      const remainingBefore = tracker.remaining()
+      const exceededBefore = tracker.exceeded()
+
+      const snapshot = tracker.snapshotTotal()
+
+      expect(tracker.total()).toBe(totalBefore)
+      expect(tracker.remaining()).toBe(remainingBefore)
+      expect(tracker.exceeded()).toBe(exceededBefore)
+      expect(snapshot).toBe(5)
+    })
+
+    it("reflects changes when total is modified between calls", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(2)
+
+      const firstSnapshot = tracker.snapshotTotal()
+      expect(firstSnapshot).toBe(2)
+
+      tracker.add(3)
+      const secondSnapshot = tracker.snapshotTotal()
+      expect(secondSnapshot).toBe(5)
+
+      tracker.subtract(1)
+      const thirdSnapshot = tracker.snapshotTotal()
+      expect(thirdSnapshot).toBe(4)
+    })
+
+    it("works with method chaining", () => {
+      const tracker = new CostTracker(20)
+      tracker.add(10).divide(2)
+
+      expect(tracker.snapshotTotal()).toBe(5)
+      expect(tracker.snapshotTotal()).toBe(tracker.total())
+    })
+
+    it("handles floating point precision correctly", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(0.1)
+      tracker.add(0.2)
+
+      expect(tracker.snapshotTotal()).toBeCloseTo(0.3, 10)
+      expect(tracker.snapshotTotal()).toBe(tracker.total())
+    })
+  })
 })

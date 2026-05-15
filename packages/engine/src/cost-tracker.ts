@@ -59,6 +59,9 @@ export class CostTracker {
     return this._total > this._limit
   }
 
+  snapshotTotal(): number {
+    return this._total
+  }
   remaining(): number {
     return Math.max(0, this._limit - this._total)
   }
