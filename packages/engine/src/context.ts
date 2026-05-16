@@ -67,6 +67,8 @@ export interface PipelineContext {
   generatedProbes?: unknown[]
   deploymentManifest?: unknown
   toolchainProfile?: ToolchainProfile
+  /** Checks to skip in static-checks node (CI-injected via --ci-passed). */
+  skipChecks?: string[]
   costTracker: CostTracker
   log: {
     debug: (message: string, data?: Record<string, unknown>) => void

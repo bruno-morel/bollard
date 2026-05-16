@@ -11,6 +11,7 @@ import { runBlueprint } from "@bollard/engine/src/runner.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
 import { buildProjectTree, createAgenticHandler } from "./agent-handler.js"
+import { formatSkippedChecksNotice, resolveSkipChecks } from "./ci-passed.js"
 import { resolveConfig } from "./config.js"
 import { collectAffectedPathsFromPlan } from "./contract-plan.js"
 import { runCostBaselineCommand } from "./cost-baseline.js"
@@ -314,9 +315,10 @@ async function runVerifyCommand(args: string[]): Promise<void> {
   }
 
   const quiet = args.includes("--quiet")
+  const skipChecks = await resolveSkipChecks(workDir, args)
   const startedAt = Date.now()
   const { profile } = await resolveConfig(undefined, workDir)
-  const { results, allPassed } = await runStaticChecks(workDir, profile)
+  const { results, allPassed } = await runStaticChecks(workDir, profile, { skipChecks })
   const gitSha = await getHeadSha(workDir)
   const verifyRecord = buildVerifyRecord({
     workDir,
@@ -338,6 +340,9 @@ async function runVerifyCommand(args: string[]): Promise<void> {
   }
 
   header("verify")
+  if (skipChecks.length > 0) {
+    log(`${DIM}${formatSkippedChecksNotice(skipChecks)}${RESET}`)
+  }
   log(`${DIM}Running static checks...${RESET}\n`)
 
   for (const r of results) {
@@ -489,6 +494,10 @@ async function runRunCommand(args: string[]): Promise<void> {
         `${DIM}Metrics:${RESET} stderr includes ${DIM}BOLLARD_METRICS${RESET} lines per agent turn (input/output tokens). Export ${DIM}BOLLARD_METRICS=1${RESET} or pass ${DIM}--metrics${RESET}.`,
       )
     }
+    const skipChecks = await resolveSkipChecks(workDir, args)
+    if (skipChecks.length > 0) {
+      log(`${DIM}${formatSkippedChecksNotice(skipChecks)}${RESET}`)
+    }
     log("")
 
     const result = await runBlueprint(
@@ -500,6 +509,7 @@ async function runRunCommand(args: string[]): Promise<void> {
       cliProgress,
       profile,
       persistRunHistory,
+      skipChecks.length > 0 ? skipChecks : undefined,
     )
     printRunSummary(result)
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
@@ -919,7 +929,7 @@ async function main(): Promise<void> {
     `  ${BOLD}plan${RESET} --task <task>              Generate a plan (${DIM}[--metrics]${RESET})`,
   )
   log(
-    `  ${BOLD}verify${RESET} [--profile] [--quiet]   Run static checks (or show profile; --quiet JSON on fail)`,
+    `  ${BOLD}verify${RESET} [--profile] [--quiet] [--ci-passed <list>]  Run static checks (or show profile; --quiet JSON on fail)`,
   )
   log(
     `  ${BOLD}history${RESET} [list|show|compare|summary|rebuild]  Run history (list/show/compare/summary/rebuild)`,

@@ -1,4 +1,5 @@
 import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
+import { detectToolchain } from "@bollard/detect/src/detect.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { describe, expect, it } from "vitest"
 import { createStaticCheckNode, runStaticChecks } from "../src/static.js"
@@ -36,6 +37,32 @@ describe("static checks (integration)", () => {
       expect(r.durationMs).toBeGreaterThanOrEqual(0)
       expect(typeof r.output).toBe("string")
     }
+  }, 60_000)
+})
+
+describe("runStaticChecks skipChecks", () => {
+  it("skipChecks skips named checks", async () => {
+    const profile = await detectToolchain("/app")
+    const { results } = await runStaticChecks("/app", profile, {
+      skipChecks: ["typecheck"],
+    })
+
+    const typecheck = results.find((r) => r.check === "typecheck")
+    expect(typecheck).toBeDefined()
+    expect(typecheck?.passed).toBe(true)
+    expect(typecheck?.output).toBe("skipped (prior CI pass)")
+    expect(typecheck?.durationMs).toBe(0)
+  }, 60_000)
+
+  it("skipChecks is case-insensitive", async () => {
+    const profile = await detectToolchain("/app")
+    const { results } = await runStaticChecks("/app", profile, {
+      skipChecks: ["TypeCheck"],
+    })
+
+    const typecheck = results.find((r) => r.check === "typecheck")
+    expect(typecheck?.passed).toBe(true)
+    expect(typecheck?.output).toBe("skipped (prior CI pass)")
   }, 60_000)
 })
 

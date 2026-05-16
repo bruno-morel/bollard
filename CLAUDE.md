@@ -12,7 +12,7 @@ The forward roadmap (see [07-adversarial-scopes.md](../spec/07-adversarial-scope
 - **Stage 4c:** Java/Kotlin Wave 1 shipped (Part 2 — detector, `bollard-extract-java`, contract graph, PIT, JVM compose, prompts). (OpenAI + Google `chatStream` parity was Part 1.)
 - **Stage 4d:** DX & Agent Integrations: `bollard init --ide` generates platform-specific config for Cursor (rules, hooks, commands), Claude Code (commands, agents, hooks, CLAUDE.md augmentation), Codex, and Antigravity. MCP server v2 adds enriched tool descriptions, 6 resource endpoints (`bollard://profile`, etc.), and 3 prompt templates. `bollard watch` provides continuous verification with file watching. `--quiet` flag on `verify` enables machine-readable JSON output for hooks.
 - **Stage 5d (token economy):** Phase 1 DONE (TS import-graph context expansion). Phase 3 DONE (boundary-tester claims protocol + `assembleTestFile()`). Phase 3b DONE (deterministic code metrics + k6 load testing). Phase 4 DONE (`LocalProvider` + `dev-local` profile, opt-in). **Next:** Phase 4b (make local runtime fully opt-in — Cursor in progress). Phase 2 IN PROGRESS (verification-feedback patcher — tier 1→2→3). Phase 5 DONE (per-agent model assignment — Haiku for planner/testers/reviewer, Sonnet for coder). **Phase 7 DONE** (coder turn reduction + `max_cost_usd` mid-run enforcement). **Phase 8 DONE** (context window management — `read_file`/`run_command` caps + tighter executor compaction). **Phase 9 DONE** (runtime forced-completion injection + per-attempt cost cap for coder). **Phase 10 DONE** (planner prompt plan compression — cap acceptance criteria at 3–5, no state-permutation enumeration). **Phase 6 DONE** (cost regression CI — baseline file, `cost-baseline` CLI, GitHub Action). See [spec/stage5d-token-economy.md](../spec/stage5d-token-economy.md) and [spec/ROADMAP.md](../spec/ROADMAP.md).
-- **Stage 5a (self-hosting):** Phase 1–3 DONE (run history + SQLite + MCP history tools + watch/MCP verify recording). Next: Phase 4 (CI-aware verification + adversarial test promotion), Phase 5 (Bollard-on-Bollard CI), Phase 6 (protocol compliance CI).
+- **Stage 5a (self-hosting):** Phase 1–3 DONE (run history + SQLite + MCP history tools + watch/MCP verify recording). Phase 4a DONE (CI-aware verification — `detectCIEnvironment`, JUnit XML, `--ci-passed`). Next: Phase 4b (adversarial test promotion), Phase 5 (Bollard-on-Bollard CI), Phase 6 (protocol compliance CI).
 - **Stage 5b/5c:** Self-improvement (prompt regression gating, meta-verification, adaptive concern weights) and agent intelligence (MCP client for agents, parallel scope execution, agent memory) — after 5a is complete. See [spec/ROADMAP.md](../spec/ROADMAP.md).
 
 Stage 2's single adversarial tester (now called the **boundary-scope** tester) is the first of three adversarial scopes. Each scope has its own agent, context, and execution mode, probing four cross-cutting concerns (correctness, security, performance, resilience) with per-scope weights.
@@ -83,8 +83,7 @@ docker compose run --rm dev --filter @bollard/cli run start -- doctor --history
 - **JVM audit detection:** OWASP dependency-check commands are only emitted when the plugin is declared in `pom.xml` / `build.gradle(.kts)`. Projects without the plugin get no `audit` check (previously caused hard failures).
 - **`bollard watch`** uses `fs.watch` with `recursive: true` — supported on macOS and Windows but not on Linux. Falls back to non-recursive top-level watch on Linux.
 - **Claude Code plugin packaging** under `plugin/claude-code/` is a scaffold only — npm publishing and `claude plugin add` registration are future work.
-- **CI-aware verification:** Not yet implemented. Bollard re-runs all static checks even when a prior CI step already passed them. `detectCIEnvironment`, `--ci-passed`, and `last-verified.json` SHA-match skip logic are Stage 5a Phase 4. Bollard uses its own `last-verified.json` (not tool-specific cache timestamps) for local dev skip detection — simpler, under Bollard's control, toolchain-agnostic. Integration model: Bollard as smart observer + optional pre-commit hook, never script injection. See [spec/stage5a-self-hosting.md §12](spec/stage5a-self-hosting.md).
-- **Adversarial test promotion:** Manual only via `bollard promote-test`. Automatic candidate detection (bug-catcher signal, repeated-generation fingerprinting) is Stage 5a Phase 4. See [spec/stage5a-self-hosting.md §13](spec/stage5a-self-hosting.md).
+- **Adversarial test promotion:** Manual only via `bollard promote-test`. Automatic candidate detection (bug-catcher signal, repeated-generation fingerprinting) is Stage 5a Phase 4b. See [spec/stage5a-self-hosting.md §13](spec/stage5a-self-hosting.md).
 
 ## Tech Stack (Non-Negotiable)
 
@@ -380,7 +379,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** 9 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`, `behavioral-tester.md`
-- **Latest count (authoritative, 2026-05-15, post Stage 5a Phase 3 MCP history):** `1058` passed, `6` skipped (1064 total). Skips: 6 LLM/local smoke tests (no key / opt-in).
+- **Latest count (authoritative, 2026-05-16, post Stage 5a Phase 4a CI providers):** `1076` passed, `6` skipped (1082 total). Skips: 6 LLM/local smoke tests (no key / opt-in).
 - **Adversarial suite** (`vitest.adversarial.config.ts`): `335` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c). +4 from cleanup (audit/secretScan hook, rollback paths).
 - **Vitest + Vite 8:** you may see `esbuild` option deprecated in favor of `oxc` — harmless until Vitest defaults align; pin Vite 7.x if you need a silent log.
 
@@ -658,7 +657,7 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 | `run demo --task "..."` | Stage 0 demo blueprint (1 deterministic + 1 agentic node) |
 | `run implement-feature --task "..." [--work-dir <path>]` | Full Stage 1 pipeline with human gates (optional work dir override) |
 | `plan --task "..." [--work-dir <path>]` | Standalone planner agent (no implementation) |
-| `verify [--profile] [--work-dir <path>] [--quiet]` | Run static checks (or show detected profile as JSON); `--quiet` emits JSON on failure (hooks) |
+| `verify [--profile] [--work-dir <path>] [--quiet] [--ci-passed <list>]` | Run static checks (or show detected profile as JSON); `--quiet` emits JSON on failure (hooks); `--ci-passed` skips checks already passed in CI |
 | `init --ide <platform>` | Generate platform-specific config (`cursor`, `claude-code`, `codex`, `antigravity`, `all`) |
 | `watch [--quiet] [--debounce N]` | Continuous verification — re-verify on file changes |
 | `verify --quiet` | Machine-readable JSON verification output (for hooks) |
@@ -891,6 +890,11 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - `bollard_history` MCP tool: query run history with `runId` (show mode) or filters (`status`, `blueprintId`, `since`, `limit`, `offset`); returns `{ records, count, filter }` or `{ record, runId }`. `bollard_history_summary` MCP tool: returns `RunSummary` (totalRuns, successRate, avgCostUsd, costTrend, byBlueprint) with optional `since`/`until` window via `SummaryFilter`. `bollard watch` verify completions now recorded with `source: "watch"`. MCP `handleVerify` completions now recorded with `source: "mcp"`. Both wire-ups are non-fatal (catch + ignore history errors). `VerifyRecordSource = "cli" | "mcp" | "watch" | "hook"` was already defined in `run-history.ts`. CLI `history summary --until` now threads `until` into `store.summary({ since, until })`.
 - **Test count:** 1058 passed / 6 skipped
 
+### Stage 5a Phase 4a (DONE) — CI-Aware Verification:
+
+`detectCIEnvironment(env?)` in `@bollard/verify` — pure env-var detection for GitHub Actions, GitLab CI, CircleCI, Jenkins, Buildkite, Google Cloud Build, AWS CodeBuild, Azure Pipelines, Travis CI, Drone, local, unknown. `readJUnitResults(xmlPath)` — regex-based JUnit XML parser, returns `PriorCheckResult[]` (non-throwing). `runStaticChecks` gains `options.skipChecks?: string[]` — skipped checks emit `passed: true, output: "skipped (prior CI pass)"`. `bollard verify --ci-passed typecheck,lint,audit` — explicit injection escape hatch; also auto-detects from CI env + JUnit XML artifacts. Bollard never skips adversarial scopes, mutation testing, semantic review, or Bollard-generated test execution regardless of CI context.
+- **Test count:** 1076 passed / 6 skipped
+
 ### Stage 5d Phase 3 (DONE) — Adversarial Test Scaffolding:
 - Boundary tester rewritten to claims JSON protocol (matching contract + behavioral testers): `bnd` id prefix, `grounding[]`, `test` field body only
 - `verify-boundary-grounding` node added (position 10 in pipeline), `BOUNDARY_TESTER_OUTPUT_INVALID` + `BOUNDARY_TESTER_NO_GROUNDED_CLAIMS` error codes
@@ -964,8 +968,8 @@ Closes the token-economy loop. `CostBaseline` store at `.bollard/cost-baseline.j
 - **External observe providers** — Datadog, Flagsmith, LaunchDarkly, Cloud Run, ArgoCD implementations. Interfaces exist in `@bollard/observe`; implementations are 4b+.
 - **Advanced fault injection** — network_delay, resource_limit via `tc`/`iptables`. `FaultInjector` interface is extensible; only `service_stop` is implemented.
 - **Library-mode behavioral testing** — agent prompt has `{{#if hasPublicApi}}` ready; implementation deferred.
-- **CI-aware verification** — `detectCIEnvironment`, JUnit XML reading, `--ci-passed` flag, `last-verified.json` SHA-match skip logic, optional pre-commit hook — Stage 5a Phase 4. See [spec/stage5a-self-hosting.md §12](spec/stage5a-self-hosting.md).
-- **Adversarial test promotion** — automatic candidate detection (bug-catcher + repeated-generation fingerprinting), promotion flow at `approve-pr` gate, `rewriteImportsForPromotion`, `.bollard/promoted.json` — Stage 5a Phase 4. See [spec/stage5a-self-hosting.md §13](spec/stage5a-self-hosting.md).
+- **`last-verified.json` SHA-match skip logic** — local dev Tier 2 skip when HEAD matches last successful verify; optional pre-commit hook — Stage 5a Phase 4 follow-up. See [spec/stage5a-self-hosting.md §12](spec/stage5a-self-hosting.md).
+- **Adversarial test promotion** — automatic candidate detection (bug-catcher + repeated-generation fingerprinting), promotion flow at `approve-pr` gate, `rewriteImportsForPromotion`, `.bollard/promoted.json` — Stage 5a Phase 4b. See [spec/stage5a-self-hosting.md §13](spec/stage5a-self-hosting.md).
 - **Ollama / vLLM or any other inference runtime** — Do not add ad-hoc. The only supported local runtime is llama.cpp via `dev-local`. The decision rule for which work goes deterministic vs. local vs. frontier is in [ADR-0004](../spec/adr/0004-determinism-local-frontier-tiers.md).
 - **fastembed-js embeddings** — deferred; file-relevance scoring beyond import-graph ranking not yet needed.
 - Bollard-on-Bollard CI (5a Phase 5), protocol compliance CI (5a Phase 6), self-improvement (5b), agent intelligence (5c) — Stage 5 (see [spec/ROADMAP.md](../spec/ROADMAP.md))

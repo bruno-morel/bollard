@@ -107,10 +107,14 @@ export async function runBlueprint(
   onProgress?: ProgressCallback,
   toolchainProfile?: ToolchainProfile,
   onRunComplete?: RunBlueprintCompleteCallback,
+  skipChecks?: string[],
 ): Promise<RunResult> {
   const ctx = createContext(task, blueprint.id, config)
   if (toolchainProfile !== undefined) {
     ctx.toolchainProfile = toolchainProfile
+  }
+  if (skipChecks !== undefined) {
+    ctx.skipChecks = skipChecks
   }
   let status: RunResult["status"] = "success"
   let error: RunResult["error"] | undefined

@@ -394,7 +394,9 @@ export function createImplementFeatureBlueprint(
         type: "deterministic",
         onFailure: "skip",
         execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const { results, allPassed } = await runStaticChecks(workDir, ctx.toolchainProfile)
+          const { results, allPassed } = await runStaticChecks(workDir, ctx.toolchainProfile, {
+            skipChecks: ctx.skipChecks ?? [],
+          })
           if (!allPassed) {
             const failures = results.filter((r) => !r.passed).map((r) => r.check)
             return {

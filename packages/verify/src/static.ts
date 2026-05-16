@@ -52,6 +52,28 @@ function buildChecksFromProfile(
   return checks
 }
 
+const SKIP_CHECK_ALIASES: Record<string, string> = {
+  secretscan: "secrets",
+}
+
+function buildSkipCheckSet(skipChecks: string[] | undefined): Set<string> | undefined {
+  if (skipChecks === undefined || skipChecks.length === 0) return undefined
+
+  const set = new Set<string>()
+  for (const raw of skipChecks) {
+    const lower = raw.toLowerCase()
+    if (lower === "test") {
+      console.warn(
+        "[bollard] skipChecks contains 'test' but runStaticChecks does not run tests — ignoring",
+      )
+      continue
+    }
+    const canonical = SKIP_CHECK_ALIASES[lower] ?? lower
+    set.add(canonical)
+  }
+  return set.size > 0 ? set : undefined
+}
+
 async function buildDefaultChecks(
   workDir: string,
 ): Promise<{ name: string; cmd: string; args: string[] }[]> {
@@ -78,7 +100,7 @@ async function buildDefaultChecks(
 export async function runStaticChecks(
   workDir: string,
   profile?: ToolchainProfile,
-  options?: { onlyChecks?: string[] },
+  options?: { onlyChecks?: string[]; skipChecks?: string[] },
 ): Promise<{
   results: StaticCheckResult[]
   allPassed: boolean
@@ -87,9 +109,20 @@ export async function runStaticChecks(
     ? buildChecksFromProfile(profile, options?.onlyChecks)
     : await buildDefaultChecks(workDir)
 
+  const skipSet = buildSkipCheckSet(options?.skipChecks)
   const results: StaticCheckResult[] = []
 
   for (const check of checks) {
+    if (skipSet?.has(check.name.toLowerCase())) {
+      results.push({
+        check: check.name,
+        passed: true,
+        output: "skipped (prior CI pass)",
+        durationMs: 0,
+      })
+      continue
+    }
+
     const startMs = Date.now()
     try {
       const { stdout, stderr } = await execFileAsync(check.cmd, check.args, {
