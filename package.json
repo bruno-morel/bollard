@@ -2,6 +2,7 @@
   "name": "bollard",
   "version": "0.0.1",
   "private": true,
+  "packageManager": "pnpm@10.33.0",
   "description": "Artifact integrity framework for AI-assisted software development",
   "scripts": {
     "test": "vitest run",

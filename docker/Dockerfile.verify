@@ -2,7 +2,7 @@ FROM node:22-slim AS bollard-verify
 WORKDIR /bollard
 
 # Install test tooling
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10 --activate
 
 # Bollard's own test dependencies: vitest, fast-check, HTTP/CLI clients
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
