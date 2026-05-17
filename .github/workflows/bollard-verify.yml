@@ -1,0 +1,47 @@
+name: Bollard Verify
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js (for native typecheck + lint)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Build dev image
+        run: docker compose build dev
+
+      - name: Bollard verify (skipping typecheck + lint already run above)
+        run: |
+          docker compose run --rm dev sh -c \
+            'pnpm --filter @bollard/cli run start -- verify --quiet --ci-passed typecheck,lint'
+
+      - name: Upload verify result
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: bollard-verify-${{ github.run_id }}
+          path: .bollard/runs/history.jsonl
