@@ -4,6 +4,7 @@ dist/
 .DS_Store
 .env
 .pnpm-store/
+.bollard/runs/history.jsonl
 .bollard/runs/history.db
 .bollard/runs/history.db-wal
 .bollard/runs/history.db-shm
