@@ -3,6 +3,7 @@ import { BollardError } from "./errors.js"
 
 export class CostTracker {
   private _total = 0
+  private _runCount = 0
   private readonly _limit: number
 
   constructor(limitUsd: number) {
@@ -25,6 +26,7 @@ export class CostTracker {
         context: { costUsd },
       })
     }
+    this._runCount++
     this._total += costUsd
     return this
   }
@@ -69,7 +71,12 @@ export class CostTracker {
   reset(): number {
     const previousTotal = this._total
     this._total = 0
+    this._runCount = 0
     return previousTotal
+  }
+
+  runCount(): number {
+    return this._runCount
   }
 
   divide(divisor: number): CostTracker {

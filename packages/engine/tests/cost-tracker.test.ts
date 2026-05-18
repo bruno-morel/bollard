@@ -365,7 +365,142 @@ describe("CostTracker", () => {
       } catch (err) {
         expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
       }
-      expect(tracker.total()).toBe(5)
+      describe("runCount()", () => {
+        it("returns 0 immediately after construction", () => {
+          const tracker = new CostTracker(10)
+          expect(tracker.runCount()).toBe(0)
+        })
+
+        it("increments by 1 each time add() is called", () => {
+          const tracker = new CostTracker(10)
+
+          tracker.add(1)
+          expect(tracker.runCount()).toBe(1)
+
+          tracker.add(2)
+          expect(tracker.runCount()).toBe(2)
+
+          tracker.add(0.5)
+          expect(tracker.runCount()).toBe(3)
+        })
+
+        it("does not increment when add() throws due to invalid input", () => {
+          const tracker = new CostTracker(10)
+
+          expect(() => tracker.add(-1)).toThrow(BollardError)
+          expect(tracker.runCount()).toBe(0)
+
+          expect(() => tracker.add(Number.NaN)).toThrow(BollardError)
+          expect(tracker.runCount()).toBe(0)
+
+          // Valid call should increment
+          tracker.add(1)
+          expect(tracker.runCount()).toBe(1)
+        })
+
+        it("resets to 0 when reset() is called", () => {
+          const tracker = new CostTracker(10)
+
+          tracker.add(1)
+          tracker.add(2)
+          expect(tracker.runCount()).toBe(2)
+
+          const previousTotal = tracker.reset()
+          expect(previousTotal).toBe(3)
+          expect(tracker.runCount()).toBe(0)
+        })
+
+        it("returns correct count after multiple add() and reset() cycles", () => {
+          const tracker = new CostTracker(10)
+
+          // First cycle
+          tracker.add(1)
+          tracker.add(2)
+          expect(tracker.runCount()).toBe(2)
+
+          tracker.reset()
+          expect(tracker.runCount()).toBe(0)
+
+          // Second cycle
+          tracker.add(0.5)
+          tracker.add(1.5)
+          tracker.add(2.5)
+          expect(tracker.runCount()).toBe(3)
+
+          tracker.reset()
+          expect(tracker.runCount()).toBe(0)
+
+          // Third cycle
+          tracker.add(5)
+          expect(tracker.runCount()).toBe(1)
+        })
+
+        it("does not modify state and is idempotent across repeated calls", () => {
+          const tracker = new CostTracker(10)
+
+          tracker.add(1)
+          tracker.add(2)
+
+          const firstCall = tracker.runCount()
+          const secondCall = tracker.runCount()
+          const thirdCall = tracker.runCount()
+
+          expect(firstCall).toBe(2)
+          expect(secondCall).toBe(2)
+          expect(thirdCall).toBe(2)
+
+          // Verify state wasn't modified
+          expect(tracker.total()).toBe(3)
+        })
+
+        it("does not increment for subtract() calls", () => {
+          const tracker = new CostTracker(10)
+
+          tracker.add(5)
+          expect(tracker.runCount()).toBe(1)
+
+          tracker.subtract(2)
+          expect(tracker.runCount()).toBe(1) // Should not change
+          expect(tracker.total()).toBe(3)
+        })
+
+        it("does not increment for divide() calls", () => {
+          const tracker = new CostTracker(10)
+
+          tracker.add(4)
+          expect(tracker.runCount()).toBe(1)
+
+          tracker.divide(2)
+          expect(tracker.runCount()).toBe(1) // Should not change
+          expect(tracker.total()).toBe(2)
+        })
+
+        it("works with chained add() calls", () => {
+          const tracker = new CostTracker(10)
+
+          tracker.add(1).add(2).add(3)
+          expect(tracker.runCount()).toBe(3)
+          expect(tracker.total()).toBe(6)
+        })
+
+        it("works with context parameter", () => {
+          const mockDebug = vi.fn()
+          const mockCtx = {
+            log: {
+              debug: mockDebug,
+              info: vi.fn(),
+              warn: vi.fn(),
+              error: vi.fn(),
+            },
+          } as Partial<PipelineContext> as PipelineContext
+
+          const tracker = new CostTracker(10)
+          tracker.add(5, mockCtx)
+
+          expect(tracker.runCount()).toBe(1)
+          expect(mockDebug).toHaveBeenCalledWith("cost:add")
+        })
+      })
     })
 
     it("handles fractional amounts correctly", () => {
