@@ -897,7 +897,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 
 ### Stage 5a Phase 5 (DONE) — Bollard-on-Bollard CI:
 
-`.github/workflows/bollard-verify.yml`: triggers on push/PR to `main`. Runs typecheck + lint natively (fast), then `bollard verify --quiet --ci-passed typecheck,lint` inside the `dev` Docker container (runs audit + secretScan only — skips what was already run). Exits 1 on failure; uploads `.bollard/runs/history.jsonl` as an artifact on failure for structured per-check debugging. Cost: $0 (no LLM calls). The full `implement-feature` pipeline CI is in `cost-regression.yml` (weekly + manual dispatch).
+`.github/workflows/bollard-verify.yml`: triggers on push/PR to `main`. Runs typecheck + lint natively (fast), then `bollard verify --quiet --ci-passed typecheck,lint` inside the `dev` Docker container (runs audit + secretScan only — skips what was already run). Exits 1 on failure; uploads `.bollard/runs/history.jsonl` as an artifact on failure for structured per-check debugging. Cost: $0 (no LLM calls). The full `implement-feature` pipeline CI is in `cost-regression.yml` (weekly + manual dispatch). Bootstrap fixes applied during first run: pinned `packageManager: "pnpm@10.33.0"` in `package.json` + Dockerfiles (pnpm 11 rejected lockfile overrides); added `requireApiKey?: boolean` option to `resolveConfig()` (default `true`) — `verify`, `watch`, and MCP `bollard_verify` pass `{ requireApiKey: false }` so static-only commands don't require an LLM key. First green run: GitHub Actions run 26065111582, ~2m50s.
 
 ### Stage 5d Phase 3 (DONE) — Adversarial Test Scaffolding:
 - Boundary tester rewritten to claims JSON protocol (matching contract + behavioral testers): `bnd` id prefix, `grounding[]`, `test` field body only
