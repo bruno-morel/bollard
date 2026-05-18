@@ -652,7 +652,13 @@ export function createImplementFeatureBlueprint(
         type: "deterministic",
         onFailure: "skip",
         execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const result = await runTests(workDir, undefined, ctx.toolchainProfile)
+          const writeResult = ctx.results["write-tests"]
+          const boundaryTestFile =
+            writeResult?.status === "ok"
+              ? (writeResult.data as { testFile?: string } | undefined)?.testFile
+              : undefined
+          const testFiles = boundaryTestFile !== undefined ? [boundaryTestFile] : undefined
+          const result = await runTests(workDir, testFiles, ctx.toolchainProfile)
           if (result.failed > 0) {
             return {
               status: "fail",
