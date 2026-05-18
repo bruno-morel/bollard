@@ -42,7 +42,7 @@ async function handleVerify(input: Record<string, unknown>, workDir: string): Pr
   const dir = parsed.workDir ?? workDir
   const { resolveConfig } = await import("@bollard/cli/src/config.js")
   const { runStaticChecks } = await import("@bollard/verify/src/static.js")
-  const { profile } = await resolveConfig(undefined, dir)
+  const { profile } = await resolveConfig(undefined, dir, { requireApiKey: false })
   const { results, allPassed } = await runStaticChecks(dir, profile)
 
   try {

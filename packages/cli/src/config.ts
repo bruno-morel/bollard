@@ -227,10 +227,17 @@ export interface ResolvedConfig {
   observe?: ObserveProviderConfig
 }
 
+export interface ResolveConfigOptions {
+  /** When false, static-only commands (verify, watch) may run without LLM API keys. Default true. */
+  requireApiKey?: boolean
+}
+
 export async function resolveConfig(
   cliFlags?: Partial<BollardConfig>,
   cwd: string = process.cwd(),
+  options?: ResolveConfigOptions,
 ): Promise<ResolvedConfig> {
+  const requireApiKey = options?.requireApiKey !== false
   const config: BollardConfig = structuredClone(DEFAULTS)
   const sources: Record<string, AnnotatedValue<unknown>> = {
     "llm.default.provider": { value: DEFAULTS.llm.default.provider, source: "default" },
@@ -307,6 +314,7 @@ export async function resolveConfig(
   }
 
   if (
+    requireApiKey &&
     !process.env["ANTHROPIC_API_KEY"] &&
     !process.env["OPENAI_API_KEY"] &&
     !process.env["GOOGLE_API_KEY"]

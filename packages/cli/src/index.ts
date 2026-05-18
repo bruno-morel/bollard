@@ -317,7 +317,7 @@ async function runVerifyCommand(args: string[]): Promise<void> {
   const quiet = args.includes("--quiet")
   const skipChecks = await resolveSkipChecks(workDir, args)
   const startedAt = Date.now()
-  const { profile } = await resolveConfig(undefined, workDir)
+  const { profile } = await resolveConfig(undefined, workDir, { requireApiKey: false })
   const { results, allPassed } = await runStaticChecks(workDir, profile, { skipChecks })
   const gitSha = await getHeadSha(workDir)
   const verifyRecord = buildVerifyRecord({
@@ -847,7 +847,7 @@ async function main(): Promise<void> {
 
   if (command === "watch") {
     const workDir = resolveWorkspaceDirFromArgs(rest)
-    const { profile } = await resolveConfig(undefined, workDir)
+    const { profile } = await resolveConfig(undefined, workDir, { requireApiKey: false })
     const quiet = rest.includes("--quiet")
     const json = rest.includes("--json")
     const debounceIdx = rest.indexOf("--debounce")

@@ -109,6 +109,18 @@ describe("resolveConfig", () => {
     }
   })
 
+  it("allows resolve without API key when requireApiKey is false", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "")
+    vi.stubEnv("OPENAI_API_KEY", "")
+    vi.stubEnv("GOOGLE_API_KEY", "")
+
+    writeFileSync(join(tempDir, "tsconfig.json"), "{}")
+    writeFileSync(join(tempDir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'")
+
+    const { profile } = await resolveConfig(undefined, tempDir, { requireApiKey: false })
+    expect(profile.language).toBe("typescript")
+  })
+
   it("includes ToolchainProfile in resolved config", async () => {
     writeFileSync(join(tempDir, "tsconfig.json"), "{}")
     writeFileSync(join(tempDir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'")
