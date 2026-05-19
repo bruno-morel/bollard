@@ -2,6 +2,8 @@ import { createInterface } from "node:readline"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import type { ReviewFinding } from "@bollard/verify/src/review-grounding.js"
+import { detectPromotionCandidates, formatPromotionCandidateLabel } from "./promotion-candidates.js"
+import { findWorkspaceRoot } from "./workspace-root.js"
 
 function waitForApproval(prompt: string): Promise<boolean> {
   const rl = createInterface({ input: process.stdin, output: process.stderr })
@@ -26,6 +28,26 @@ export async function humanGateHandler(
   }
 
   if (node.id === "approve-pr") {
+    const workDir = findWorkspaceRoot(process.cwd())
+    try {
+      const candidates = await detectPromotionCandidates(ctx, workDir)
+      if (candidates.length > 0) {
+        process.stderr.write("\n──────────────────────────────────────────\n")
+        process.stderr.write("Promotion candidates\n")
+        process.stderr.write("──────────────────────────────────────────\n")
+        for (const c of candidates) {
+          const label = formatPromotionCandidateLabel(c.scope)
+          process.stderr.write(
+            `  ✓ ${label} test is passing and not yet promoted:\n    ${c.testFile}\n    Run: bollard promote-test ${c.testFile}\n`,
+          )
+        }
+        process.stderr.write("──────────────────────────────────────────\n")
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      process.stderr.write(`\n  (promotion candidate detection skipped: ${msg})\n`)
+    }
+
     const reviewData = ctx.results["verify-review-grounding"]?.data as
       | { findings?: ReviewFinding[] }
       | undefined

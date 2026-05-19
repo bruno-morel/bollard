@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto"
+import { readFile } from "node:fs/promises"
+import { resolve } from "node:path"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { Blueprint } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
@@ -11,6 +13,7 @@ import {
   type VerifyRecordSource,
 } from "@bollard/engine/src/run-history.js"
 import type { RunResult } from "@bollard/engine/src/runner.js"
+import { extractFingerprint } from "@bollard/engine/src/test-fingerprint.js"
 import type { StaticCheckResult } from "@bollard/verify/src/static.js"
 
 const TEST_NODE_IDS = ["run-tests", "run-contract-tests", "run-behavioral-tests"] as const
@@ -74,6 +77,12 @@ export function extractScopeResults(
 
   const boundaryEnabled = profile?.adversarial.boundary.enabled ?? false
   const writeTests = nodeResults["write-tests"]?.data as { testFile?: string } | undefined
+  const writeContract = nodeResults["write-contract-tests"]?.data as
+    | { testFile?: string }
+    | undefined
+  const writeBehavioral = nodeResults["write-behavioral-tests"]?.data as
+    | { testFile?: string }
+    | undefined
   const runTests = nodeResults["run-tests"]?.data
   const boundary: ScopeResult = {
     scope: "boundary",
@@ -90,6 +99,7 @@ export function extractScopeResults(
   const contract: ScopeResult = {
     scope: "contract",
     enabled: contractEnabled,
+    ...(writeContract?.testFile !== undefined ? { testFile: writeContract.testFile } : {}),
     ...(contractGround.proposed !== undefined ? { claimsProposed: contractGround.proposed } : {}),
     ...(contractGround.grounded !== undefined ? { claimsGrounded: contractGround.grounded } : {}),
     ...(contractGround.dropped !== undefined ? { claimsDropped: contractGround.dropped } : {}),
@@ -104,6 +114,7 @@ export function extractScopeResults(
   const behavioral: ScopeResult = {
     scope: "behavioral",
     enabled: behavioralEnabled,
+    ...(writeBehavioral?.testFile !== undefined ? { testFile: writeBehavioral.testFile } : {}),
     ...(behGround.proposed !== undefined ? { claimsProposed: behGround.proposed } : {}),
     ...(behGround.grounded !== undefined ? { claimsGrounded: behGround.grounded } : {}),
     ...(behGround.dropped !== undefined ? { claimsDropped: behGround.dropped } : {}),
@@ -187,6 +198,19 @@ export function buildRunRecord(
   }
 
   return record
+}
+
+export async function enrichScopeFingerprints(record: RunRecord, workDir: string): Promise<void> {
+  for (const scope of record.scopes) {
+    if (scope.testFile === undefined) continue
+    try {
+      const content = await readFile(resolve(workDir, scope.testFile), "utf-8")
+      const fp = extractFingerprint(scope.testFile, content, scope.scope)
+      scope.testFingerprints = [fp.hash]
+    } catch {
+      // file may not exist on disk — non-fatal
+    }
+  }
 }
 
 export function buildVerifyRecord(input: {

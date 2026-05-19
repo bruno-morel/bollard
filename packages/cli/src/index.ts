@@ -19,7 +19,7 @@ import { diffToolchainProfile } from "./diff.js"
 import { formatDoctorReport, runDoctor } from "./doctor.js"
 import { runEvalBaselineCommand } from "./eval-baseline.js"
 import { getHeadSha } from "./git-utils.js"
-import { buildRunRecord, buildVerifyRecord } from "./history-record.js"
+import { buildRunRecord, buildVerifyRecord, enrichScopeFingerprints } from "./history-record.js"
 import { runHistoryCommand } from "./history.js"
 import { humanGateHandler } from "./human-gate.js"
 import {
@@ -28,6 +28,7 @@ import {
   runFlagCommand,
   runProbeCommand,
 } from "./observe-commands.js"
+import { promoteTest } from "./promote-test.js"
 import { formatQuietVerifyResult } from "./quiet-verify.js"
 import { createAgentSpinner } from "./spinner.js"
 import { BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW } from "./terminal-styles.js"
@@ -450,6 +451,7 @@ async function runRunCommand(args: string[]): Promise<void> {
   const persistRunHistory: RunBlueprintCompleteCallback = async (ctx, result, bp) => {
     const sha = await getHeadSha(configCwd)
     const record = buildRunRecord(ctx, result, bp, sha)
+    await enrichScopeFingerprints(record, configCwd)
     const store = new FileRunHistoryStore(configCwd)
     await store.record(record)
   }
@@ -574,42 +576,34 @@ async function runPromoteTestCommand(args: string[]): Promise<void> {
   }
 
   const workDir = findWorkspaceRoot(process.cwd())
-  const { access, copyFile, mkdir, readFile: rf, writeFile: wf } = await import("node:fs/promises")
-  const { basename } = await import("node:path")
 
   header("promote-test")
 
-  const fullSource = resolve(workDir, testPath)
-
   try {
-    await access(fullSource)
-  } catch {
-    log(`${RED}✗${RESET} Source file not found: ${testPath}`)
-    process.exit(1)
+    const result = await promoteTest(workDir, testPath)
+
+    if (result.alreadyPromoted) {
+      log(`${YELLOW}!${RESET} Already promoted (hash: ${result.fingerprintHash.slice(0, 12)}…)`)
+      log("")
+      return
+    }
+
+    if (result.nonTypeScriptNote !== undefined) {
+      log(`${YELLOW}!${RESET} ${result.nonTypeScriptNote}`)
+    }
+
+    log(`${GREEN}✓${RESET} Promoted: ${result.sourcePath} → ${result.destRel}`)
+    log(`  ${DIM}Fingerprint:${RESET} ${result.fingerprintHash.slice(0, 12)}`)
+    log("")
+  } catch (err: unknown) {
+    const code =
+      err && typeof err === "object" && "code" in err ? (err as { code: string }).code : ""
+    if (code === "ENOENT") {
+      log(`${RED}✗${RESET} Source file not found: ${testPath}`)
+      process.exit(1)
+    }
+    throw err
   }
-
-  const fileName = basename(testPath)
-  const testsDir = join(workDir, "tests")
-  await mkdir(testsDir, { recursive: true })
-
-  const destPath = join(testsDir, fileName)
-
-  try {
-    await access(destPath)
-    log(`${YELLOW}!${RESET} File already exists: tests/${fileName} — overwriting`)
-  } catch {
-    // destination doesn't exist — good
-  }
-
-  await copyFile(fullSource, destPath)
-
-  let content = await rf(destPath, "utf-8")
-  content = content.replace(/\/\/\s*@bollard-generated.*\n?/g, "")
-  content = content.replace(/#\s*@bollard-generated.*\n?/g, "")
-  await wf(destPath, content, "utf-8")
-
-  log(`${GREEN}✓${RESET} Promoted: ${testPath} → tests/${fileName}`)
-  log("")
 }
 
 async function main(): Promise<void> {

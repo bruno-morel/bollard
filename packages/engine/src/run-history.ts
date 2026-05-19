@@ -27,6 +27,7 @@ export interface ScopeResult {
   testFile?: string
   testsPassed?: number
   testsFailed?: number
+  testFingerprints?: string[]
 }
 
 export interface RunRecord {

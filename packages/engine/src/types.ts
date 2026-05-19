@@ -53,6 +53,7 @@ export type {
   RunHistoryStore,
 } from "./run-history.js"
 export { RUN_HISTORY_SCHEMA_VERSION, parseHistoryLine, FileRunHistoryStore } from "./run-history.js"
+export type { TestFingerprint, PromotedTest, PromotedManifest } from "./test-fingerprint.js"
 export type {
   EvalCase,
   EvalAssertion,
