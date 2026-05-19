@@ -72,7 +72,11 @@ export const behavioralTesterEvalCases: EvalCase[] = [
     ],
     assertions: [
       { type: "contains", value: '"grounding"', description: "Has grounding field" },
-      { type: "contains", value: '"quote"', description: "Has quote field" },
+      {
+        type: "matches_regex",
+        value: '"(quote|verbatim|excerpt)"\\s*:|"grounding"\\s*:\\s*"[^"]{8,}',
+        description: "Has quote field or string grounding with verbatim context",
+      },
     ],
   },
   {

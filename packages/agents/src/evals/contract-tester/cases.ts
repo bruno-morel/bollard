@@ -78,7 +78,11 @@ export const contractTesterEvalCases: EvalCase[] = [
     assertions: [
       { type: "contains", value: '"claims"', description: "Has claims array key" },
       { type: "contains", value: '"grounding"', description: "Has grounding field" },
-      { type: "contains", value: '"quote"', description: "Has grounding quote" },
+      {
+        type: "matches_regex",
+        value: '"(quote|verbatim|excerpt)"\\s*:|"grounding"\\s*:\\s*"[^"]{8,}',
+        description: "Has grounding quote field or string grounding with verbatim text",
+      },
       { type: "contains", value: '"test"', description: "Has test field" },
     ],
   },

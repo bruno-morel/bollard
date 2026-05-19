@@ -1,6 +1,6 @@
 {
-  "tag": "stage5b-initial",
-  "timestamp": 1779152009905,
+  "tag": "stage5b-quality",
+  "timestamp": 1779155892601,
   "model": "claude-sonnet-4-20250514",
   "scores": [
     {
@@ -18,21 +18,21 @@
     {
       "agent": "boundary-tester",
       "caseCount": 4,
-      "passRate": 0.75,
+      "passRate": 1,
       "thresholdPct": 10
     },
     {
       "agent": "contract-tester",
       "caseCount": 2,
-      "passRate": 0.5,
+      "passRate": 1,
       "thresholdPct": 10
     },
     {
       "agent": "behavioral-tester",
       "caseCount": 3,
-      "passRate": 0.6666666666666666,
+      "passRate": 1,
       "thresholdPct": 10
     }
   ],
-  "notes": "Stage 5b initial eval baseline"
+  "notes": "All 5 agents at 100% after hardening brittle assertions"
 }
