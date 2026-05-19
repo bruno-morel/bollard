@@ -54,7 +54,7 @@ Bollard runs its own `implement-feature` pipeline on Bollard changes. Every PR t
 
 ### 5b: Self-Improvement
 
-- **Prompt regression gating:** `bollard eval` runs before and after prompt changes; new prompts must match or exceed baseline scores. Eval sets already exist for planner, coder, boundary-tester, contract-tester.
+- **Prompt regression gating:** **DONE.** `EvalBaseline` store at `.bollard/eval-baseline.json` records per-agent pass rates. `bollard eval tag/show/diff` CLI commands — `diff` exits 1 when any agent's pass rate drops more than `thresholdPct` percentage points below baseline. Initial baseline tagged `stage5b-initial` from all 5 agents.
 - **Meta-verification:** Risk score auditing — confusion matrix of agent assessments vs. actual outcomes over N runs. `bollard doctor --risk-audit` for calibration quality.
 - **Adaptive concern weights:** Analyze which concern lenses find real bugs most often per project. Suggest weight adjustments in `bollard doctor` output based on historical probe hit rates.
 - **Protocol audit command:** `bollard audit-protocol` — run a synthetic task through the MCP tools and verify the agent followed the verification protocol. Extends the manual Bollard-on-Bollard pattern into an automated, repeatable check.

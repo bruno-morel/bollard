@@ -17,6 +17,7 @@ import { collectAffectedPathsFromPlan } from "./contract-plan.js"
 import { runCostBaselineCommand } from "./cost-baseline.js"
 import { diffToolchainProfile } from "./diff.js"
 import { formatDoctorReport, runDoctor } from "./doctor.js"
+import { runEvalBaselineCommand } from "./eval-baseline.js"
 import { getHeadSha } from "./git-utils.js"
 import { buildRunRecord, buildVerifyRecord } from "./history-record.js"
 import { runHistoryCommand } from "./history.js"
@@ -891,6 +892,12 @@ async function main(): Promise<void> {
   }
 
   if (command === "eval") {
+    const sub = rest[0]
+    if (sub === "tag" || sub === "show" || sub === "diff") {
+      const workDir = resolveWorkspaceDirFromArgs(rest)
+      await runEvalBaselineCommand(rest, workDir)
+      return
+    }
     await runEvalCommand(rest)
     return
   }
@@ -943,6 +950,9 @@ async function main(): Promise<void> {
   log(`  ${BOLD}behavioral${RESET} [--work-dir <path>]   Print BehavioralContext JSON`)
   log(`  ${BOLD}diff${RESET}                            Compare profile vs hardcoded defaults`)
   log(`  ${BOLD}eval${RESET} [agent]                    Run agent eval sets`)
+  log(
+    `  ${BOLD}eval${RESET} tag|show|diff              Eval pass-rate baseline (${DIM}diff exits 1 on regression; ~$0.10${RESET})`,
+  )
   log(`  ${BOLD}config show${RESET} [--sources]         Show resolved configuration`)
   log(
     `  ${BOLD}init${RESET} [--ide <platform>]        Detect project configuration + optional IDE configs`,
