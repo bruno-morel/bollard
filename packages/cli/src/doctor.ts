@@ -25,6 +25,12 @@ export interface DoctorCheck {
 
 export type DoctorConfigNote = "custom config" | "using defaults"
 
+export interface PromotedManifestHealth {
+  manifestExists: boolean
+  promotedCount: number
+  lastPromotedAt?: number
+}
+
 export interface HistoryHealth {
   jsonlExists: boolean
   jsonlRecordCount: number
@@ -36,6 +42,7 @@ export interface HistoryHealth {
   costTrend?: "increasing" | "stable" | "decreasing"
   recentFailingNodes: string[]
   mutationScoreRange?: { min: number; max: number }
+  promotedManifestHealth?: PromotedManifestHealth
 }
 
 export interface DoctorReport {
@@ -85,6 +92,20 @@ async function readSqliteMetadata(
     }
   } catch {
     return null
+  }
+}
+
+async function checkPromotedManifestHealth(workDir: string): Promise<PromotedManifestHealth> {
+  const { readPromotedManifest } = await import("@bollard/engine/src/test-fingerprint.js")
+  const manifest = await readPromotedManifest(workDir)
+  const manifestExists = manifest.promoted.length > 0
+  const promotedCount = manifest.promoted.length
+  const timestamps = manifest.promoted.map((p) => p.promotedAt).filter((t) => t > 0)
+  const lastPromotedAt = timestamps.length > 0 ? Math.max(...timestamps) : undefined
+  return {
+    manifestExists,
+    promotedCount,
+    ...(lastPromotedAt !== undefined ? { lastPromotedAt } : {}),
   }
 }
 
@@ -150,6 +171,8 @@ export async function checkHistoryHealth(workDir: string): Promise<HistoryHealth
     mutationScoreRange = { min: Math.min(...mutScores), max: Math.max(...mutScores) }
   }
 
+  const promotedManifestHealth = await checkPromotedManifestHealth(workDir)
+
   return {
     jsonlExists,
     jsonlRecordCount,
@@ -161,6 +184,7 @@ export async function checkHistoryHealth(workDir: string): Promise<HistoryHealth
     costTrend,
     recentFailingNodes,
     ...(mutationScoreRange !== undefined ? { mutationScoreRange } : {}),
+    promotedManifestHealth,
   }
 }
 
@@ -318,6 +342,19 @@ function formatHistorySection(h: HistoryHealth): string {
     }
   } else {
     lines.push(`    ${DIM}○${RESET} No mutation scores in recent runs`)
+  }
+
+  const pm = h.promotedManifestHealth
+  if (pm !== undefined) {
+    if (pm.promotedCount === 0) {
+      lines.push(
+        `    ${DIM}○${RESET} No promoted tests (use bollard promote-test to promote passing adversarial tests)`,
+      )
+    } else {
+      const lastStr =
+        pm.lastPromotedAt !== undefined ? `, last ${formatRelativeShort(pm.lastPromotedAt)}` : ""
+      lines.push(`    ${GREEN}✓${RESET} Promoted tests: ${pm.promotedCount}${lastStr}`)
+    }
   }
 
   return lines.join("\n")

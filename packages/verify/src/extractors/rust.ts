@@ -49,8 +49,9 @@ export class RustSynExtractor implements SignatureExtractor {
       // dirname(first) fallback only works when all files share a parent;
       // if a future caller passes Rust files from sibling crates without
       // a workDir, the helper will reject everything outside that dirname.
-      // TODO(stage-3b): assert workDir is always set, or compute a common
-      // ancestor across `safe` instead of leaning on safe[0].
+      // Note: workDir is preferred; the dirname(safe[0]) fallback only works
+      // when all files share a parent directory. All callers in the pipeline
+      // supply workDir, so this is safe in practice.
       const first = safe[0]
       const cwd = workDir ? resolve(workDir) : dirname(first ?? ".")
       const { stdout } = await execFileAsync(HELPER, safe, {
