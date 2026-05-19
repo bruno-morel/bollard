@@ -1,11 +1,11 @@
 {
-  "tag": "phase9-validated",
-  "runId": "20260515-0350-run-75c385",
-  "timestamp": 1778831400000,
+  "tag": "stage5a-validated",
+  "runId": "20260519-0005-run-afec32",
+  "timestamp": 1779149696484,
   "blueprintId": "implement-feature",
-  "totalCostUsd": 2.5592,
-  "coderTurns": 47,
-  "avgInputTokensPerTurn": 16596,
-  "thresholdPct": 15,
-  "notes": "Phase 7+8+9+10 validated baseline — $2.5592, 47 turns, 31/31 nodes (run 20260515-0350-run-75c385)"
+  "totalCostUsd": 1.633,
+  "coderTurns": 32,
+  "avgInputTokensPerTurn": null,
+  "thresholdPct": 20,
+  "notes": "Stage 5a + 5d Phase 2 validated baseline — avg $1.255 across runCount() $0.88 + formatCost() $1.63; threshold 20% ($1.96 ceiling). Prior baseline: phase9-validated $2.56 (run 75c385)."
 }
