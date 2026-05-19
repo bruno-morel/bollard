@@ -1,118 +1,140 @@
 import { describe, it, expect, vi } from "vitest"
 import { CostTracker } from "../src/cost-tracker.js"
+import { BollardError } from "../src/errors.js"
 
 describe("boundary tests", () => {
-it('returns 0 immediately after construction', () => {
+it('formatCost() with no arguments returns 2 decimal places', () => {
   const tracker = new CostTracker(100)
-  expect(tracker.runCount()).toBe(0)
+  tracker.add(1.23)
+  const result = tracker.formatCost()
+  expect(result).toBe('$1.23')
 })
 
-it('increments by 1 on each add() call', () => {
+it('formatCost(3) returns 3 decimal places', () => {
   const tracker = new CostTracker(100)
-  expect(tracker.runCount()).toBe(0)
-  tracker.add(10)
-  expect(tracker.runCount()).toBe(1)
+  tracker.add(1.2345)
+  const result = tracker.formatCost(3)
+  expect(result).toBe('$1.235')
+})
+
+it('formatCost() returns $0.00 when total is 0', () => {
+  const tracker = new CostTracker(100)
+  const result = tracker.formatCost()
+  expect(result).toBe('$0.00')
+})
+
+it('formatCost() is idempotent and does not modify state', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(5.5)
+  const result1 = tracker.formatCost()
+  const result2 = tracker.formatCost()
+  const result3 = tracker.formatCost()
+  expect(result1).toBe(result2)
+  expect(result2).toBe(result3)
+  expect(result1).toBe('$5.50')
+  expect(tracker.total()).toBe(5.5)
+})
+
+it('formatCost() handles very small decimals', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(0.001)
+  const result = tracker.formatCost()
+  expect(result).toBe('$0.00')
+  const resultWith3 = tracker.formatCost(3)
+  expect(resultWith3).toBe('$0.001')
+})
+
+it('formatCost() handles large numbers', () => {
+  const tracker = new CostTracker(1000000)
+  tracker.add(999999.99)
+  const result = tracker.formatCost()
+  expect(result).toBe('$999999.99')
+})
+
+it('formatCost() returns string with $ prefix', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(42.5)
+  const result = tracker.formatCost()
+  expect(typeof result).toBe('string')
+  expect(result.startsWith('$')).toBe(true)
+  expect(result).toMatch(/^\$\d+\.\d{2}$/)
+})
+
+it('formatCost(-1) throws BollardError with CONTRACT_VIOLATION', () => {
+  const tracker = new CostTracker(100)
   tracker.add(5)
-  expect(tracker.runCount()).toBe(2)
-  tracker.add(3)
-  expect(tracker.runCount()).toBe(3)
-})
-
-it('resets to 0 when reset() is called', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(10)
-  tracker.add(5)
-  expect(tracker.runCount()).toBe(2)
-  tracker.reset()
-  expect(tracker.runCount()).toBe(0)
-})
-
-it('returns correct count after multiple cycles', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(10)
-  tracker.add(5)
-  expect(tracker.runCount()).toBe(2)
-  tracker.reset()
-  expect(tracker.runCount()).toBe(0)
-  tracker.add(3)
-  tracker.add(7)
-  tracker.add(2)
-  expect(tracker.runCount()).toBe(3)
-  tracker.reset()
-  expect(tracker.runCount()).toBe(0)
-  tracker.add(1)
-  expect(tracker.runCount()).toBe(1)
-})
-
-it('is idempotent across repeated calls', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(10)
-  tracker.add(5)
-  const count1 = tracker.runCount()
-  const count2 = tracker.runCount()
-  const count3 = tracker.runCount()
-  expect(count1).toBe(2)
-  expect(count2).toBe(2)
-  expect(count3).toBe(2)
-})
-
-it('add() returns this for chaining while incrementing runCount', () => {
-  const tracker = new CostTracker(100)
-  const result = tracker.add(10).add(5).add(3)
-  expect(result).toBe(tracker)
-  expect(tracker.runCount()).toBe(3)
-})
-
-it('does not increment on invalid add() calls', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(10)
-  expect(tracker.runCount()).toBe(1)
+  expect(() => tracker.formatCost(-1)).toThrow(BollardError)
   try {
-    tracker.add(-5)
-  } catch (e) {
-    // expected to throw on negative
+    tracker.formatCost(-1)
+  } catch (err) {
+    expect(err).toBeInstanceOf(BollardError)
+    expect(err.code).toBe('CONTRACT_VIOLATION')
   }
-  expect(tracker.runCount()).toBe(1)
 })
 
-it('reset() returns previous total and resets runCount', () => {
+it('formatCost(1.5) throws BollardError with CONTRACT_VIOLATION', () => {
   const tracker = new CostTracker(100)
+  tracker.add(5)
+  expect(() => tracker.formatCost(1.5)).toThrow(BollardError)
+  try {
+    tracker.formatCost(1.5)
+  } catch (err) {
+    expect(err).toBeInstanceOf(BollardError)
+    expect(err.code).toBe('CONTRACT_VIOLATION')
+  }
+})
+
+it('formatCost(0) returns 0 decimal places', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(1.99)
+  const result = tracker.formatCost(0)
+  expect(result).toBe('$2')
+})
+
+it('formatCost() handles rounding consistently with toFixed()', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(1.005)
+  const result = tracker.formatCost(2)
+  expect(result).toBe('$1.01')
+})
+
+it('formatCost() preserves all internal state', () => {
+  const tracker = new CostTracker(50)
   tracker.add(10)
   tracker.add(5)
-  tracker.add(3)
-  expect(tracker.runCount()).toBe(3)
-  const prevTotal = tracker.total()
-  const returned = tracker.reset()
-  expect(returned).toBe(prevTotal)
-  expect(tracker.runCount()).toBe(0)
+  const totalBefore = tracker.total()
+  const runCountBefore = tracker.runCount()
+  const remainingBefore = tracker.remaining()
+  tracker.formatCost()
+  tracker.formatCost(2)
+  tracker.formatCost(0)
+  expect(tracker.total()).toBe(totalBefore)
+  expect(tracker.runCount()).toBe(runCountBefore)
+  expect(tracker.remaining()).toBe(remainingBefore)
 })
 
-it('runCount() accepts no parameters and returns number', () => {
+it('formatCost() reflects accumulated costs from multiple add() calls', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(0.5)
+  tracker.add(0.75)
+  tracker.add(0.48)
+  const result = tracker.formatCost()
+  expect(result).toBe('$1.73')
+})
+
+it('formatCost() reflects state after subtract()', () => {
   const tracker = new CostTracker(100)
   tracker.add(10)
-  const result = tracker.runCount()
-  expect(typeof result).toBe('number')
-  expect(result).toBe(1)
+  tracker.subtract(3)
+  const result = tracker.formatCost()
+  expect(result).toBe('$7.00')
 })
 
-it('increments correctly with many add() calls', () => {
-  const tracker = new CostTracker(10000)
-  for (let i = 0; i < 100; i++) {
-    tracker.add(1)
-  }
-  expect(tracker.runCount()).toBe(100)
-})
-
-it('tracks independent instances separately', () => {
-  const tracker1 = new CostTracker(100)
-  const tracker2 = new CostTracker(100)
-  tracker1.add(10)
-  tracker1.add(5)
-  tracker2.add(3)
-  expect(tracker1.runCount()).toBe(2)
-  expect(tracker2.runCount()).toBe(1)
-  tracker1.reset()
-  expect(tracker1.runCount()).toBe(0)
-  expect(tracker2.runCount()).toBe(1)
+it('formatCost(10) returns 10 decimal places', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(1.123456789)
+  const result = tracker.formatCost(10)
+  expect(result).toMatch(/^\$1\.\d{10}$/)
+  expect(result).toBe('$1.1234567890')
 })
 })

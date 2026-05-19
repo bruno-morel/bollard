@@ -64,6 +64,7 @@ export class CostTracker {
   snapshotTotal(): number {
     return this._total
   }
+
   remaining(): number {
     return Math.max(0, this._limit - this._total)
   }
@@ -93,6 +94,25 @@ export class CostTracker {
 
   snapshot(): Readonly<{ totalCostUsd: number }> {
     return Object.freeze({ totalCostUsd: this._total })
+  }
+
+  formatCost(decimalPlaces?: number): string {
+    // Validate decimalPlaces parameter if provided
+    if (decimalPlaces !== undefined) {
+      if (!Number.isInteger(decimalPlaces) || decimalPlaces < 0) {
+        throw new BollardError({
+          code: "CONTRACT_VIOLATION",
+          message: `decimalPlaces must be a non-negative integer, got: ${decimalPlaces}`,
+          context: { decimalPlaces },
+        })
+      }
+    }
+
+    // Use default of 2 decimal places if not specified
+    const places = decimalPlaces ?? 2
+
+    // Format the total using toFixed and prepend dollar sign
+    return `$${this._total.toFixed(places)}`
   }
 
   summary(): string {
