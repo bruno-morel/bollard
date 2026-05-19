@@ -2,6 +2,11 @@ name: Cost Regression Check
 on:
   workflow_dispatch:
     inputs:
+      smoke_only:
+        description: "Quick check only (Docker, git, cost-baseline show) — no LLM pipeline"
+        required: false
+        type: boolean
+        default: true
       task:
         description: "Implementation task for the pipeline run"
         required: false
@@ -16,7 +21,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build dev image
         run: docker compose build dev
+      - name: Smoke test (Docker, git, CLI)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: docker compose run --rm -e ANTHROPIC_API_KEY dev sh -c 'git config --global --add safe.directory /app && pnpm --filter @bollard/cli run start -- cost-baseline show'
       - name: Run pipeline
+        if: github.event_name == 'schedule' || github.event.inputs.smoke_only != 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           BOLLARD_AUTO_APPROVE: "1"
@@ -24,9 +34,10 @@ jobs:
           DEFAULT_TASK: "Add a divide(factor: number): void method to CostTracker that divides the current accumulated total by factor in place. factor must be a positive number; throw RangeError if factor <= 0. Do not modify any other existing methods or tests."
         run: ./scripts/bollard-metrics-run.sh "${{ github.event.inputs.task || env.DEFAULT_TASK }}"
       - name: Check cost regression
+        if: github.event_name == 'schedule' || github.event.inputs.smoke_only != 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: docker compose run --rm -e ANTHROPIC_API_KEY dev sh -c 'pnpm --filter @bollard/cli run start -- cost-baseline diff'
+        run: docker compose run --rm -e ANTHROPIC_API_KEY dev sh -c 'git config --global --add safe.directory /app && pnpm --filter @bollard/cli run start -- cost-baseline diff'
       - name: Upload run log
         uses: actions/upload-artifact@v4
         if: always()

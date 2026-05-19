@@ -128,7 +128,7 @@ docker compose run --rm \
   -e GOOGLE_API_KEY \
   -e BOLLARD_AUTO_APPROVE \
   -e BOLLARD_METRICS \
-  dev sh -c 'TASK=$(tr -d "\r" < /app/.bollard/.metrics-run-task.txt) && exec pnpm --filter @bollard/cli run start -- run implement-feature --task "$TASK" --work-dir /app --metrics' \
+  dev sh -c 'git config --global --add safe.directory /app && TASK=$(tr -d "\r" < /app/.bollard/.metrics-run-task.txt) && exec pnpm --filter @bollard/cli run start -- run implement-feature --task "$TASK" --work-dir /app --metrics' \
   2>&1 | tee "$LOG"
 
 echo ""
