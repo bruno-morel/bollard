@@ -4,6 +4,16 @@ export { CostTracker } from "./cost-tracker.js"
 export type { CostBaseline, CostBaselineComparison } from "./cost-baseline.js"
 export { compareToBaseline, readBaseline, writeBaseline } from "./cost-baseline.js"
 export type {
+  AgentEvalScore,
+  EvalBaseline,
+  EvalBaselineComparison,
+} from "./eval-baseline.js"
+export {
+  compareToEvalBaseline,
+  readEvalBaseline,
+  writeEvalBaseline,
+} from "./eval-baseline.js"
+export type {
   NodeType,
   NodeResultError,
   NodeResult,
