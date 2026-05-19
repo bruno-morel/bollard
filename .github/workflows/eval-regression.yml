@@ -1,0 +1,27 @@
+# Eval regression check — re-runs all 5 agent eval sets (~17 cases) and compares
+# pass rates to .bollard/eval-baseline.json. Makes real LLM calls; expected cost < $0.10/run.
+name: Eval Regression Check
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 3"
+
+jobs:
+  eval-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build dev image
+        run: docker compose build dev
+      - name: Run eval diff
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          docker compose run --rm dev sh -c \
+            'pnpm --filter @bollard/cli run start -- eval diff'
+      - name: Upload eval baseline
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-baseline-${{ github.run_id }}
+          path: .bollard/eval-baseline.json
