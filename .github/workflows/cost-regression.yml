@@ -5,7 +5,7 @@ on:
       task:
         description: "Implementation task for the pipeline run"
         required: false
-        default: "Add a runCount(): number method to CostTracker that returns the number of times add() has been called since construction. No parameters. Do not modify any existing methods or tests."
+        default: "Add a divide(factor: number): void method to CostTracker that divides the current accumulated total by factor in place. factor must be a positive number; throw RangeError if factor <= 0. Do not modify any other existing methods or tests."
   schedule:
     - cron: "0 4 * * 1"
 
@@ -21,11 +21,12 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           BOLLARD_AUTO_APPROVE: "1"
           BOLLARD_METRICS: "1"
-        run: ./scripts/bollard-metrics-run.sh "${{ github.event.inputs.task || 'Add a runCount(): number method to CostTracker that returns the number of times add() has been called since construction. No parameters. Do not modify any existing methods or tests.' }}"
+          DEFAULT_TASK: "Add a divide(factor: number): void method to CostTracker that divides the current accumulated total by factor in place. factor must be a positive number; throw RangeError if factor <= 0. Do not modify any other existing methods or tests."
+        run: ./scripts/bollard-metrics-run.sh "${{ github.event.inputs.task || env.DEFAULT_TASK }}"
       - name: Check cost regression
-        run: |
-          docker compose run --rm dev sh -c \
-            'pnpm --filter @bollard/cli run start -- cost-baseline diff'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: docker compose run --rm -e ANTHROPIC_API_KEY dev sh -c 'pnpm --filter @bollard/cli run start -- cost-baseline diff'
       - name: Upload run log
         uses: actions/upload-artifact@v4
         if: always()
