@@ -92,6 +92,18 @@ export class CostTracker {
     return this
   }
 
+  multiply(factor: number): CostTracker {
+    if (!Number.isFinite(factor) || factor <= 0) {
+      throw new BollardError({
+        code: "CONTRACT_VIOLATION",
+        message: `Factor must be a positive finite number, got: ${factor}`,
+        context: { factor },
+      })
+    }
+    this._total = this._total * factor
+    return this
+  }
+
   snapshot(): Readonly<{ totalCostUsd: number }> {
     return Object.freeze({ totalCostUsd: this._total })
   }

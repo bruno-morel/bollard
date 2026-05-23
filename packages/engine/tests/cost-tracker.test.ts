@@ -732,7 +732,162 @@ describe("CostTracker", () => {
       expect(tracker.total()).toBe(2)
     })
   })
+  describe("multiply()", () => {
+    it("multiplies total cost by positive factor", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(4)
+      tracker.multiply(2)
+      expect(tracker.total()).toBe(8)
+    })
 
+    it("returns this for method chaining", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(3)
+      const result = tracker.multiply(2)
+      expect(result).toBe(tracker)
+      expect(tracker.total()).toBe(6)
+    })
+
+    it("handles fractional factors correctly", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(8)
+      tracker.multiply(0.5) // Should halve the cost
+      expect(tracker.total()).toBe(4)
+    })
+
+    it("works with method chaining", () => {
+      const tracker = new CostTracker(100)
+      const result = tracker.add(5).multiply(2).total()
+      expect(result).toBe(10)
+    })
+
+    it("works when total is zero", () => {
+      const tracker = new CostTracker(100)
+      tracker.multiply(5)
+      expect(tracker.total()).toBe(0)
+    })
+
+    it("works when factor is 1 (identity)", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(7.5)
+      tracker.multiply(1)
+      expect(tracker.total()).toBe(7.5)
+    })
+
+    it("works with very small factors", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(10)
+      tracker.multiply(0.001)
+      expect(tracker.total()).toBe(0.01)
+    })
+
+    it("works with large factors", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(2)
+      tracker.multiply(10)
+      expect(tracker.total()).toBe(20)
+    })
+
+    it("throws CONTRACT_VIOLATION for factor = 0", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+      expect(() => tracker.multiply(0)).toThrow(BollardError)
+      try {
+        tracker.multiply(0)
+      } catch (err) {
+        expect(err).toHaveProperty("code", "CONTRACT_VIOLATION")
+        expect(err).toHaveProperty("context", { factor: 0 })
+      }
+    })
+
+    it("throws CONTRACT_VIOLATION for negative factor", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+      expect(() => tracker.multiply(-2)).toThrow(BollardError)
+      try {
+        tracker.multiply(-2)
+      } catch (err) {
+        expect(err).toHaveProperty("code", "CONTRACT_VIOLATION")
+        expect(err).toHaveProperty("context", { factor: -2 })
+      }
+    })
+
+    it("throws CONTRACT_VIOLATION for NaN factor", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+      expect(() => tracker.multiply(Number.NaN)).toThrow(BollardError)
+      try {
+        tracker.multiply(Number.NaN)
+      } catch (err) {
+        expect(err).toHaveProperty("code", "CONTRACT_VIOLATION")
+      }
+    })
+
+    it("throws CONTRACT_VIOLATION for Infinity factor", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+      expect(() => tracker.multiply(Number.POSITIVE_INFINITY)).toThrow(BollardError)
+      try {
+        tracker.multiply(Number.POSITIVE_INFINITY)
+      } catch (err) {
+        expect(err).toHaveProperty("code", "CONTRACT_VIOLATION")
+      }
+    })
+
+    it("throws CONTRACT_VIOLATION for -Infinity factor", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+      expect(() => tracker.multiply(Number.NEGATIVE_INFINITY)).toThrow(BollardError)
+      try {
+        tracker.multiply(Number.NEGATIVE_INFINITY)
+      } catch (err) {
+        expect(err).toHaveProperty("code", "CONTRACT_VIOLATION")
+      }
+    })
+
+    it("works with complex chaining", () => {
+      const tracker = new CostTracker(100)
+      const result = tracker
+        .add(4)
+        .multiply(2) // 4*2 = 8
+        .add(2) // 8 + 2 = 10
+        .multiply(0.5) // 10*0.5 = 5
+        .total()
+      expect(result).toBe(5)
+    })
+
+    it("handles precision correctly with fractional results", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(1)
+      tracker.multiply(1 / 3)
+      // 1 * (1/3) = 0.333...
+      expect(tracker.total()).toBeCloseTo(0.3333333333333333, 10)
+    })
+
+    it("works correctly after reset", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(4)
+      tracker.multiply(2)
+      expect(tracker.total()).toBe(8)
+
+      tracker.reset()
+      tracker.add(3)
+      tracker.multiply(3)
+      expect(tracker.total()).toBe(9)
+    })
+
+    it("error message includes the invalid factor value", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+      try {
+        tracker.multiply(-1.5)
+      } catch (err) {
+        expect(err).toHaveProperty("message")
+        expect((err as BollardError).message).toContain("-1.5")
+        expect(err).toHaveProperty("context", { factor: -1.5 })
+      }
+    })
+  })
   describe("snapshot()", () => {
     it("returns readonly snapshot of current total", () => {
       const tracker = new CostTracker(10)
