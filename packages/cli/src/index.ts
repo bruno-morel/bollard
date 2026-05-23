@@ -11,6 +11,7 @@ import { runBlueprint } from "@bollard/engine/src/runner.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
 import { buildProjectTree, createAgenticHandler } from "./agent-handler.js"
+import { auditProtocol, formatAuditResult } from "./audit-protocol.js"
 import { formatSkippedChecksNotice, resolveSkipChecks } from "./ci-passed.js"
 import { resolveConfig } from "./config.js"
 import { collectAffectedPathsFromPlan } from "./contract-plan.js"
@@ -885,6 +886,14 @@ async function main(): Promise<void> {
     process.exit(report.allPassed ? 0 : 1)
   }
 
+  if (command === "audit-protocol") {
+    const workDir = resolveWorkspaceDirFromArgs(rest)
+    header("audit-protocol")
+    const result = await auditProtocol(workDir)
+    log(formatAuditResult(result))
+    process.exit(result.allPassed ? 0 : 1)
+  }
+
   if (command === "eval") {
     const sub = rest[0]
     if (sub === "tag" || sub === "show" || sub === "diff") {
@@ -959,6 +968,9 @@ async function main(): Promise<void> {
   )
   log(
     `  ${BOLD}doctor${RESET} [--json] [--history]      Check environment health (docker, LLM key, toolchain; --history adds run history)`,
+  )
+  log(
+    `  ${BOLD}audit-protocol${RESET}                  Lint generated IDE configs for protocol compliance (exits 1 on failure)`,
   )
   log(
     `  ${BOLD}promote-test${RESET} <path>             Promote adversarial test to project test dir`,

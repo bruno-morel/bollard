@@ -1,0 +1,31 @@
+name: Protocol Compliance Check
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "packages/cli/src/generators/**"
+      - "packages/agents/prompts/**"
+      - "packages/mcp/src/**"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "packages/cli/src/generators/**"
+      - "packages/agents/prompts/**"
+      - "packages/mcp/src/**"
+  workflow_dispatch:
+
+jobs:
+  protocol-compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build dev image
+        run: docker compose build dev
+
+      - name: Audit protocol compliance
+        run: |
+          docker compose run --rm dev sh -c \
+            'git config --global --add safe.directory /app && \
+             pnpm --filter @bollard/cli run start -- audit-protocol'

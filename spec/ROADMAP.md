@@ -49,7 +49,7 @@ Bollard runs its own `implement-feature` pipeline on Bollard changes. Every PR t
 - ~~**CI-aware verification (Phase 4a):**~~ **DONE (2026-05-XX).** `detectCIEnvironment` (GitHub Actions, GitLab CI, CircleCI, Jenkins, Buildkite, etc.), `readJUnitResults`, `runStaticChecks` with `skipChecks?`, `bollard verify --ci-passed`. Bollard never skips adversarial scopes or mutation testing. 1076 pass / 6 skip.
 - ~~**Adversarial test promotion (Phase 4b):**~~ **DONE (2026-05-19).** `TestFingerprint` + SHA-256 hash, `.bollard/promoted.json` manifest, upgraded `bollard promote-test` with import rewriting + already-promoted guard, Signal 1 bug-catcher detection at `approve-pr` gate. Signal 2 (repeated generation across runs) deferred. See [stage5a-self-hosting.md §13](./stage5a-self-hosting.md).
 - ~~**Bollard-on-Bollard CI (Phase 5):**~~ **DONE (2026-05-XX).** `.github/workflows/bollard-verify.yml` — triggers on push/PR to `main`. Runs typecheck + lint natively, then `bollard verify --quiet --ci-passed typecheck,lint` in Docker. First green run: GitHub Actions run 26065111582.
-- **Protocol compliance CI (Phase 6):** Automated validation that generated IDE configs (Cursor rules, Claude Code CLAUDE.md sections) actually produce protocol-compliant agent behavior. Uses the Bollard-on-Bollard self-test pattern: generate config → give agent a task → check 5-point compliance checklist programmatically.
+- ~~**Protocol compliance CI (Phase 6):**~~ **DONE (2026-05-21).** `bollard audit-protocol` — deterministic 5-point structural lint on `cursor` and `claude-code` generated configs. `.github/workflows/protocol-compliance.yml` triggers on changes to generators/prompts/MCP source. Zero LLM cost.
 
 ### 5b: Self-Improvement
 
@@ -57,7 +57,7 @@ Bollard runs its own `implement-feature` pipeline on Bollard changes. Every PR t
 - ~~**Eval regression CI (Phase 2):**~~ **DONE (2026-05-19).** `.github/workflows/eval-regression.yml` — weekly Wednesday 04:00 UTC + manual dispatch. First live run green ([#26072692411](https://github.com/bruno-morel/bollard/actions/runs/26072692411), 7m35s, exit 0, all 5 agents at 100%).
 - **Meta-verification:** Risk score auditing — confusion matrix of agent assessments vs. actual outcomes over N runs. `bollard doctor --risk-audit` for calibration quality.
 - **Adaptive concern weights:** Analyze which concern lenses find real bugs most often per project. Suggest weight adjustments in `bollard doctor` output based on historical probe hit rates.
-- **Protocol audit command:** `bollard audit-protocol` — run a synthetic task through the MCP tools and verify the agent followed the verification protocol. Extends the manual Bollard-on-Bollard pattern into an automated, repeatable check.
+- **Protocol behavioral audit (future):** LLM-based self-test — run a synthetic task through MCP tools and verify agent followed the verification protocol. Extends the manual Bollard-on-Bollard pattern into an automated, repeatable behavioral check. Structural lint shipped in 5a Phase 6 (`bollard audit-protocol`).
 
 ### 5c: Agent Intelligence Upgrades
 
