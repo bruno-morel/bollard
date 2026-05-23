@@ -31,6 +31,7 @@ export async function createBoundaryTesterAgent(
     systemPrompt,
     tools: [],
     maxTurns: 5,
+    maxTokens: 16384,
     temperature: 0.3,
   }
 }

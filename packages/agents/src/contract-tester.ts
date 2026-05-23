@@ -31,6 +31,7 @@ export async function createContractTesterAgent(
     systemPrompt,
     tools: [],
     maxTurns: 10,
+    maxTokens: 16384,
     temperature: 0.4,
   }
 }

@@ -31,6 +31,7 @@ export async function createBehavioralTesterAgent(
     systemPrompt,
     tools: [],
     maxTurns: 15,
+    maxTokens: 16384,
     temperature: 0.5,
   }
 }

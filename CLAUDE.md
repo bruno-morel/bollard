@@ -947,7 +947,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 
 ### Stage 5d Phase 5 (DONE) — Per-Agent Model Assignment:
 
-- Haiku defaults for `planner`, `boundary-tester`, `contract-tester`, `behavioral-tester`, `semantic-reviewer`; Sonnet for `coder`; Sonnet as fallback `llm.default`. All override-able per-agent in `.bollard.yml` `llm.agents`. `BollardConfig.llm.agentBudgets` added (parse-and-store; enforcement is Phase 6). Per-agent source annotations in `config show --sources`. Generated `.bollard.yml` template includes commented `llm.agents` reference block.
+- Haiku defaults for `planner`, `boundary-tester`, `contract-tester`, `behavioral-tester`, `semantic-reviewer`; Sonnet for `coder`; Sonnet as fallback `llm.default`. All override-able per-agent in `.bollard.yml` `llm.agents`. `BollardConfig.llm.agentBudgets` added (parse-and-store; enforcement is Phase 6). Per-agent source annotations in `config show --sources`. Generated `.bollard.yml` template includes commented `llm.agents` reference block. Tester `maxTokens` raised to 16384 (was 4096 default) after 2026-05-23 self-test found truncation on large contract contexts.
 - **Test count:** 1003 passed / 6 skipped
 
 ### Stage 5d Phase 7 (DONE) — Coder Turn Reduction:
