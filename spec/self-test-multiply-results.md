@@ -112,3 +112,50 @@ Run cost is under the $1.96 ceiling, but the run is not recorded as a successful
 4. **Coder scope guard tightening:** Attempt 1 wrote 20 unit tests for a 4-criteria plan. Prompt or hook should cap new test case count or defer exhaustive coverage to adversarial testers.
 
 5. **Re-run self-test** after tester output-budget fix to validate full 31/31 GREEN and Signal 1 promotion surfacing for the multiply boundary test.
+
+## Re-run: 2026-05-24 (post maxTokens fix)
+
+**Run ID:** 20260524-2217-run-7f6185
+**Status:** ✗ failure (10/31 — halted at `write-tests`)
+**Total cost:** $2.49
+**Duration:** 278.9s
+**Coder turns:** 53 (method already existed — planner flagged verification-only; coder ignored scope guard)
+**Implement node cost:** $2.40 (~241s)
+
+**Context:** Re-verification run on code already merged to `main`. Planner correctly recognized `multiply()` as complete (`affected_files.modify: []`) but the coder still burned 53 turns verifying, briefly editing `errors.ts`, and creating a stray `test-multiply.ts` (reverted before completion).
+
+### Grounding Results
+
+| Scope | Proposed | Grounded | Dropped | Drop rate |
+|-------|----------|----------|---------|-----------|
+| Boundary | 13 | 13 | 0 | 0% |
+| Contract | skipped | — | — | — (pipeline halted before contract nodes) |
+| Behavioral | skipped | — | — | — |
+
+Boundary-tester completed on turn 1 with `output_tokens=3098`, `stop=end_turn` (was `max_tokens` at 4096 on first run). **maxTokens fix validated for boundary scope.**
+
+### Signal 1 — Promotion Candidates
+
+none — `approve-pr` not reached (`write-tests` failed first).
+
+### Cost Regression
+
+`cost-baseline diff`: insufficient data (0 successful implement-feature runs since baseline). Run cost **$2.49** exceeds **$1.96** ceiling (+27%).
+
+### Test Suite (post-run)
+
+1143 passed / 6 skipped (unchanged).
+
+### Token Economy
+
+| Metric | Value |
+|--------|-------|
+| Coder input tokens | 769,564 |
+| Coder output tokens | 6,373 |
+| Avg input tokens/turn | 14,520 |
+| Forced-completion injected | no |
+| Rollback occurred | no |
+
+### Conclusion
+
+The **maxTokens fix resolved the truncation failure** — boundary-tester produced valid JSON (13/13 grounded, 0% drop). However, the re-run did **not** achieve 31/31. A new failure appeared at `write-tests`: `NODE_EXECUTION_FAILED: No affected files to generate tests for`. Root cause: planner set `affected_files.modify: []` (already implemented), so `extract-signatures` had no target files and `write-tests` could not derive a test path despite 13 grounded boundary claims. Contract, behavioral, mutation, review, and Signal 1 promotion were never exercised. **Additional fix needed:** `write-tests` (or upstream signature extraction) must handle verification-only runs where adversarial claims exist but no plan-modified files are listed. Coder scope guard also regressed — 53 turns and $2.40 on a no-op task.
