@@ -211,6 +211,12 @@ describe("runTests (integration)", () => {
     expect(result.output).toBeTruthy()
   }, 60_000)
 
+  it("runs *.adversarial.test.ts paths with vitest.adversarial.config.ts", async () => {
+    const result = await runTests(REPO_ROOT, ["packages/engine/tests/errors.adversarial.test.ts"])
+    expect(result.failed).toBe(0)
+    expect(result.passed).toBeGreaterThanOrEqual(1)
+  }, 60_000)
+
   it("runs .bollard contract paths with vitest.contract.config.ts", async () => {
     const relDir = `.bollard/tests/_dynamic_probe_${Date.now()}`
     const absDir = join(REPO_ROOT, relDir)

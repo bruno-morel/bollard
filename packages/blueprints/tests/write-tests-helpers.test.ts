@@ -71,6 +71,22 @@ describe("inferSourceFileFromClaims", () => {
     ).toBe("packages/engine/src/cost-tracker.ts")
   })
 
+  it("matches module name from ctr-CostTracker claim ID via plan steps", async () => {
+    const ctx = makeInferCtx({
+      plan: {
+        steps: [{ files: ["packages/engine/src/cost-tracker.ts"] }],
+      },
+    })
+    expect(
+      await inferSourceFileFromClaims(
+        ctx,
+        "/tmp",
+        [sampleClaim("ctr-CostTracker-multiply-001")],
+        "ctr",
+      ),
+    ).toBe("packages/engine/src/cost-tracker.ts")
+  })
+
   it("uses first plan step source file for short bnd1 claim IDs", async () => {
     const ctx = makeInferCtx({
       plan: {

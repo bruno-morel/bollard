@@ -929,14 +929,35 @@ export function createImplementFeatureBlueprint(
           }
 
           const claims = verifyRes.claims
-          const files = getAffectedSourceFiles(ctx)
+          let files = getAffectedSourceFiles(ctx)
+          if (files.length === 0) {
+            const inferred = await inferSourceFileFromClaims(ctx, workDir, claims, "ctr")
+            if (inferred) {
+              ctx.log.info(
+                "write-contract-tests: inferred source file from claims (verification-only run)",
+                {
+                  inferredFile: inferred,
+                  firstClaimId: claims[0]?.id,
+                },
+              )
+              files = [inferred]
+            } else {
+              return {
+                status: "ok",
+                data: {
+                  skipped: true,
+                  reason: "No affected files — could not infer source file from contract claim IDs",
+                },
+              }
+            }
+          }
           const firstFile = files[0]
           if (!firstFile) {
             return {
-              status: "fail",
-              error: {
-                code: "NODE_EXECUTION_FAILED",
-                message: "No affected files for contract tests",
+              status: "ok",
+              data: {
+                skipped: true,
+                reason: "No affected files — could not infer source file from contract claim IDs",
               },
             }
           }

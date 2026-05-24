@@ -39,9 +39,9 @@ function fileBaseMatchesModule(file: string, moduleName: string): boolean {
 
 /**
  * Fallback for verification-only runs where affected_files.modify is empty.
- * Extracts the module name from boundary claim IDs (format: "bnd-<ModuleName>-<method>-NNN"
- * or short "bnd1" when module name is absent) and searches plan steps, expanded files,
- * then workspace source patterns.
+ * Extracts the module name from claim IDs (boundary: "bnd-<ModuleName>-...", contract:
+ * "ctr-<ModuleName>-...", or short "bnd1" when module name is absent) and searches plan
+ * steps, expanded files, then workspace source patterns.
  *
  * Returns the relative path to the inferred source file, or undefined if none found.
  */
@@ -49,6 +49,7 @@ export async function inferSourceFileFromClaims(
   ctx: PipelineContext,
   workDir: string,
   claims: ClaimRecord[],
+  idPrefix = "bnd",
 ): Promise<string | undefined> {
   if (claims.length === 0) return undefined
 
@@ -59,7 +60,7 @@ export async function inferSourceFileFromClaims(
   const firstClaim = claims[0]
   if (!firstClaim) return undefined
   const firstId = firstClaim.id
-  const match = /^bnd-([A-Za-z][A-Za-z0-9_]*)/.exec(firstId)
+  const match = new RegExp(`^${idPrefix}-([A-Za-z][A-Za-z0-9_]*)`).exec(firstId)
   const moduleName = match?.[1]
 
   if (moduleName) {
