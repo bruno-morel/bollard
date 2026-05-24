@@ -161,3 +161,77 @@ none — `approve-pr` not reached (`write-tests` failed first).
 The **maxTokens fix resolved the truncation failure** — boundary-tester produced valid JSON (13/13 grounded, 0% drop). However, the re-run did **not** achieve 31/31. A new failure appeared at `write-tests`: `NODE_EXECUTION_FAILED: No affected files to generate tests for`. Root cause: planner set `affected_files.modify: []` (already implemented), so `extract-signatures` had no target files and `write-tests` could not derive a test path despite 13 grounded boundary claims. Contract, behavioral, mutation, review, and Signal 1 promotion were never exercised. Coder scope guard also regressed — 53 turns and $2.40 on a no-op task.
 
 **Status updated (2026-05-24):** `write-tests` verification-only fallback shipped — infers source file from claim IDs / plan steps when `affected_files.modify` is empty; degrades to `skipped: true` instead of hard fail. Re-run of full 31/31 pipeline pending.
+
+## Re-run: 2026-05-24 (post all fixes)
+
+**Run ID:** `20260524-2344-run-794b98`
+**Status:** ✓ success (**31/31** nodes completed; CLI `Result: ✓ success`)
+**Total cost:** $0.43
+**Duration:** 140.6s
+**Coder turns:** 11
+**Implement node cost:** $0.25 (~48.5s)
+
+**Context:** Verification-only re-run after `write-tests` / `write-contract-tests` claim-inference fallbacks and `runTests` adversarial vitest routing (`vitest.adversarial.config.ts`). Planner: `affected_files.modify: []`. Coder confirmed existing `multiply()` implementation (11 turns, no rollback).
+
+### Watched nodes
+
+| Step | Node | Status | Notes |
+|------|------|--------|-------|
+| 11 | `run-tests` | **fail** (skipped) | Routed `packages/engine/tests/cost-tracker.adversarial.test.ts` via adversarial config (`RUN v3.2.4 /app`). **14/14 tests failed** — `new CostTracker()` without `limitUsd` (`Limit must be a non-negative finite number, got: undefined`). `onFailure: skip` — pipeline continued. |
+| 10 | `write-tests` | ok | Log: `write-tests: inferred source file from claims (verification-only run)` — `inferredFile: packages/engine/src/cost-tracker.ts`, `firstClaimId: bnd1` |
+| 16 | `write-contract-tests` | ok | Log: `write-contract-tests: inferred source file from claims (verification-only run)` — `inferredFile: packages/engine/src/cost-tracker.ts`, `firstClaimId: c1` (plan-step fallback; claim IDs use short `c1` form, not `ctr-Module`) |
+| 17 | `run-contract-tests` | ok | `.bollard/tests/contract/add-a-multiply-factor-number-c/cost-tracker.contract.test.ts` — **4 passed / 0 failed** (479ms) |
+| 21 | `write-behavioral-tests` | ok | Behavioral scope **disabled** in profile (`scopes.behavioral.enabled: false`); nodes 18–22 completed without hard-fail |
+| 31 | `approve-pr` | ok | Auto-approved; **no Signal 1 promotion block** printed (semantic review listed 4 plan-divergence findings on infra/doc diff) |
+
+### Grounding results
+
+| Scope | Proposed | Grounded | Dropped | Drop rate |
+|-------|----------|----------|---------|-----------|
+| Boundary | 14 | 14 | 0 | 0% |
+| Contract | 9 | 4 | 5 | 55.6% (`c2`, `c3`, `c4`, `c5`, `c8`) |
+| Behavioral | — | — | — | scope disabled |
+
+### Signal 1 — Promotion candidates
+
+**none surfaced** at `approve-pr` — boundary adversarial file failed execution (0 passed); contract file passed (4/4) but no promotion candidate list appeared in gate output.
+
+### Cost regression
+
+| Metric | Value |
+|--------|-------|
+| Baseline ceiling | $1.96 |
+| This run cost | $0.43 |
+| vs prior multiply runs | −74% vs $1.66 (2026-05-23); −83% vs $2.49 (2026-05-24 pre write-tests fix) |
+
+Well under ceiling; lowest multiply self-test cost to date.
+
+### NODE_EXECUTION_FAILED
+
+**none** — prior blockers (`write-tests`, `write-contract-tests` hard-fail) resolved.
+
+### Fixes validated
+
+1. **`write-tests` verification-only fallback** — inferred `cost-tracker.ts` from `bnd1` + plan steps; wrote adversarial file (3267 bytes).
+2. **`write-contract-tests` verification-only fallback** — inferred same source; wrote contract file under `.bollard/tests/contract/...`.
+3. **`runTests` adversarial routing** — vitest ran adversarial file (config correct); failures are **test-body quality** (missing constructor arg), not discovery/routing.
+
+### Remaining issues (non-blocking for 31/31)
+
+1. **`run-tests` adversarial test quality:** Boundary tester emits `new CostTracker()` without required `limitUsd` — all 14 adversarial cases fail. Follow-up: assembler preamble or boundary-tester prompt should pass a finite limit (e.g. `new CostTracker(100)`).
+2. **Contract claim ID format:** Tester used `c1`…`c9` not `ctr-CostTracker-…` — inference still worked via plan-step fallback, not `ctr-` regex path.
+3. **Stryker:** `run-mutation-testing` logged vitest runner plugin error; node ok with 0 mutants (scopedToFiles: false, affectedFileCount: 0).
+4. **Signal 1:** Not exercised — no promotion candidates listed despite contract tests passing.
+
+### Observations vs previous runs
+
+| Run | Cost | Coder turns | Nodes | Boundary | Contract | Notes |
+|-----|------|-------------|-------|----------|----------|-------|
+| 2026-05-23 multiply() | $1.66 | 33 | 14/31 ✗ | 0/0 (truncation) | blocked | maxTokens |
+| 2026-05-24 2217 | $2.49 | 53 | 10/31 ✗ | 13/13 | skipped | write-tests fail |
+| 2026-05-24 2255 | — | — | 15/31 ✗ | — | — | write-contract-tests fail |
+| **2026-05-24 2344 (post fixes)** | **$0.43** | **11** | **31/31 ✓** | **14/14** | **4/9** | Full pipeline; run-tests fail/skipped |
+
+### Conclusion
+
+**31/31 GREEN** for pipeline completion and verification-only fallbacks. Adversarial vitest routing confirmed. `run-tests` still records `fail` (test assertion/setup), not infra skip. Signal 1 and boundary test pass rate remain follow-ups.

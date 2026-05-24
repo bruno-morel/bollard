@@ -1,0 +1,773 @@
+ Container bollard-dev-run-680852a92b32 Creating 
+ Container bollard-dev-run-680852a92b32 Created 
+
+> @bollard/cli@0.0.1 start /app/packages/cli
+> tsx src/index.ts -- run implement-feature --task 'Add a multiply(factor: number): CostTracker method to CostTracker that multiplies the current accumulated total by factor in place and returns this for chaining. factor must be a positive finite number; throw BollardError with code CONTRACT_VIOLATION if factor <= 0 or non-finite. Do not modify any other existing methods or tests.' --work-dir /app
+
+
+[1m[36mbollard[0m [1mrun implement-feature[0m
+[2m──────────────────────────────────────────────────[0m
+[2mTask:[0m      Add a multiply(factor: number): CostTracker method to CostTracker that multiplies the current accumulated total by factor in place and returns this for chaining. factor must be a positive finite number; throw BollardError with code CONTRACT_VIOLATION if factor <= 0 or non-finite. Do not modify any other existing methods or tests.
+[2mWork dir:[0m  /app
+[2mBlueprint:[0m Implement Feature (31 steps)
+[2mLimits:[0m    $15 cost / 30min
+
+[2m[1/31][0m [2mcheck[0m  Create Git Branch
+[2m[1/31][0m       [32m✓[0m [2m16ms[0m
+[2m[2/31][0m [36magent[0m  Generate Plan
+
+[planner] turn 1/25 starting
+[planner] turn 1/25 done in 2.0s · $0.01 · 3 tools · stop=tool_use
+[2m  [planner] turn 1: read_file({"path":"packages/engine/src/cost-tracker.ts"})[0m
+[planner] turn 1 tool read_file ok 2ms
+[2m  [planner] turn 1: read_file({"path":"packages/engine/src/errors.ts"})[0m
+[planner] turn 1 tool read_file ok 1ms
+[2m  [planner] turn 1: read_file({"path":"packages/engine/tests/cost-tracker.test.ts"})[0m
+[planner] turn 1 tool read_file ok 1ms
+[planner] turn 2/25 starting
+[planner] turn 2/25 done in 1.9s · $0.02 · 1 tools · stop=tool_use
+[2m  [planner] turn 2: search({"pattern":"multiply","path":"packages/engine/tests/cost-tracker.test.ts"})[0m
+[planner] turn 2 tool search ok 17ms
+[planner] turn 3/25 starting
+[planner] turn 3/25 done in 1.7s · $0.03 · 1 tools · stop=tool_use
+[2m  [planner] turn 3: read_file({"path":"packages/engine/tests/cost-tracker.test.ts","offset":735,"limit":160})[0m
+[planner] turn 3 tool read_file ok 0ms
+[planner] turn 4/25 starting
+[planner] turn 4/25 done in 1.7s · $0.04 · 1 tools · stop=tool_use
+[2m  [planner] turn 4: read_file({"path":"packages/engine/src/cost-tracker.ts","offset":1,"limit":100})[0m
+[planner] turn 4 tool read_file ok 2ms
+[planner] turn 5/25 starting
+[planner] turn 5/25 done in 1.5s · $0.05 · 1 tools · stop=tool_use
+[2m  [planner] turn 5: read_file({"path":"packages/engine/src/cost-tracker.ts","offset":90,"limit":60})[0m
+[planner] turn 5 tool read_file ok 1ms
+[planner] turn 6/25 starting
+[planner] turn 6/25 done in 2.5s · $0.06 · 1 tools · stop=tool_use
+[2m  [planner] turn 6: search({"pattern":"multiply","path":"packages/engine/src/types.ts"})[0m
+[planner] turn 6 tool search ok 9ms
+[planner] turn 7/25 starting
+[planner] turn 7/25 done in 1.2s · $0.08 · 1 tools · stop=tool_use
+[2m  [planner] turn 7: read_file({"path":"packages/engine/src/types.ts"})[0m
+[planner] turn 7 tool read_file ok 2ms
+[planner] turn 8/25 starting
+[planner] turn 8/25 done in 10.2s · $0.09 · 0 tools · stop=end_turn
+[2m[2/31][0m       [32m✓[0m [2m24.7s[0m [2m($0.0915)[0m
+[2m[3/31][0m [33mgate[0m  Approve Plan
+
+--- Plan ---
+{
+  "summary": "The multiply(factor: number): CostTracker method is already fully implemented in CostTracker with comprehensive tests",
+  "acceptance_criteria": [
+    "multiply() method exists on CostTracker class and accepts a factor parameter",
+    "multiply() multiplies the current accumulated total by factor in place and returns this for chaining",
+    "multiply() throws BollardError with code CONTRACT_VIOLATION when factor <= 0 or non-finite",
+    "All existing methods and tests remain unmodified",
+    "multiply() is properly tested with positive factors, fractional factors, chaining, and all error cases"
+  ],
+  "affected_files": {
+    "modify": [],
+    "create": [],
+    "delete": []
+  },
+  "risk_assessment": {
+    "blast_radius": 0,
+    "reversibility": 3,
+    "dollars_at_risk": 0,
+    "security_sensitivity": 0,
+    "novelty": 0,
+    "rationale": "Feature is already implemented and tested. No changes required. Risk is zero for implementation; reversibility is high because the feature can be removed if needed."
+  },
+  "steps": [
+    {
+      "description": "Verify that multiply() method is present in CostTracker class with correct signature and implementation",
+      "files": [
+        "packages/engine/src/cost-tracker.ts"
+      ],
+      "tests": "Confirm method exists, accepts number parameter, validates factor > 0 and finite, multiplies _total in place, returns this",
+      "runtimeConstraints": []
+    },
+    {
+      "description": "Verify that all tests for multiply() pass and cover all required scenarios",
+      "files": [
+        "packages/engine/tests/cost-tracker.test.ts"
+      ],
+      "tests": "Run test suite to confirm multiply() tests pass: positive factors, fractional factors, method chaining, zero factor rejection, negative factor rejection, NaN rejection, Infinity rejection",
+      "runtimeConstraints": [
+        "execute() requires AgentContext with a real workDir temp directory",
+        "Only these commands are allowed: pnpm, npx, node, tsc, biome, git, cat, head, tail, wc, diff"
+      ]
+    },
+    {
+      "description": "Verify that no other methods or tests have been modified",
+      "files": [
+        "packages/engine/src/cost-tracker.ts",
+        "packages/engine/tests/cost-tracker.test.ts"
+      ],
+      "tests": "Confirm that add(), subtract(), divide(), peek(), total(), snapshot(), and formatCost() methods are unchanged; confirm no existing tests were modified",
+      "runtimeConstraints": []
+    }
+  ],
+  "non_goals": [
+    "Do NOT modify any existing methods (add, subtract, divide, peek, total, snapshot, formatCost)",
+    "Do NOT modify any existing tests",
+    "Do NOT add new test cases beyond what is already present",
+    "Do NOT change the error handling strategy or error codes",
+    "Do NOT modify the CostTracker class structure or private fields"
+  ],
+  "notes": "The multiply() method has already been fully implemented in packages/engine/src/cost-tracker.ts with the exact signature and behavior requested. It vali
+--- End Plan ---
+
+HUMAN GATE: Approve the plan above?
+  Auto-approved (BOLLARD_AUTO_APPROVE=1)
+[2m[3/31][0m       [32m✓[0m [2m1ms[0m
+[2m[4/31][0m [2mcheck[0m  Expand affected files via import graph
+[2m[4/31][0m       [32m✓[0m [2m10ms[0m
+[2m[5/31][0m [36magent[0m  Implement Code
+
+{"level":"info","message":"context_expansion_result","runId":"20260524-2344-run-794b98","timestamp":"2026-05-24T23:44:58.667Z","node":"expand-affected-files","data":{"event":"context_expansion_result","runId":"20260524-2344-run-794b98","source":"import-graph","fileCount":0,"modifyCount":0}}
+[coder] turn 1/60 starting
+[coder] turn 1/60 done in 2.4s · $0.01 · 1 tools · stop=tool_use
+[2m  [coder] turn 1: read_file({"path":"packages/engine/src/cost-tracker.ts"})[0m
+[coder] turn 1 tool read_file ok 1ms
+[coder] turn 2/60 starting
+[coder] turn 2/60 done in 2.8s · $0.03 · 1 tools · stop=tool_use
+[2m  [coder] turn 2: read_file({"path":"packages/engine/tests/cost-tracker.test.ts"})[0m
+[coder] turn 2 tool read_file ok 2ms
+[coder] turn 3/60 starting
+[coder] turn 3/60 done in 3.2s · $0.05 · 1 tools · stop=tool_use
+[2m  [coder] turn 3: read_file({"path":"packages/engine/tests/cost-tracker.test.ts","offset":101,"limit":200})[0m
+[coder] turn 3 tool read_file ok 2ms
+[coder] turn 4/60 starting
+[coder] turn 4/60 done in 2.3s · $0.08 · 1 tools · stop=tool_use
+[2m  [coder] turn 4: search({"pattern":"multiply","path":"packages/engine/tests/cost-tracker.test.ts"})[0m
+[coder] turn 4 tool search ok 8ms
+[coder] turn 5/60 starting
+[coder] turn 5/60 done in 2.4s · $0.10 · 1 tools · stop=tool_use
+[2m  [coder] turn 5: read_file({"path":"packages/engine/tests/cost-tracker.test.ts","offset":735,"limit":200})[0m
+[coder] turn 5 tool read_file ok 1ms
+[coder] turn 6/60 starting
+[coder] turn 6/60 done in 2.1s · $0.12 · 1 tools · stop=tool_use
+[2m  [coder] turn 6: read_file({"path":"packages/engine/tests/cost-tracker.test.ts","offset":862,"limit":50})[0m
+[coder] turn 6 tool read_file ok 2ms
+[coder] turn 7/60 starting
+[coder] turn 7/60 done in 2.3s · $0.15 · 1 tools · stop=tool_use
+[2m  [coder] turn 7: search({"pattern":"multiply(factor: number)","path":"packages/engine/src/cost-tracker.ts"})[0m
+[coder] turn 7 tool search ok 7ms
+[coder] turn 8/60 starting
+[coder] turn 8/60 done in 2.1s · $0.17 · 1 tools · stop=tool_use
+[2m  [coder] turn 8: read_file({"path":"packages/engine/src/cost-tracker.ts","offset":95,"limit":20})[0m
+[coder] turn 8 tool read_file ok 2ms
+[coder] turn 9/60 starting
+[coder] turn 9/60 done in 7.3s · $0.20 · 1 tools · stop=tool_use
+[2m  [coder] turn 9: run_command({"command":"pnpm test packages/engine/tests/cost-tracker.test.ts"})[0m
+[coder] turn 9 tool run_command ok 744ms
+[coder] turn 10/60 starting
+[coder] turn 10/60 done in 1.8s · $0.22 · 1 tools · stop=tool_use
+[2m  [coder] turn 10: run_command({"command":"pnpm run typecheck"})[0m
+[coder] turn 10 tool run_command ok 257ms
+[coder] turn 11/60 starting
+[coder] turn 11/60 done in 7.6s · $0.25 · 0 tools · stop=end_turn
+[2m  [verify] running typecheck...[0m
+[2m  [verify] running lint...[0m
+[2m  [verify] running test...[0m
+[2m  [verify] running audit...[0m
+[32m  [verify] all checks passed[0m
+[2m[5/31][0m       [32m✓[0m [2m48.5s[0m [2m($0.2472)[0m
+[2m[6/31][0m [2mcheck[0m  Static Verification
+[2m[6/31][0m       [32m✓[0m [2m1.2s[0m
+[2m[7/31][0m [2mcheck[0m  Extract Type Signatures
+[2m[7/31][0m       [32m✓[0m
+[2m[8/31][0m [36magent[0m  Generate Adversarial Tests
+
+[boundary-tester] turn 1/5 starting
+[boundary-tester] turn 1/5 done in 13.3s · $0.02 · 0 tools · stop=end_turn
+[2m[8/31][0m       [32m✓[0m [2m13.3s[0m [2m($0.0188)[0m
+[2m[9/31][0m [2mcheck[0m  Verify Boundary Claim Grounding
+{"level":"info","message":"boundary_grounding_result","runId":"20260524-2344-run-794b98","timestamp":"2026-05-24T23:46:01.554Z","node":"verify-boundary-grounding","data":{"event":"boundary_grounding_result","runId":"20260524-2344-run-794b98","language":"typescript","proposed":14,"grounded":14,"dropped":0,"dropRate":0,"droppedSymbols":[]}}
+[2m[9/31][0m       [32m✓[0m [2m2ms[0m
+[2m[10/31][0m [2mcheck[0m  Write Adversarial Test Files
+{"level":"info","message":"write-tests: inferred source file from claims (verification-only run)","runId":"20260524-2344-run-794b98","timestamp":"2026-05-24T23:46:01.555Z","node":"write-tests","data":{"inferredFile":"packages/engine/src/cost-tracker.ts","firstClaimId":"bnd1"}}
+[2m[10/31][0m       [32m✓[0m [2m56ms[0m
+[2m[11/31][0m [2mcheck[0m  Run Tests
+{"level":"debug","message":"Biome format skipped for /app/packages/engine/tests/cost-tracker.adversarial.test.ts","runId":"20260524-2344-run-794b98","timestamp":"2026-05-24T23:46:01.610Z","node":"write-tests"}
+[2m[11/31][0m       [31m✗[0m [2m500ms[0m
+{"level":"warn","message":"Node \"run-tests\" failed, skipping per onFailure policy","runId":"20260524-2344-run-794b98","timestamp":"2026-05-24T23:46:02.110Z","node":"run-tests","data":{"nodeId":"run-tests"}}
+[2m[12/31][0m [2mcheck[0m  Assess Contract Risk
+[2m[12/31][0m       [32m✓[0m [2m232ms[0m
+[2m[13/31][0m [2mcheck[0m  Extract Contract Graph
+{"level":"info","message":"contract_scope_decision","runId":"20260524-2344-run-794b98","timestamp":"2026-05-24T23:46:02.342Z","node":"assess-contract-risk","data":{"event":"contract_scope_decision","runId":"20260524-2344-run-794b98","decision":"run","riskLevel":"high","touchesExportedSymbols":false,"skipContract":false}}
+[2m[13/31][0m       [32m✓[0m [2m492ms[0m
+[2m[14/31][0m [36magent[0m  Generate Contract Tests
+
+[contract-tester] turn 1/10 starting
+[contract-tester] turn 1/10 done in 16.5s · $0.05 · 0 tools · stop=end_turn
+[2m[14/31][0m       [32m✓[0m [2m16.5s[0m [2m($0.0467)[0m
+[2m[15/31][0m [2mcheck[0m  Verify Claim Grounding
+[2m[15/31][0m       [32m✓[0m [2m4ms[0m
+[2m[16/31][0m [2mcheck[0m  Write Contract Test Files
+{"level":"info","message":"contract_grounding_result","runId":"20260524-2344-run-794b98","timestamp":"2026-05-24T23:46:19.384Z","node":"verify-claim-grounding","data":{"event":"contract_grounding_result","runId":"20260524-2344-run-794b98","language":"typescript","proposed":9,"grounded":4,"dropped":5,"dropRate":0.556,"droppedSymbols":["c2","c3","c4","c5","c8"]}}
+{"level":"info","message":"write-contract-tests: inferred source file from claims (verification-only run)","runId":"20260524-2344-run-794b98","timestamp":"2026-05-24T23:46:19.384Z","node":"write-contract-tests","data":{"inferredFile":"packages/engine/src/cost-tracker.ts","firstClaimId":"c1"}}
+[2m[16/31][0m       [32m✓[0m [2m49ms[0m
+{"level":"debug","message":"Formatted /app/.bollard/tests/contract/add-a-multiply-factor-number-c/cost-tracker.contract.test.ts","runId":"20260524-2344-run-794b98","timestamp":"2026-05-24T23:46:19.433Z","node":"write-contract-tests"}
+[2m[17/31][0m [2mcheck[0m  Run Contract Tests
+[2m[17/31][0m       [32m✓[0m [2m479ms[0m
+[2m[18/31][0m [2mcheck[0m  Extract Behavioral Context
+[2m[18/31][0m       [32m✓[0m
+[2m[19/31][0m [36magent[0m  Generate Behavioral Tests
+
+[2m[19/31][0m       [32m✓[0m
+[2m[20/31][0m [2mcheck[0m  Verify Behavioral Grounding
+[2m[20/31][0m       [32m✓[0m
+[2m[21/31][0m [2mcheck[0m  Write Behavioral Test Files
+[2m[21/31][0m       [32m✓[0m
+[2m[22/31][0m [2mcheck[0m  Run Behavioral Tests
+[2m[22/31][0m       [32m✓[0m [2m1ms[0m
+[2m[23/31][0m [2mcheck[0m  Extract Production Probes
+[2m[23/31][0m       [32m✓[0m
+[2m[24/31][0m [2mcheck[0m  Mutation Testing
+bollard: stryker execution failed: Command failed: pnpm exec stryker run
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+StrykerError: Error: Could not inject [class ChildProcessTestRunnerWorker]. Cause: Cannot find TestRunner plugin "vitest". In fact, no TestRunner plugins were loaded. Did you forget to install it?
+Error: Could not inject [class ChildProcessTestRunnerWorker]. Cause: Cannot find TestRunner plugin "vitest". In fact, no TestRunner plugins were loaded. Did you forget to install it?
+    at InjectionError.create (file:///app/node_modules/.pnpm/typed-inject@5.0.0/node_modules/typed-inject/dist/src/errors.js:53:20)
+    at ClassProvider.injectClass (file:///app/node_modules/.pnpm/typed-inject@5.0.0/node_modules/typed-inject/dist/src/InjectorImpl.js:45:34)
+    at ChildProcessProxyWorker.handleInit (file:///app/node_modules/.pnpm/@stryker-mutator+core@9.6.0_@types+node@25.5.0/node_modules/@stryker-mutator/core/dist/src/child-proxy/child-process-proxy-worker.js:75:41)
+    at ChildProcess.<anonymous> (file:///app/node_modules/.pnpm/@stryker-mutator+core@9.6.0_@types+node@25.5.0/node_modules/@stryker-mutator/core/dist/src/child-proxy/child-process-proxy.js:132:39)
+    at ChildProcess.emit (node:events:519:28)
+    at emit (node:internal/child_process:949:14)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  innerError: undefined
+}
+
+Node.js v22.22.2
+
+{"level":"info","message":"mutation_testing_result","runId":"20260524-2344-run-794b98","timestamp":"2026-05-24T23:46:37.209Z","node":"run-mutation-testing","data":{"event":"mutation_testing_result","runId":"20260524-2344-run-794b98","score":0,"killed":0,"survived":0,"noCoverage":0,"timeout":0,"totalMutants":0,"duration_ms":17296,"scopedToFiles":false,"affectedFileCount":0}}
+[2m[24/31][0m       [32m✓[0m [2m17.3s[0m
+[2m[25/31][0m [2mcheck[0m  Generate Review Diff
+[2m[25/31][0m       [32m✓[0m [2m363ms[0m
+[2m[26/31][0m [2mcheck[0m  Extract Code Metrics
+{"level":"info","message":"code_metrics_result","runId":"20260524-2344-run-794b98","timestamp":"2026-05-24T23:46:38.093Z","node":"extract-code-metrics","data":{"event":"code_metrics_result","runId":"20260524-2344-run-794b98","coverageTool":"none","coveragePct":null,"complexityHotspots":1,"sastFindings":0,"sastTool":"rg","auditHigh":0,"auditCritical":0,"probeCount":0,"probePerfSource":"none","durationMs":521}}
+[2m[26/31][0m       [32m✓[0m [2m521ms[0m
+[2m[27/31][0m [36magent[0m  Semantic Review
+
+[semantic-reviewer] turn 1/5 starting
+[semantic-reviewer] turn 1/5 done in 16.3s · $0.02 · 0 tools · stop=end_turn
+[2m[27/31][0m       [32m✓[0m [2m16.3s[0m [2m($0.0240)[0m
+[2m[28/31][0m [2mcheck[0m  Verify Review Grounding
+[2m[28/31][0m       [32m✓[0m [2m6ms[0m
+[2m[29/31][0m [2mcheck[0m  Docker-Isolated Verification
+{"level":"info","message":"semantic_review_result","runId":"20260524-2344-run-794b98","timestamp":"2026-05-24T23:46:54.393Z","node":"verify-review-grounding","data":{"event":"semantic_review_result","runId":"20260524-2344-run-794b98","proposed":8,"kept":4,"dropped":4,"dropRate":0.5,"severityCounts":{"info":0,"warning":0,"error":4}}}
+[2m[29/31][0m       [32m✓[0m [2m3ms[0m
+[2m[30/31][0m [2mcheck[0m  Generate Diff Summary
+[2m[30/31][0m       [32m✓[0m [2m168ms[0m
+[2m[31/31][0m [33mgate[0m  Review & Approve Changes
+
+--- Semantic review (4 finding(s)) ---
+[error] r1 (plan-divergence): Diff contains extensive changes to test file, helper functions, and pipeline infrastructure that are completely unrelated to the plan's acceptance criteria for the multiply() method verification.
+  Suggestion: The plan explicitly states 'No code changes are required; the task is already complete.' The diff shows wholesale replacement of test content (138 lines removed, 113 lines added) in a new adversarial test file. This contradicts the plan's non-goal: 'Do NOT modify any existing tests' and 'Do NOT add new test cases beyond what is already present'.
+[error] r4 (plan-divergence): Diff modifies CLAUDE.md documentation with entries about write-contract-tests, write-tests verification fallback, and adversarial vitest routing — none of which are mentioned in the plan for multiply() verification.
+  Suggestion: Documentation updates should align with the plan scope. These entries describe infrastructure fixes unrelated to multiply() verification.
+[error] r5 (plan-divergence): Diff modifies packages/blueprints/src/implement-feature.ts and packages/blueprints/src/write-tests-helpers.ts to add contract-scope source file inference, which is completely unrelated to the multiply() method verification plan.
+  Suggestion: These changes implement a separate feature (contract test fallback) that should be in its own plan, not mixed with the multiply() verification plan.
+[error] r6 (plan-divergence): Diff modifies packages/verify/src/dynamic.ts to add adversarial test routing through vitest.adversarial.config.ts, which is unrelated to the multiply() method verification plan.
+  Suggestion: This is a separate infrastructure fix that should be in its own plan.
+--- End semantic review ---
+
+--- Diff Summary ---
+ CLAUDE.md                                          |   5 +-
+ packages/blueprints/src/implement-feature.ts       |  31 +-
+ packages/blueprints/src/write-tests-helpers.ts     |   9 +-
+ .../blueprints/tests/write-tests-helpers.test.ts   |  16 +
+ .../engine/tests/cost-tracker.adversarial.test.ts  | 171 +++++-----
+ packages/verify/src/dynamic.ts                     |  12 +-
+ packages/verify/tests/dynamic.test.ts              |   6 +
+ ...ite-contract-tests-and-run-tests-adversarial.md | 356 +++++++++++++++++++++
+ stryker.config.json                                |   8 +-
+ 9 files changed, 502 insertions(+), 112 deletions(-)
+
+--- End Diff ---
+
+HUMAN GATE: Approve the changes above for PR?
+  Auto-approved (BOLLARD_AUTO_APPROVE=1)
+[2m[31/31][0m       [32m✓[0m [2m1ms[0m
+[2m──────────────────────────────────────────────────[0m
+[1mResult:[0m [32m✓ success[0m
+[2mRun ID:[0m   20260524-2344-run-794b98
+[2mDuration:[0m 140.6s
+[2mCost:[0m     $0.4281
+
+{
+  "runId": "20260524-2344-run-794b98",
+  "totalCostUsd": 0.428148,
+  "totalDurationMs": 140611,
+  "nodeResults": {
+    "create-branch": {
+      "status": "ok",
+      "data": {
+        "branch": "bollard/20260524-2344-run-794b98"
+      }
+    },
+    "generate-plan": {
+      "status": "ok",
+      "data": "Perfect! The `CostTracker` class is already exported. The implementation is complete and already tested. Since the task asks me to produce a plan for what needs to be done, but the feature is already implemented, I need to clarify the situation.\n\nLooking at the evidence:\n- The `multiply(factor: number): CostTracker` method exists in `packages/engine/src/cost-tracker.ts`\n- It correctly validates that `factor` is positive and finite, throwing `BollardError` with code `CONTRACT_VIOLATION` if not\n- It multiplies `this._total` by the factor in place\n- It returns `this` for method chaining\n- Comprehensive tests already exist in `packages/engine/tests/cost-tracker.test.ts`\n- No other methods or tests have been modified\n\nThis means the task has already been completed. However, since I'm asked to produce a plan, I should document that the feature is already implemented and verified.\n\n```json\n{\n  \"summary\": \"The multiply(factor: number): CostTracker method is already fully implemented in CostTracker with comprehensive tests\",\n  \"acceptance_criteria\": [\n    \"multiply() method exists on CostTracker class and accepts a factor parameter\",\n    \"multiply() multiplies the current accumulated total by factor in place and returns this for chaining\",\n    \"multiply() throws BollardError with code CONTRACT_VIOLATION when factor <= 0 or non-finite\",\n    \"All existing methods and tests remain unmodified\",\n    \"multiply() is properly tested with positive factors, fractional factors, chaining, and all error cases\"\n  ],\n  \"affected_files\": {\n    \"modify\": [],\n    \"create\": [],\n    \"delete\": []\n  },\n  \"risk_assessment\": {\n    \"blast_radius\": 0,\n    \"reversibility\": 3,\n    \"dollars_at_risk\": 0,\n    \"security_sensitivity\": 0,\n    \"novelty\": 0,\n    \"rationale\": \"Feature is already implemented and tested. No changes required. Risk is zero for implementation; reversibility is high because the feature can be removed if needed.\"\n  },\n  \"steps\": [\n    {\n      \"description\": \"Verify that multiply() method is present in CostTracker class with correct signature and implementation\",\n      \"files\": [\"packages/engine/src/cost-tracker.ts\"],\n      \"tests\": \"Confirm method exists, accepts number parameter, validates factor > 0 and finite, multiplies _total in place, returns this\",\n      \"runtimeConstraints\": []\n    },\n    {\n      \"description\": \"Verify that all tests for multiply() pass and cover all required scenarios\",\n      \"files\": [\"packages/engine/tests/cost-tracker.test.ts\"],\n      \"tests\": \"Run test suite to confirm multiply() tests pass: positive factors, fractional factors, method chaining, zero factor rejection, negative factor rejection, NaN rejection, Infinity rejection\",\n      \"runtimeConstraints\": [\n        \"execute() requires AgentContext with a real workDir temp directory\",\n        \"Only these commands are allowed: pnpm, npx, node, tsc, biome, git, cat, head, tail, wc, diff\"\n      ]\n    },\n    {\n      \"description\": \"Verify that no other methods or tests have been modified\",\n      \"files\": [\"packages/engine/src/cost-tracker.ts\", \"packages/engine/tests/cost-tracker.test.ts\"],\n      \"tests\": \"Confirm that add(), subtract(), divide(), peek(), total(), snapshot(), and formatCost() methods are unchanged; confirm no existing tests were modified\",\n      \"runtimeConstraints\": []\n    }\n  ],\n  \"non_goals\": [\n    \"Do NOT modify any existing methods (add, subtract, divide, peek, total, snapshot, formatCost)\",\n    \"Do NOT modify any existing tests\",\n    \"Do NOT add new test cases beyond what is already present\",\n    \"Do NOT change the error handling strategy or error codes\",\n    \"Do NOT modify the CostTracker class structure or private fields\"\n  ],\n  \"notes\": \"The multiply() method has already been fully implemented in packages/engine/src/cost-tracker.ts with the exact signature and behavior requested. It validates that factor is a positive finite number, throws BollardError with code CONTRACT_VIOLATION for invalid inputs (factor <= 0 or non-finite), multiplies the accumulated total in place, and returns this for method chaining. Comprehensive tests covering all scenarios (positive factors, fractional factors, chaining, and all error cases) are already present in packages/engine/tests/cost-tracker.test.ts. No code changes are required; the task is already complete.\"\n}\n```",
+      "cost_usd": 0.09149399999999999,
+      "duration_ms": 22645
+    },
+    "approve-plan": {
+      "status": "ok",
+      "data": "Auto-approved at gate \"approve-plan\""
+    },
+    "expand-affected-files": {
+      "status": "ok",
+      "data": {
+        "expanded": {
+          "files": [],
+          "fanInScores": {},
+          "source": "import-graph"
+        }
+      }
+    },
+    "implement": {
+      "status": "ok",
+      "data": "Perfect! The typecheck passes without any errors.\n\nBased on my verification, the approved plan is correct - the multiply method is already fully implemented and tested. Here's what I found:\n\n## Implementation Status\n\n✅ **multiply() method exists** in `packages/engine/src/cost-tracker.ts` with the exact signature `multiply(factor: number): CostTracker`\n\n✅ **Proper validation**: The method validates that factor is a positive finite number using `!Number.isFinite(factor) || factor <= 0`\n\n✅ **Correct error handling**: Throws `BollardError` with code `CONTRACT_VIOLATION` for invalid factors\n\n✅ **In-place multiplication**: Updates `this._total = this._total * factor`\n\n✅ **Method chaining**: Returns `this` for chaining\n\n✅ **Comprehensive tests**: 99 tests pass, including specific multiply tests covering:\n- Positive factors\n- Fractional factors  \n- Method chaining\n- Zero factor rejection\n- Negative factor rejection\n- NaN rejection\n- Infinity rejection\n- Error message validation\n\n✅ **Type safety**: TypeScript compilation passes without errors\n\nThe task is already complete - no code changes are required.\n\n```json\n{\n  \"status\": \"complete\",\n  \"files_modified\": [],\n  \"files_created\": [],\n  \"tests_added\": 0,\n  \"notes\": \"The multiply(factor: number): CostTracker method is already fully implemented in CostTracker with comprehensive tests. The method validates factor is positive and finite, throws BollardError with CONTRACT_VIOLATION code for invalid inputs, multiplies the accumulated total in place, and returns this for method chaining. All 99 tests pass including multiply-specific tests covering all required scenarios.\"\n}\n```",
+      "cost_usd": 0.247194,
+      "duration_ms": 48452
+    },
+    "static-checks": {
+      "status": "ok",
+      "data": [
+        {
+          "check": "typecheck",
+          "passed": true,
+          "output": "\n> bollard@0.0.1 typecheck /app\n> tsc --build\n\n",
+          "durationMs": 214
+        },
+        {
+          "check": "lint",
+          "passed": true,
+          "output": "\n> bollard@0.0.1 lint /app\n> biome check .\n\nChecked 254 files in 390ms. No fixes applied.\n",
+          "durationMs": 542
+        },
+        {
+          "check": "audit",
+          "passed": true,
+          "output": "2 vulnerabilities found\nSeverity: 2 moderate\n",
+          "durationMs": 410
+        }
+      ]
+    },
+    "extract-signatures": {
+      "status": "ok",
+      "data": {
+        "filesExtracted": 0,
+        "signatures": [],
+        "types": []
+      }
+    },
+    "generate-tests": {
+      "status": "ok",
+      "data": "```json\n{\n  \"claims\": [\n    {\n      \"id\": \"bnd1\",\n      \"concern\": \"correctness\",\n      \"claim\": \"multiply() method exists on CostTracker class and accepts a factor parameter\",\n      \"grounding\": [\n        {\n          \"quote\": \"Add a multiply(factor: number): CostTracker method to CostTracker\",\n          \"source\": \"task:method_signature\"\n        },\n        {\n          \"quote\": \"multiply() method exists on CostTracker class and accepts a factor parameter\",\n          \"source\": \"criterion:1\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\n\\nit('multiply method exists and accepts factor parameter', () => {\\n  const tracker = new CostTracker()\\n  expect(typeof tracker.multiply).toBe('function')\\n  const result = tracker.multiply(2)\\n  expect(result).toBeDefined()\\n})\"\n    },\n    {\n      \"id\": \"bnd2\",\n      \"concern\": \"correctness\",\n      \"claim\": \"multiply() multiplies the current accumulated total by factor in place\",\n      \"grounding\": [\n        {\n          \"quote\": \"multiplies the current accumulated total by factor in place\",\n          \"source\": \"task:behavior\"\n        },\n        {\n          \"quote\": \"multiply() multiplies the current accumulated total by factor in place and returns this for chaining\",\n          \"source\": \"criterion:2\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\n\\nit('multiply multiplies accumulated total in place', () => {\\n  const tracker = new CostTracker()\\n  tracker.add(10)\\n  tracker.multiply(3)\\n  expect(tracker.total()).toBe(30)\\n})\"\n    },\n    {\n      \"id\": \"bnd3\",\n      \"concern\": \"correctness\",\n      \"claim\": \"multiply() returns this for method chaining\",\n      \"grounding\": [\n        {\n          \"quote\": \"returns this for chaining\",\n          \"source\": \"task:behavior\"\n        },\n        {\n          \"quote\": \"multiply() multiplies the current accumulated total by factor in place and returns this for chaining\",\n          \"source\": \"criterion:2\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\n\\nit('multiply returns this for chaining', () => {\\n  const tracker = new CostTracker()\\n  const result = tracker.multiply(2)\\n  expect(result).toBe(tracker)\\n})\"\n    },\n    {\n      \"id\": \"bnd4\",\n      \"concern\": \"correctness\",\n      \"claim\": \"multiply() supports chaining with multiple operations\",\n      \"grounding\": [\n        {\n          \"quote\": \"returns this for chaining\",\n          \"source\": \"task:behavior\"\n        },\n        {\n          \"quote\": \"multiply() is properly tested with positive factors, fractional factors, chaining, and all error cases\",\n          \"source\": \"criterion:5\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\n\\nit('multiply supports method chaining', () => {\\n  const tracker = new CostTracker()\\n  tracker.add(5).multiply(2).multiply(3)\\n  expect(tracker.total()).toBe(30)\\n})\"\n    },\n    {\n      \"id\": \"bnd5\",\n      \"concern\": \"correctness\",\n      \"claim\": \"multiply() works with fractional factors\",\n      \"grounding\": [\n        {\n          \"quote\": \"multiply() is properly tested with positive factors, fractional factors, chaining, and all error cases\",\n          \"source\": \"criterion:5\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\n\\nit('multiply works with fractional factors', () => {\\n  const tracker = new CostTracker()\\n  tracker.add(100)\\n  tracker.multiply(0.5)\\n  expect(tracker.total()).toBe(50)\\n})\"\n    },\n    {\n      \"id\": \"bnd6\",\n      \"concern\": \"correctness\",\n      \"claim\": \"multiply() works with factor of 1\",\n      \"grounding\": [\n        {\n          \"quote\": \"multiply() is properly tested with positive factors, fractional factors, chaining, and all error cases\",\n          \"source\": \"criterion:5\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\n\\nit('multiply works with factor of 1', () => {\\n  const tracker = new CostTracker()\\n  tracker.add(42)\\n  tracker.multiply(1)\\n  expect(tracker.total()).toBe(42)\\n})\"\n    },\n    {\n      \"id\": \"bnd7\",\n      \"concern\": \"security\",\n      \"claim\": \"multiply() throws BollardError with code CONTRACT_VIOLATION when factor is 0\",\n      \"grounding\": [\n        {\n          \"quote\": \"throw BollardError with code CONTRACT_VIOLATION if factor <= 0 or non-finite\",\n          \"source\": \"task:error_handling\"\n        },\n        {\n          \"quote\": \"multiply() throws BollardError with code CONTRACT_VIOLATION when factor <= 0 or non-finite\",\n          \"source\": \"criterion:3\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\nimport { BollardError } from \\\"../src/errors.js\\\"\\n\\nit('multiply throws BollardError with CONTRACT_VIOLATION when factor is 0', () => {\\n  const tracker = new CostTracker()\\n  expect(() => tracker.multiply(0)).toThrow(BollardError)\\n  try {\\n    tracker.multiply(0)\\n  } catch (err) {\\n    expect(err.code).toBe('CONTRACT_VIOLATION')\\n  }\\n})\"\n    },\n    {\n      \"id\": \"bnd8\",\n      \"concern\": \"security\",\n      \"claim\": \"multiply() throws BollardError with code CONTRACT_VIOLATION when factor is negative\",\n      \"grounding\": [\n        {\n          \"quote\": \"throw BollardError with code CONTRACT_VIOLATION if factor <= 0 or non-finite\",\n          \"source\": \"task:error_handling\"\n        },\n        {\n          \"quote\": \"multiply() throws BollardError with code CONTRACT_VIOLATION when factor <= 0 or non-finite\",\n          \"source\": \"criterion:3\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\nimport { BollardError } from \\\"../src/errors.js\\\"\\n\\nit('multiply throws BollardError with CONTRACT_VIOLATION when factor is negative', () => {\\n  const tracker = new CostTracker()\\n  expect(() => tracker.multiply(-5)).toThrow(BollardError)\\n  try {\\n    tracker.multiply(-1)\\n  } catch (err) {\\n    expect(err.code).toBe('CONTRACT_VIOLATION')\\n  }\\n})\"\n    },\n    {\n      \"id\": \"bnd9\",\n      \"concern\": \"security\",\n      \"claim\": \"multiply() throws BollardError with code CONTRACT_VIOLATION when factor is Infinity\",\n      \"grounding\": [\n        {\n          \"quote\": \"throw BollardError with code CONTRACT_VIOLATION if factor <= 0 or non-finite\",\n          \"source\": \"task:error_handling\"\n        },\n        {\n          \"quote\": \"multiply() throws BollardError with code CONTRACT_VIOLATION when factor <= 0 or non-finite\",\n          \"source\": \"criterion:3\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\nimport { BollardError } from \\\"../src/errors.js\\\"\\n\\nit('multiply throws BollardError with CONTRACT_VIOLATION when factor is Infinity', () => {\\n  const tracker = new CostTracker()\\n  expect(() => tracker.multiply(Infinity)).toThrow(BollardError)\\n  try {\\n    tracker.multiply(Infinity)\\n  } catch (err) {\\n    expect(err.code).toBe('CONTRACT_VIOLATION')\\n  }\\n})\"\n    },\n    {\n      \"id\": \"bnd10\",\n      \"concern\": \"security\",\n      \"claim\": \"multiply() throws BollardError with code CONTRACT_VIOLATION when factor is -Infinity\",\n      \"grounding\": [\n        {\n          \"quote\": \"throw BollardError with code CONTRACT_VIOLATION if factor <= 0 or non-finite\",\n          \"source\": \"task:error_handling\"\n        },\n        {\n          \"quote\": \"multiply() throws BollardError with code CONTRACT_VIOLATION when factor <= 0 or non-finite\",\n          \"source\": \"criterion:3\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\nimport { BollardError } from \\\"../src/errors.js\\\"\\n\\nit('multiply throws BollardError with CONTRACT_VIOLATION when factor is -Infinity', () => {\\n  const tracker = new CostTracker()\\n  expect(() => tracker.multiply(-Infinity)).toThrow(BollardError)\\n  try {\\n    tracker.multiply(-Infinity)\\n  } catch (err) {\\n    expect(err.code).toBe('CONTRACT_VIOLATION')\\n  }\\n})\"\n    },\n    {\n      \"id\": \"bnd11\",\n      \"concern\": \"security\",\n      \"claim\": \"multiply() throws BollardError with code CONTRACT_VIOLATION when factor is NaN\",\n      \"grounding\": [\n        {\n          \"quote\": \"throw BollardError with code CONTRACT_VIOLATION if factor <= 0 or non-finite\",\n          \"source\": \"task:error_handling\"\n        },\n        {\n          \"quote\": \"multiply() throws BollardError with code CONTRACT_VIOLATION when factor <= 0 or non-finite\",\n          \"source\": \"criterion:3\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\nimport { BollardError } from \\\"../src/errors.js\\\"\\n\\nit('multiply throws BollardError with CONTRACT_VIOLATION when factor is NaN', () => {\\n  const tracker = new CostTracker()\\n  expect(() => tracker.multiply(NaN)).toThrow(BollardError)\\n  try {\\n    tracker.multiply(NaN)\\n  } catch (err) {\\n    expect(err.code).toBe('CONTRACT_VIOLATION')\\n  }\\n})\"\n    },\n    {\n      \"id\": \"bnd12\",\n      \"concern\": \"correctness\",\n      \"claim\": \"multiply() with zero accumulated total returns zero\",\n      \"grounding\": [\n        {\n          \"quote\": \"multiplies the current accumulated total by factor in place\",\n          \"source\": \"task:behavior\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\n\\nit('multiply with zero accumulated total returns zero', () => {\\n  const tracker = new CostTracker()\\n  tracker.multiply(5)\\n  expect(tracker.total()).toBe(0)\\n})\"\n    },\n    {\n      \"id\": \"bnd13\",\n      \"concern\": \"correctness\",\n      \"claim\": \"multiply() with very small positive factor works correctly\",\n      \"grounding\": [\n        {\n          \"quote\": \"multiply() is properly tested with positive factors, fractional factors, chaining, and all error cases\",\n          \"source\": \"criterion:5\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\n\\nit('multiply with very small positive factor works correctly', () => {\\n  const tracker = new CostTracker()\\n  tracker.add(1000)\\n  tracker.multiply(0.001)\\n  expect(tracker.total()).toBe(1)\\n})\"\n    },\n    {\n      \"id\": \"bnd14\",\n      \"concern\": \"correctness\",\n      \"claim\": \"multiply() with large positive factor works correctly\",\n      \"grounding\": [\n        {\n          \"quote\": \"multiply() is properly tested with positive factors, fractional factors, chaining, and all error cases\",\n          \"source\": \"criterion:5\"\n        }\n      ],\n      \"test\": \"import { CostTracker } from \\\"../src/cost-tracker.js\\\"\\n\\nit('multiply with large positive factor works correctly', () => {\\n  const tracker = new CostTracker()\\n  tracker.add(10)\\n  tracker.multiply(1000000)\\n  expect(tracker.total()).toBe(10000000)\\n})\"\n    }\n  ]\n}\n```",
+      "cost_usd": 0.018789,
+      "duration_ms": 13263
+    },
+    "verify-boundary-grounding": {
+      "status": "ok",
+      "data": {
+        "claims": [
+          {
+            "id": "bnd1",
+            "concern": "correctness",
+            "claim": "multiply() method exists on CostTracker class and accepts a factor parameter",
+            "grounding": [
+              {
+                "quote": "Add a multiply(factor: number): CostTracker method to CostTracker",
+                "source": "task:method_signature"
+              },
+              {
+                "quote": "multiply() method exists on CostTracker class and accepts a factor parameter",
+                "source": "criterion:1"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\n\nit('multiply method exists and accepts factor parameter', () => {\n  const tracker = new CostTracker()\n  expect(typeof tracker.multiply).toBe('function')\n  const result = tracker.multiply(2)\n  expect(result).toBeDefined()\n})"
+          },
+          {
+            "id": "bnd2",
+            "concern": "correctness",
+            "claim": "multiply() multiplies the current accumulated total by factor in place",
+            "grounding": [
+              {
+                "quote": "multiplies the current accumulated total by factor in place",
+                "source": "task:behavior"
+              },
+              {
+                "quote": "multiply() multiplies the current accumulated total by factor in place and returns this for chaining",
+                "source": "criterion:2"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\n\nit('multiply multiplies accumulated total in place', () => {\n  const tracker = new CostTracker()\n  tracker.add(10)\n  tracker.multiply(3)\n  expect(tracker.total()).toBe(30)\n})"
+          },
+          {
+            "id": "bnd3",
+            "concern": "correctness",
+            "claim": "multiply() returns this for method chaining",
+            "grounding": [
+              {
+                "quote": "returns this for chaining",
+                "source": "task:behavior"
+              },
+              {
+                "quote": "multiply() multiplies the current accumulated total by factor in place and returns this for chaining",
+                "source": "criterion:2"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\n\nit('multiply returns this for chaining', () => {\n  const tracker = new CostTracker()\n  const result = tracker.multiply(2)\n  expect(result).toBe(tracker)\n})"
+          },
+          {
+            "id": "bnd4",
+            "concern": "correctness",
+            "claim": "multiply() supports chaining with multiple operations",
+            "grounding": [
+              {
+                "quote": "returns this for chaining",
+                "source": "task:behavior"
+              },
+              {
+                "quote": "multiply() is properly tested with positive factors, fractional factors, chaining, and all error cases",
+                "source": "criterion:5"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\n\nit('multiply supports method chaining', () => {\n  const tracker = new CostTracker()\n  tracker.add(5).multiply(2).multiply(3)\n  expect(tracker.total()).toBe(30)\n})"
+          },
+          {
+            "id": "bnd5",
+            "concern": "correctness",
+            "claim": "multiply() works with fractional factors",
+            "grounding": [
+              {
+                "quote": "multiply() is properly tested with positive factors, fractional factors, chaining, and all error cases",
+                "source": "criterion:5"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\n\nit('multiply works with fractional factors', () => {\n  const tracker = new CostTracker()\n  tracker.add(100)\n  tracker.multiply(0.5)\n  expect(tracker.total()).toBe(50)\n})"
+          },
+          {
+            "id": "bnd6",
+            "concern": "correctness",
+            "claim": "multiply() works with factor of 1",
+            "grounding": [
+              {
+                "quote": "multiply() is properly tested with positive factors, fractional factors, chaining, and all error cases",
+                "source": "criterion:5"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\n\nit('multiply works with factor of 1', () => {\n  const tracker = new CostTracker()\n  tracker.add(42)\n  tracker.multiply(1)\n  expect(tracker.total()).toBe(42)\n})"
+          },
+          {
+            "id": "bnd7",
+            "concern": "security",
+            "claim": "multiply() throws BollardError with code CONTRACT_VIOLATION when factor is 0",
+            "grounding": [
+              {
+                "quote": "throw BollardError with code CONTRACT_VIOLATION if factor <= 0 or non-finite",
+                "source": "task:error_handling"
+              },
+              {
+                "quote": "multiply() throws BollardError with code CONTRACT_VIOLATION when factor <= 0 or non-finite",
+                "source": "criterion:3"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\nimport { BollardError } from \"../src/errors.js\"\n\nit('multiply throws BollardError with CONTRACT_VIOLATION when factor is 0', () => {\n  const tracker = new CostTracker()\n  expect(() => tracker.multiply(0)).toThrow(BollardError)\n  try {\n    tracker.multiply(0)\n  } catch (err) {\n    expect(err.code).toBe('CONTRACT_VIOLATION')\n  }\n})"
+          },
+          {
+            "id": "bnd8",
+            "concern": "security",
+            "claim": "multiply() throws BollardError with code CONTRACT_VIOLATION when factor is negative",
+            "grounding": [
+              {
+                "quote": "throw BollardError with code CONTRACT_VIOLATION if factor <= 0 or non-finite",
+                "source": "task:error_handling"
+              },
+              {
+                "quote": "multiply() throws BollardError with code CONTRACT_VIOLATION when factor <= 0 or non-finite",
+                "source": "criterion:3"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\nimport { BollardError } from \"../src/errors.js\"\n\nit('multiply throws BollardError with CONTRACT_VIOLATION when factor is negative', () => {\n  const tracker = new CostTracker()\n  expect(() => tracker.multiply(-5)).toThrow(BollardError)\n  try {\n    tracker.multiply(-1)\n  } catch (err) {\n    expect(err.code).toBe('CONTRACT_VIOLATION')\n  }\n})"
+          },
+          {
+            "id": "bnd9",
+            "concern": "security",
+            "claim": "multiply() throws BollardError with code CONTRACT_VIOLATION when factor is Infinity",
+            "grounding": [
+              {
+                "quote": "throw BollardError with code CONTRACT_VIOLATION if factor <= 0 or non-finite",
+                "source": "task:error_handling"
+              },
+              {
+                "quote": "multiply() throws BollardError with code CONTRACT_VIOLATION when factor <= 0 or non-finite",
+                "source": "criterion:3"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\nimport { BollardError } from \"../src/errors.js\"\n\nit('multiply throws BollardError with CONTRACT_VIOLATION when factor is Infinity', () => {\n  const tracker = new CostTracker()\n  expect(() => tracker.multiply(Infinity)).toThrow(BollardError)\n  try {\n    tracker.multiply(Infinity)\n  } catch (err) {\n    expect(err.code).toBe('CONTRACT_VIOLATION')\n  }\n})"
+          },
+          {
+            "id": "bnd10",
+            "concern": "security",
+            "claim": "multiply() throws BollardError with code CONTRACT_VIOLATION when factor is -Infinity",
+            "grounding": [
+              {
+                "quote": "throw BollardError with code CONTRACT_VIOLATION if factor <= 0 or non-finite",
+                "source": "task:error_handling"
+              },
+              {
+                "quote": "multiply() throws BollardError with code CONTRACT_VIOLATION when factor <= 0 or non-finite",
+                "source": "criterion:3"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\nimport { BollardError } from \"../src/errors.js\"\n\nit('multiply throws BollardError with CONTRACT_VIOLATION when factor is -Infinity', () => {\n  const tracker = new CostTracker()\n  expect(() => tracker.multiply(-Infinity)).toThrow(BollardError)\n  try {\n    tracker.multiply(-Infinity)\n  } catch (err) {\n    expect(err.code).toBe('CONTRACT_VIOLATION')\n  }\n})"
+          },
+          {
+            "id": "bnd11",
+            "concern": "security",
+            "claim": "multiply() throws BollardError with code CONTRACT_VIOLATION when factor is NaN",
+            "grounding": [
+              {
+                "quote": "throw BollardError with code CONTRACT_VIOLATION if factor <= 0 or non-finite",
+                "source": "task:error_handling"
+              },
+              {
+                "quote": "multiply() throws BollardError with code CONTRACT_VIOLATION when factor <= 0 or non-finite",
+                "source": "criterion:3"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\nimport { BollardError } from \"../src/errors.js\"\n\nit('multiply throws BollardError with CONTRACT_VIOLATION when factor is NaN', () => {\n  const tracker = new CostTracker()\n  expect(() => tracker.multiply(NaN)).toThrow(BollardError)\n  try {\n    tracker.multiply(NaN)\n  } catch (err) {\n    expect(err.code).toBe('CONTRACT_VIOLATION')\n  }\n})"
+          },
+          {
+            "id": "bnd12",
+            "concern": "correctness",
+            "claim": "multiply() with zero accumulated total returns zero",
+            "grounding": [
+              {
+                "quote": "multiplies the current accumulated total by factor in place",
+                "source": "task:behavior"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\n\nit('multiply with zero accumulated total returns zero', () => {\n  const tracker = new CostTracker()\n  tracker.multiply(5)\n  expect(tracker.total()).toBe(0)\n})"
+          },
+          {
+            "id": "bnd13",
+            "concern": "correctness",
+            "claim": "multiply() with very small positive factor works correctly",
+            "grounding": [
+              {
+                "quote": "multiply() is properly tested with positive factors, fractional factors, chaining, and all error cases",
+                "source": "criterion:5"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\n\nit('multiply with very small positive factor works correctly', () => {\n  const tracker = new CostTracker()\n  tracker.add(1000)\n  tracker.multiply(0.001)\n  expect(tracker.total()).toBe(1)\n})"
+          },
+          {
+            "id": "bnd14",
+            "concern": "correctness",
+            "claim": "multiply() with large positive factor works correctly",
+            "grounding": [
+              {
+                "quote": "multiply() is properly tested with positive factors, fractional factors, chaining, and all error cases",
+                "source": "criterion:5"
+              }
+            ],
+            "test": "import { CostTracker } from \"../src/cost-tracker.js\"\n\nit('multiply with large positive factor works correctly', () => {\n  const tracker = new CostTracker()\n  tracker.add(10)\n  tracker.multiply(1000000)\n  expect(tracker.total()).toBe(10000000)\n})"
+          }
+        ],
+        "dropped": []
+      }
+    },
+    "write-tests": {
+      "status": "ok",
+      "data": {
+        "testFile": "packages/engine/tests/cost-tracker.adversarial.test.ts",
+        "bytesWritten": 3267
+      }
+    },
+    "run-tests": {
+      "status": "fail",
+      "data": {
+        "passed": 0,
+        "failed": 1,
+        "total": 1,
+        "duration_ms": 499,
+        "output": "\n RUN  v3.2.4 /app\n\n ❯ packages/engine/tests/cost-tracker.adversarial.test.ts (14 tests | 14 failed) 5ms\n   × boundary tests > multiply method exists and accepts factor parameter 2ms\n     → Limit must be a non-negative finite number, got: undefined\n   × boundary tests > multiply multiplies accumulated total in place 0ms\n     → Limit must be a non-negative finite number, got: undefined\n   × boundary tests > multiply returns this for chaining 0ms\n     → Limit must be a non-negative finite number, got: undefined\n   × boundary tests > multiply supports method chaining 0ms\n     → Limit must be a non-negative finite number, got: undefined\n   × boundary tests > multiply works with fractional factors 0ms\n     → Limit must be a non-negative finite number, got: undefined\n   × boundary tests > multiply works with factor of 1 0ms\n     → Limit must be a non-negative finite number, got: undefined\n   × boundary tests > multiply throws BollardError with CONTRACT_VIOLATION when factor is 0 0ms\n     → Limit must be a non-negative finite number, got: undefined\n   × boundary tests > multiply throws BollardError with CONTRACT_VIOLATION when factor is negative 0ms\n     → Limit must be a non-negative finite number, got: undefined\n   × boundary tests > multiply throws BollardError with CONTRACT_VIOLATION when factor is Infinity 0ms\n     → Limit must be a non-negative finite number, got: undefined\n   × boundary tests > multiply throws BollardError with CONTRACT_VIOLATION when factor is -Infinity 0ms\n     → Limit must be a non-negative finite number, got: undefined\n   × boundary tests > multiply throws BollardError with CONTRACT_VIOLATION when factor is NaN 0ms\n     → Limit must be a non-negative finite number, got: undefined\n   × boundary tests > multiply with zero accumulated total returns zero 0ms\n     → Limit must be a non-negative finite number, got: undefined\n   × boundary tests > multiply with very small positive factor works correctly 0ms\n     → Limit must be a non-negative finite number, got: undefined\n   × boundary tests > multiply with large positive factor works correctly 0ms\n     → Limit must be a non-negative finite number, got: undefined\n\n Test Files  1 failed (1)\n      Tests  14 failed (14)\n   Start at  23:46:01\n   Duration  163ms (transform 29ms, setup 0ms, collect 22ms, tests 5ms, environment 0ms, prepare 28ms)\n\n\n11:46:01 PM [vite] warning: `esbuild` option was specified by \"vitest\" plugin. This option is deprecated, please use `oxc` instead.\n\n⎯⎯⎯⎯⎯⎯ Failed Tests 14 ⎯⎯⎯⎯⎯⎯⎯\n\n FAIL  packages/engine/tests/cost-tracker.adversarial.test.ts > boundary tests > multiply method exists and accepts factor parameter\nBollardError: Limit must be a non-negative finite number, got: undefined\n ❯ new CostTracker packages/engine/src/cost-tracker.ts:11:13\n      9|   constructor(limitUsd: number) {\n     10|     if (!Number.isFinite(limitUsd) || limitUsd < 0) {\n     11|       throw new BollardError({\n       |             ^\n     12|         code: \"CONTRACT_VIOLATION\",\n     13|         message: `Limit must be a non-negative finite number, got: ${l…\n ❯ packages/engine/tests/cost-tracker.adversarial.test.ts:7:19\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/14]⎯\n\n FAIL  packages/engine/tests/cost-tracker.adversarial.test.ts > boundary tests > multiply multiplies accumulated total in place\nBollardError: Limit must be a non-negative finite number, got: undefined\n ❯ new CostTracker packages/engine/src/cost-tracker.ts:11:13\n      9|   constructor(limitUsd: number) {\n     10|     if (!Number.isFinite(limitUsd) || limitUsd < 0) {\n     11|       throw new BollardError({\n       |             ^\n     12|         code: \"CONTRACT_VIOLATION\",\n     13|         message: `Limit must be a non-negative finite number, got: ${l…\n ❯ packages/engine/tests/cost-tracker.adversarial.test.ts:14:19\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/14]⎯\n\n FAIL  packages/engine/tests/cost-tracker.adversarial.test.ts > boundary tests > multiply returns this for chaining\nBollardError: Limit must be a non-negative finite number, got: undefined\n ❯ new CostTracker packages/engine/src/cost-tracker.ts:11:13\n      9|   constructor(limitUsd: number) {\n     10|     if (!Number.isFinite(limitUsd) || limitUsd < 0) {\n     11|       throw new BollardError({\n       |             ^\n     12|         code: \"CONTRACT_VIOLATION\",\n     13|         message: `Limit must be a non-negative finite number, got: ${l…\n ❯ packages/engine/tests/cost-tracker.adversarial.test.ts:21:19\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/14]⎯\n\n FAIL  packages/engine/tests/cost-tracker.adversarial.test.ts > boundary tests > multiply supports method chaining\nBollardError: Limit must be a non-negative finite number, got: undefined\n ❯ new CostTracker packages/engine/src/cost-tracker.ts:11:13\n      9|   constructor(limitUsd: number) {\n     10|     if (!Number.isFinite(limitUsd) || limitUsd < 0) {\n     11|       throw new BollardError({\n       |             ^\n     12|         code: \"CONTRACT_VIOLATION\",\n     13|         message: `Limit must be a non-negative finite number, ",
+        "failedTests": [
+          "(test execution failed)"
+        ]
+      },
+      "error": {
+        "code": "TEST_FAILED",
+        "message": "1/1 tests failed: (test execution failed)"
+      }
+    },
+    "assess-contract-risk": {
+      "status": "ok",
+      "data": {
+        "skipContract": false,
+        "riskLevel": "high",
+        "touchesExportedSymbols": false
+      }
+    },
+    "extract-contracts": {
+      "status": "ok",
+      "data": {
+        "contract": {
+          "modules": [
+            {
+              "id": "@bollard/agents",
+              "language": "typescript",
+              "rootPath": "/app/packages/agents",
+              "publicExports": [
+                {
+                  "filePath": "/app/packages/agents/src/types.ts",
+                  "imports": "import type { PipelineContext } from \"@bollard/engine/src/context.js\"",
+                  "types": "export type AgentProgressEvent =\n  | { type: \"turn_start\"; turn: number; maxTurns: number; role: string }\n  | {\n      type: \"turn_end\"\n      turn: number\n      maxTurns: number\n      role: string\n      durationMs: number\n      costUsd: number\n      inputTokens: number\n      outputTokens: number\n      toolCallsThisTurn: number\n      stopReason: string\n    }\n  | { type: \"tool_call_start\"; turn: number; tool: string; input: Record<string, unknown> }\n  | {\n      type: \"tool_call_end\"\n      turn: number\n      tool: string\n      durationMs: number\n      ok: boolean\n      error?: string\n    }\n  | {\n      type: \"stream_delta\"\n      turn: number\n      tokensThisChunk: number\n      totalTokensSoFar: number\n    }\n\nexport type AgentProgressCallback = (event: AgentProgressEvent) => void\n\nexport interface AgentTool {\n  name: string\n  description: string\n  inputSchema: Record<string, unknown>\n  execute(input: Record<string, unknown>, ctx: AgentContext): Promise<string>\n}\n\nexport interface AgentContext {\n  pipelineCtx: PipelineContext\n  workDir: string\n  allowedCommands?: string[]\n  progress?: AgentProgressCallback\n}\n\nexport interface AgentDefinition {\n  role: string\n  systemPrompt: string\n  tools: AgentTool[]\n  maxTurns: number\n  temperature: number\n  maxTokens?: number\n}\n\nexport interface AgentResult {\n  response: string\n  data?: Record<string, unknown>\n  totalCostUsd: number\n  totalDurationMs: number\n  turns: number\n  toolCalls: { tool: string; input: Record<string, unknown>; output: string }[]\n}\n\nexport interface ExecutorOptions {\n  postCompletionHook?: (text: string) => Promise<string | null>\n  maxVerificationRetries?: number\n  /** When set, skip post-completion verification once `turns` reaches this value (0-based turn counter inside the executor). */\n  deferPostCompletionVerifyFromTurn?: number\n  /** Per-attempt cost ceiling in USD. Independent of `config.agent.max_cost_usd` aggregate cap. */\n  maxCostUsd?: number\n}",
+                  "signatures": ""
+                }
+              ],
+              "errorTypes": []
+            },
+            {
+              "id": "@bollard/blueprints",
+              "language": "typescript",
+              "rootPath": "/app/packages/blueprints",
+              "publicExports": [
+                {
+                  "filePath": "/app/packages/blueprints/src/implement-feature.ts",
+                  "imports": "import { execFile } from \"node:child_process\"\nimport { mkdir, readFile, writeFile } from \"node:fs/promises\"\nimport { basename, dirname, resolve } from \"node:path\"\nimport { promisify } from \"node:util\"\nimport type { LanguageId, ToolchainProfile } from \"@bollard/detect/src/types.js\"\nimport type { Blueprint, NodeResult } from \"@bollard/engine/src/blueprint.js\"\nimport type { PipelineContext } from \"@bollard/engine/src/context.js\"\nimport { BollardError } from \"@bollard/engine/src/errors.js\"\nimport type { LLMProvider } from \"@bollard/llm/src/types.js\"\nimport { extractProbes } from \"@bollard/observe/src/probe-extractor.js\"\nimport type { BehavioralContext } from \"@bollard/verify/src/behavioral-extractor.js\"\nimport { buildBehavioralContext } from \"@bollard/verify/src/behavioral-extractor.js\"\nimport { behavioralContextToCorpus } from \"@bollard/verify/src/behavioral-grounding.js\"\nimport { extractCodeMetrics } from \"@bollard/verify/src/code-metrics-runner.js\"\nimport { commandOnPath, runK6LoadTest } from \"@bollard/verify/src/code-metrics.js\"\nimport {\n  generateBehavioralCompose,\n  generateVerifyCompose,\n} from \"@bollard/verify/src/compose-generator.js\"\nimport { MAX_PRELOAD_FILES, expandAffectedFiles } from \"@bollard/verify/src/context-expansion.js\"\nimport type { ContractContext } from \"@bollard/verify/src/contract-extractor.js\"\nimport { buildContractContext } from \"@bollard/verify/src/contract-extractor.js\"\nimport {\n  type ClaimRecord,\n  type ContractCorpus,\n  type EnabledConcerns,\n  contractContextToCorpus,\n  parseClaimDocument,\n  verifyClaimGrounding,\n} from \"@bollard/verify/src/contract-grounding.js\"\nimport { runTests } from \"@bollard/verify/src/dynamic.js\"\nimport { runMutationTesting } from \"@bollard/verify/src/mutation.js\"\nimport {\n  buildReviewCorpus,\n  parseReviewDocument,\n  verifyReviewGrounding,\n} from \"@bollard/verify/src/review-grounding.js\"\nimport type { ReviewDocument, ReviewFinding } from \"@bollard/verify/src/review-grounding.js\"\nimport { runStaticChecks } from \"@bollard/verify/src/static.js\"\nimport { extractPrivateIdentifiers, getExtractor } from \"@bollard/verify/src/type-extractor.js\"\nimport { assembleTestFile } from \"./test-assembler.js\"\nimport {\n  inferSourceFileFromClaims,\n  normalizeJvmWrittenTestClassName,\n  sanitizeJavaPrimitiveInstanceofMisuse,\n  stripStringLiteralsAndComments,\n} from \"./write-tests-helpers.js\"",
+                  "types": "export interface BlueprintLlmConfig {\n  provider?: LLMProvider\n  model?: string\n}",
+                  "signatures": "export function scanDiffForExportChanges(diffText: string, language?: LanguageId): boolean { ... }\n\n/**\n * Derive a categorical risk level from the planner's risk assessment.\n *\n * The planner outputs numeric scores (blast_radius 0-4, others 0-3).\n * If a string `level` is present, use it directly.\n * Otherwise derive from numeric scores:\n *   - \"low\" if blast_radius ≤ 1 AND all others ≤ 1\n *   - \"high\" if blast_radius ≥ 3 OR any score ≥ 3\n *   - \"medium\" otherwise\n */\nexport function deriveRiskLevel(\n  ra:\n    | {\n        level?: unknown\n        blast_radius?: unknown\n        reversibility?: unknown\n        dollars_at_risk?: unknown\n        security_sensitivity?: unknown\n        novelty?: unknown\n      }\n    | undefined,\n): string { ... }\n\nexport function createImplementFeatureBlueprint(\n  workDir: string,\n  llmConfig?: BlueprintLlmConfig,\n): Blueprint { ... }"
+                }
+              ],
+              "errorTypes": []
+            },
+            {
+              "id": "@bollard/cli",
+              "language": "typescript",
+              "rootPath": "/app/packages/cli",
+              "publicExports": [
+                {
+                  "filePath": "/app/packages/cli/src/adversarial-yaml.ts",
+                  "imports": "import { defaultAdversarialConfig, resolveScopeConcerns } from \"@bollard/detect/src/concerns.js\"\nimport type { AdversarialScope, ToolchainProfile } from \"@bollard/detect/src/types.js\"",
+                  "types": "/** Parsed root `adversarial` block from .bollard.yml (snake_case fields). */\nexport interface RootAdversarialYaml {\n  concerns?: Partial<Record<\"correctness\" | \"security\" | \"performance\" | \"resilience\", string>>\n  boundary?: ScopeBlockYaml\n  contract?: ScopeBlockYaml\n  behavioral?: ScopeBlockYaml\n}\n\nexport interface ScopeBlockYaml {\n  enabled?: boolean\n  integration?: \"integrated\" | \"independent\"\n  lifecycle?: \"ephemeral\" | \"persistent\"\n  mode?: \"blackbox\" | \"in-language\" | \"both\"\n  runtime_image?: string\n  framework_capable?: boolean\n  concerns?: Partial<Record<\"correctness\" | \"security\" | \"performance\" | \"resilience\", string>>\n}",
+                  "signatures": "/** Merge root YAML adversarial config onto profile (spec §4 / §9 resolution). */\nexport function applyRootAdversarialYaml(\n  profile: ToolchainProfile,\n  yaml: RootAdversarialYaml,\n): void { ... }\n\n/** Fields in resolved adversarial that differ from defaultAdversarialConfig(language). */\nexport function diffAdversarialVsDefaults(profile: ToolchainProfile): Record<string, unknown> { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/agent-handler.ts",
+                  "imports": "import { execFile } from \"node:child_process\"\nimport { readFile, readdir } from \"node:fs/promises\"\nimport { resolve } from \"node:path\"\nimport { promisify } from \"node:util\"\nimport { createBehavioralTesterAgent } from \"@bollard/agents/src/behavioral-tester.js\"\nimport { createBoundaryTesterAgent } from \"@bollard/agents/src/boundary-tester.js\"\nimport { createCoderAgent } from \"@bollard/agents/src/coder.js\"\nimport { createContractTesterAgent } from \"@bollard/agents/src/contract-tester.js\"\nimport { executeAgent } from \"@bollard/agents/src/executor.js\"\nimport { createPlannerAgent } from \"@bollard/agents/src/planner.js\"\nimport { createSemanticReviewerAgent } from \"@bollard/agents/src/semantic-reviewer.js\"\nimport type { AgentContext, AgentResult, ExecutorOptions } from \"@bollard/agents/src/types.js\"\nimport type { ToolchainProfile } from \"@bollard/detect/src/types.js\"\nimport type { BlueprintNode, NodeResult } from \"@bollard/engine/src/blueprint.js\"\nimport type {\n  BollardConfig,\n  LocalModelsConfig,\n  PipelineContext,\n} from \"@bollard/engine/src/context.js\"\nimport { BollardError } from \"@bollard/engine/src/errors.js\"\nimport { LLMClient } from \"@bollard/llm/src/client.js\"\nimport type { BehavioralContext } from \"@bollard/verify/src/behavioral-extractor.js\"\nimport type { CodeMetrics } from \"@bollard/verify/src/code-metrics-runner.js\"\nimport {\n  MAX_PRELOAD_CHARS_PER_FILE,\n  MAX_PRELOAD_FILES,\n} from \"@bollard/verify/src/context-expansion.js\"\nimport type { ContractContext } from \"@bollard/verify/src/contract-extractor.js\"\nimport {\n  type PatcherResult,\n  buildPatcherFeedback,\n  collectVerificationChecks,\n  runDeterministicAutofix,\n  runLocalPatcher,\n  runVerificationChecks,\n} from \"@bollard/verify/src/feedback-patcher.js\"\nimport type {\n  ExtractedSignature,\n  ExtractedTypeDefinition,\n} from \"@bollard/verify/src/type-extractor.js\"\nimport { createAgentSpinner } from \"./spinner.js\"",
+                  "types": "export interface AgenticHandlerResult {\n  handler: (node: BlueprintNode, ctx: PipelineContext) => Promise<NodeResult>\n  llmConfig: { provider: import(\"@bollard/llm/src/types.js\").LLMProvider; model: string }\n}\n\nexport interface CreateAgenticHandlerOptions {\n  /** Per-turn token/cost lines on stderr (`grep ^BOLLARD_METRICS`). Also enable with `BOLLARD_METRICS=1`. */\n  metrics?: boolean\n}",
+                  "signatures": "export async function buildProjectTree(\n  workDir: string,\n  profile?: ToolchainProfile,\n): Promise<string> { ... }\n\nexport async function preloadAffectedFiles(ctx: PipelineContext, workDir: string): Promise<string> { ... }\n\nexport async function createAgenticHandler(\n  config: BollardConfig,\n  workDir: string,\n  profile?: ToolchainProfile,\n  options?: CreateAgenticHandlerOptions,\n): Promise<AgenticHandlerResult> { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/audit-protocol.ts",
+                  "imports": "import { randomUUID } from \"node:crypto\"\nimport { readFile, rm } from \"node:fs/promises\"\nimport { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { detectToolchain } from \"@bollard/detect/src/detect.js\"\nimport { generateIdeConfigs, writeGeneratedFiles } from \"./init-ide.js\"\nimport { BOLD, DIM, GREEN, RED, RESET } from \"./terminal-styles.js\"",
+                  "types": "export type ComplianceCheckId =\n  | \"why-section\"\n  | \"do-not-list\"\n  | \"self-check-section\"\n  | \"bollard-verify-reference\"\n  | \"no-raw-command-encouragement\"\n\nexport interface ComplianceCheckResult {\n  id: ComplianceCheckId\n  label: string\n  passed: boolean\n  evidence?: string\n}\n\nexport interface PlatformComplianceResult {\n  platform: \"cursor\" | \"claude-code\"\n  score: number\n  maxScore: number\n  passed: boolean\n  checks: ComplianceCheckResult[]\n  configPath: string\n}\n\nexport interface AuditProtocolResult {\n  allPassed: boolean\n  platforms: PlatformComplianceResult[]\n}",
+                  "signatures": "export function checkProtocolCompliance(\n  platform: \"cursor\" | \"claude-code\",\n  content: string,\n  configPath: string,\n): PlatformComplianceResult { ... }\n\nexport async function auditProtocol(workDir: string): Promise<AuditProtocolResult> { ... }\n\nexport function formatAuditResult(result: AuditProtocolResult): string { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/ci-passed.ts",
+                  "imports": "import { access } from \"node:fs/promises\"\nimport { homedir } from \"node:os\"\nimport { join, resolve } from \"node:path\"\nimport { detectCIEnvironment, readJUnitResults } from \"@bollard/verify/src/ci-environment.js\"",
+                  "types": "",
+                  "signatures": "export function parseCiPassed(args: string[]): string[] { ... }\n\nexport async function resolveSkipChecks(workDir: string, args: string[]): Promise<string[]> { ... }\n\nexport function formatSkippedChecksNotice(skipChecks: string[]): string { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/config.ts",
+                  "imports": "import { existsSync, readFileSync } from \"node:fs\"\nimport { join } from \"node:path\"\nimport { detectToolchain } from \"@bollard/detect/src/detect.js\"\nimport type {\n  MutationToolId,\n  ToolchainProfile,\n  VerificationCommand,\n} from \"@bollard/detect/src/types.js\"\nimport { DEFAULT_METRICS_CONFIG } from \"@bollard/detect/src/types.js\"\nimport type { BollardConfig, LocalModelsConfig } from \"@bollard/engine/src/context.js\"\nimport { BollardError } from \"@bollard/engine/src/errors.js\"\nimport { isBinaryAvailable } from \"@bollard/llm/src/providers/local.js\"\nimport type { ObserveProviderConfig } from \"@bollard/observe/src/providers/types.js\"\nimport { parse as parseYaml } from \"yaml\"\nimport { z } from \"zod\"\nimport { type RootAdversarialYaml, applyRootAdversarialYaml } from \"./adversarial-yaml.js\"",
+                  "types": "export type ConfigSource = \"default\" | \"auto-detected\" | \"env\" | \"file\" | \"cli\"\n\nexport interface AnnotatedValue<T> {\n  value: T\n  source: ConfigSource\n  detail?: string\n  warning?: string\n}\n\nexport interface ResolvedConfig {\n  config: BollardConfig\n  profile: ToolchainProfile\n  sources: Record<string, AnnotatedValue<unknown>>\n  observe?: ObserveProviderConfig\n}\n\nexport interface ResolveConfigOptions {\n  /** When false, static-only commands (verify, watch) may run without LLM API keys. Default true. */\n  requireApiKey?: boolean\n}",
+                  "signatures": "export async function resolveConfig(\n  cliFlags?: Partial<BollardConfig>,\n  cwd: string = process.cwd(),\n  options?: ResolveConfigOptions,\n): Promise<ResolvedConfig> { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/contract-plan.ts",
+                  "imports": "",
+                  "types": "",
+                  "signatures": "/** Paths from planner JSON `affected_files` (modify + create, or a flat path list). */\nexport function collectAffectedPathsFromPlan(plan: unknown): string[] { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/cost-baseline.ts",
+                  "imports": "import { join } from \"node:path\"\nimport {\n  type CostBaseline,\n  compareToBaseline,\n  readBaseline,\n  writeBaseline,\n} from \"@bollard/engine/src/cost-baseline.js\"\nimport type { RunRecord } from \"@bollard/engine/src/run-history.js\"\nimport { FileRunHistoryStore } from \"@bollard/engine/src/run-history.js\"\nimport { BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW } from \"./terminal-styles.js\"",
+                  "types": "",
+                  "signatures": "export async function runCostBaselineCommand(rest: string[], workDir: string): Promise<void> { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/diff.ts",
+                  "imports": "import type { ToolchainProfile, VerificationCommand } from \"@bollard/detect/src/types.js\"\nimport { diffAdversarialVsDefaults } from \"./adversarial-yaml.js\"",
+                  "types": "export interface CheckDiff {\n  name: string\n  status: \"unchanged\" | \"differ\" | \"new\" | \"removed\"\n  hardcoded?: VerificationCommand\n  detected?: VerificationCommand\n}\n\nexport interface PatternDiff {\n  type: \"sourcePatterns\" | \"testPatterns\" | \"allowedCommands\"\n  unchanged: string[]\n  added: string[]\n  removed: string[]\n}\n\nexport interface DiffResult {\n  checks: CheckDiff[]\n  patterns: PatternDiff[]\n  /** Adversarial scopes/fields that differ from defaultAdversarialConfig(detected language). */\n  adversarial: Record<string, unknown>\n  summary: {\n    unchanged: number\n    differ: number\n    new: number\n    removed: number\n  }\n}",
+                  "signatures": "export function diffToolchainProfile(profile: ToolchainProfile): DiffResult { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/doctor.ts",
+                  "imports": "import { execFile } from \"node:child_process\"\nimport { existsSync } from \"node:fs\"\nimport { readFile } from \"node:fs/promises\"\nimport { join } from \"node:path\"\nimport { promisify } from \"node:util\"\nimport { detectToolchain } from \"@bollard/detect/src/detect.js\"\nimport type { ToolchainProfile } from \"@bollard/detect/src/types.js\"\nimport { FileRunHistoryStore } from \"@bollard/engine/src/run-history.js\"\nimport type { RunRecord } from \"@bollard/engine/src/run-history.js\"\nimport { parseHistoryLine } from \"@bollard/engine/src/run-history.js\"\nimport { BOLD, DIM, GREEN, RED, RESET, YELLOW } from \"./terminal-styles.js\"",
+                  "types": "export type DoctorCheckStatus = \"pass\" | \"fail\"\n\nexport type DoctorCheckId = \"docker\" | \"llm-key\" | \"toolchain\"\n\nexport interface DoctorCheck {\n  id: DoctorCheckId\n  label: string\n  status: DoctorCheckStatus\n  detail: string\n}\n\nexport type DoctorConfigNote = \"custom config\" | \"using defaults\"\n\nexport interface PromotedManifestHealth {\n  manifestExists: boolean\n  promotedCount: number\n  lastPromotedAt?: number\n}\n\nexport interface HistoryHealth {\n  jsonlExists: boolean\n  jsonlRecordCount: number\n  dbExists: boolean\n  dbCurrent: boolean\n  dbRecordCount: number\n  lastRebuildIso?: string\n  lastRun?: { runId: string; status: string; timestamp: number; costUsd: number }\n  costTrend?: \"increasing\" | \"stable\" | \"decreasing\"\n  recentFailingNodes: string[]\n  mutationScoreRange?: { min: number; max: number }\n  promotedManifestHealth?: PromotedManifestHealth\n}\n\nexport interface DoctorReport {\n  allPassed: boolean\n  checks: DoctorCheck[]\n  configNote: DoctorConfigNote\n  historyHealth?: HistoryHealth\n}",
+                  "signatures": "export async function checkHistoryHealth(workDir: string): Promise<HistoryHealth> { ... }\n\nexport async function runDoctor(\n  workDir: string,\n  env: NodeJS.ProcessEnv = process.env,\n  options?: { history?: boolean },\n): Promise<DoctorReport> { ... }\n\nexport function formatDoctorReport(report: DoctorReport): string { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/eval-baseline.ts",
+                  "imports": "import { join } from \"node:path\"\nimport {\n  type AgentEvalScore,\n  type EvalBaseline,\n  compareToEvalBaseline,\n  readEvalBaseline,\n  writeEvalBaseline,\n} from \"@bollard/engine/src/eval-baseline.js\"\nimport { runEvals } from \"@bollard/engine/src/eval-runner.js\"\nimport { LLMClient } from \"@bollard/llm/src/client.js\"\nimport { resolveConfig } from \"./config.js\"\nimport { BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW } from \"./terminal-styles.js\"",
+                  "types": "",
+                  "signatures": "export async function runEvalBaselineCommand(rest: string[], workDir: string): Promise<void> { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/generators/antigravity.ts",
+                  "imports": "import type { ToolchainProfile } from \"@bollard/detect/src/types.js\"\nimport type { GeneratedFile, IdeGeneratorResult } from \"../init-ide.js\"",
+                  "types": "",
+                  "signatures": "export async function generateAntigravityConfig(\n  _cwd: string,\n  _profile: ToolchainProfile,\n): Promise<IdeGeneratorResult> { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/generators/claude-code.ts",
+                  "imports": "import { existsSync, readFileSync } from \"node:fs\"\nimport { join } from \"node:path\"\nimport type { ToolchainProfile } from \"@bollard/detect/src/types.js\"\nimport type { GeneratedFile, IdeGeneratorResult } from \"../init-ide.js\"",
+                  "types": "",
+                  "signatures": "export async function generateClaudeCodeConfig(\n  cwd: string,\n  _profile: ToolchainProfile,\n): Promise<IdeGeneratorResult> { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/generators/codex.ts",
+                  "imports": "import type { ToolchainProfile } from \"@bollard/detect/src/types.js\"\nimport type { IdeGeneratorResult } from \"../init-ide.js\"",
+                  "types": "",
+                  "signatures": "export async function generateCodexConfig(\n  _cwd: string,\n  _profile: ToolchainProfile,\n): Promise<IdeGeneratorResult> { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/generators/cursor.ts",
+                  "imports": "import type { ToolchainProfile } from \"@bollard/detect/src/types.js\"\nimport type { GeneratedFile, IdeGeneratorResult } from \"../init-ide.js\"\nimport { renderTemplate } from \"../template-renderer.js\"",
+                  "types": "",
+                  "signatures": "export async function generateCursorConfig(\n  _cwd: string,\n  profile: ToolchainProfile,\n): Promise<IdeGeneratorResult> { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/git-utils.ts",
+                  "imports": "import { execFile } from \"node:child_process\"\nimport { promisify } from \"node:util\"",
+                  "types": "",
+                  "signatures": "export async function getHeadSha(workDir: string): Promise<string | undefined> { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/history-record.ts",
+                  "imports": "import { randomUUID } from \"node:crypto\"\nimport { readFile } from \"node:fs/promises\"\nimport { resolve } from \"node:path\"\nimport type { ToolchainProfile } from \"@bollard/detect/src/types.js\"\nimport type { Blueprint } from \"@bollard/engine/src/blueprint.js\"\nimport type { PipelineContext } from \"@bollard/engine/src/context.js\"\nimport {\n  type NodeSummary,\n  RUN_HISTORY_SCHEMA_VERSION,\n  type RunRecord,\n  type ScopeResult,\n  type VerifyRecord,\n  type VerifyRecordSource,\n} from \"@bollard/engine/src/run-history.js\"\nimport type { RunResult } from \"@bollard/engine/src/runner.js\"\nimport { extractFingerprint } from \"@bollard/engine/src/test-fingerprint.js\"\nimport type { StaticCheckResult } from \"@bollard/verify/src/static.js\"",
+                  "types": "",
+                  "signatures": "export function extractTestCount(nodeResults: RunResult[\"nodeResults\"]): {\n  passed: number\n  skipped: number\n  failed: number\n} { ... }\n\nexport function extractScopeResults(\n  ctx: PipelineContext,\n  nodeResults: RunResult[\"nodeResults\"],\n): ScopeResult[] { ... }\n\nexport function extractNodeSummaries(\n  blueprint: Blueprint,\n  nodeResults: RunResult[\"nodeResults\"],\n): NodeSummary[] { ... }\n\nexport function buildRunRecord(\n  ctx: PipelineContext,\n  result: RunResult,\n  blueprint: Blueprint,\n  gitSha: string | undefined,\n): RunRecord { ... }\n\nexport async function enrichScopeFingerprints(record: RunRecord, workDir: string): Promise<void> { ... }\n\nexport function buildVerifyRecord(input: {\n  workDir: string\n  profile: ToolchainProfile\n  results: StaticCheckResult[]\n  allPassed: boolean\n  startedAt: number\n  source?: VerifyRecordSource\n  gitSha?: string\n}): VerifyRecord { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/history.ts",
+                  "imports": "import type { HistoryFilter, HistoryRecord, RunRecord } from \"@bollard/engine/src/run-history.js\"\nimport { FileRunHistoryStore } from \"@bollard/engine/src/run-history.js\"\nimport { BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW } from \"./terminal-styles.js\"",
+                  "types": "",
+                  "signatures": "export async function runHistoryCommand(rest: string[], workDir: string): Promise<void> { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/human-gate.ts",
+                  "imports": "import { createInterface } from \"node:readline\"\nimport type { BlueprintNode, NodeResult } from \"@bollard/engine/src/blueprint.js\"\nimport type { PipelineContext } from \"@bollard/engine/src/context.js\"\nimport type { ReviewFinding } from \"@bollard/verify/src/review-grounding.js\"\nimport { detectPromotionCandidates, formatPromotionCandidateLabel } from \"./promotion-candidates.js\"\nimport { findWorkspaceRoot } from \"./workspace-root.js\"",
+                  "types": "",
+                  "signatures": "export async function humanGateHandler(\n  node: BlueprintNode,\n  ctx: PipelineContext,\n): Promise<NodeResult> { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/ide-detect.ts",
+                  "imports": "import { existsSync } from \"node:fs\"\nimport { join } from \"node:path\"\nimport { BollardError } from \"@bollard/engine/src/errors.js\"",
+                  "types": "export type IdePlatform = \"cursor\" | \"claude-code\" | \"codex\" | \"antigravity\"",
+                  "signatures": "export const ALL_IDE_PLATFORMS: readonly IdePlatform[]\n\n/** Detect which IDE platform config directories already exist at the given root. */\nexport function detectIdeEnvironment(cwd: string): IdePlatform[] { ... }\n\n/** Parse --ide flag value into a list of platforms. */\nexport function parseIdePlatform(value: string): IdePlatform[] { ... }"
+                },
+                {
+                  "filePath": "/app/packages/cli/src/index.ts",
+                  "imports": "import { readFile } from \"node:fs/promises\"\nimport { join, resolve } from \"node:path\"\nimport type { AgentResult } from \"@bollard/agents/src/types.js\"\nimport { createImplementFeatureBlueprint } from \"@bollard/blueprints/src/implement-feature.js\"\nimport type { Blueprint, BlueprintNode, NodeResult } from \"@bollard/engine/src/blueprint.js\"\nimport type { PipelineContext } from \"@bollard/engine/src/context.js\"\nimport { BollardError } from \"@bollard/engine/src/errors.js\"\nimport { FileRunHistoryStore } from \"@bollard/engine/src/run-history.js\"\nimport type { ProgressEvent, RunBlueprintCompleteCallback } from \"@bollard/engine/src/runner.js\"\nimport { runBlueprint } from \"@bollard/engine/src/runner.js\"\nimport { LLMClient } from \"@bollard/llm/src/client.js\"\nimport { runStaticChecks } from \"@bollard/verify/src/static.js\"\nimport { buildProjectTree, createAgenticHandler } from \"./agent-handler.js\"\nimport { auditProtocol, formatAuditResult } from \"./audit-protocol.js\"\nimport { formatSkippedChecksNotice, resolveSkipChecks 
