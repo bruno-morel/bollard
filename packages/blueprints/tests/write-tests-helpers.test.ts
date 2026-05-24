@@ -1,11 +1,14 @@
 import { join } from "node:path"
 import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
+import type { PipelineContext } from "@bollard/engine/src/context.js"
 import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
+import type { ClaimRecord } from "@bollard/verify/src/contract-grounding.js"
 import { describe, expect, it } from "vitest"
 import {
   dedupeImportLines,
   deriveAdversarialTestPath,
+  inferSourceFileFromClaims,
   jvmContractCoerceVitestItToJUnit5,
   normalizeJvmWrittenTestClassName,
   resolveContractTestModulePrefix,
@@ -17,13 +20,88 @@ import {
 const makeProfile = (language: string): ToolchainProfile => ({
   language: language as ToolchainProfile["language"],
   checks: {},
-  sourcePatterns: [],
-  testPatterns: [],
+  sourcePatterns: language === "typescript" ? ["**/*.ts"] : [],
+  testPatterns: language === "typescript" ? ["**/*.test.ts"] : [],
   ignorePatterns: [],
   allowedCommands: [],
   adversarial: defaultAdversarialConfig({
     language: language as ToolchainProfile["language"],
   }),
+})
+
+const sampleClaim = (id: string): ClaimRecord => ({
+  id,
+  concern: "correctness",
+  claim: "multiply works",
+  grounding: [{ quote: "multiply", source: "task" }],
+  test: "it('works', () => {})",
+})
+
+function makeInferCtx(input: {
+  plan?: unknown
+  results?: PipelineContext["results"]
+  profile?: ToolchainProfile
+}): PipelineContext {
+  return {
+    plan: input.plan,
+    results: input.results ?? {},
+    toolchainProfile: input.profile ?? makeProfile("typescript"),
+  } as PipelineContext
+}
+
+describe("inferSourceFileFromClaims", () => {
+  it("returns undefined for empty claims", async () => {
+    const ctx = makeInferCtx({})
+    expect(await inferSourceFileFromClaims(ctx, "/tmp", [])).toBeUndefined()
+  })
+
+  it("returns undefined for unrecognized claim ID with no plan steps", async () => {
+    const ctx = makeInferCtx({ plan: { steps: [] } })
+    expect(await inferSourceFileFromClaims(ctx, "/tmp", [sampleClaim("foo-bar")])).toBeUndefined()
+  })
+
+  it("matches module name from bnd-CostTracker claim ID via plan steps", async () => {
+    const ctx = makeInferCtx({
+      plan: {
+        steps: [{ files: ["packages/engine/src/cost-tracker.ts"] }],
+      },
+    })
+    expect(
+      await inferSourceFileFromClaims(ctx, "/tmp", [sampleClaim("bnd-CostTracker-multiply-001")]),
+    ).toBe("packages/engine/src/cost-tracker.ts")
+  })
+
+  it("uses first plan step source file for short bnd1 claim IDs", async () => {
+    const ctx = makeInferCtx({
+      plan: {
+        steps: [
+          {
+            files: [
+              "packages/engine/src/cost-tracker.ts",
+              "packages/engine/tests/cost-tracker.test.ts",
+            ],
+          },
+        ],
+      },
+    })
+    expect(await inferSourceFileFromClaims(ctx, "/tmp", [sampleClaim("bnd1")])).toBe(
+      "packages/engine/src/cost-tracker.ts",
+    )
+  })
+
+  it("falls back to expand-affected-files when plan steps have no match", async () => {
+    const ctx = makeInferCtx({
+      plan: { steps: [{ files: ["other.ts"] }] },
+      results: {
+        "expand-affected-files": {
+          data: { expanded: { files: ["packages/engine/src/cost-tracker.ts"] } },
+        },
+      },
+    })
+    expect(
+      await inferSourceFileFromClaims(ctx, "/tmp", [sampleClaim("bnd-CostTracker-multiply-001")]),
+    ).toBe("packages/engine/src/cost-tracker.ts")
+  })
 })
 
 describe("deriveAdversarialTestPath", () => {

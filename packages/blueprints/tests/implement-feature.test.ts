@@ -205,6 +205,92 @@ describe("createImplementFeatureBlueprint", () => {
   })
 })
 
+function makeWriteTestsCtx(workDir: string): PipelineContext {
+  const scopeConfig = (enabled: boolean) => ({
+    enabled,
+    integration: "independent" as const,
+    lifecycle: "ephemeral" as const,
+    concerns: {
+      correctness: "high" as const,
+      security: "medium" as const,
+      performance: "low" as const,
+      resilience: "off" as const,
+    },
+  })
+  const profile: ToolchainProfile = {
+    language: "typescript",
+    packageManager: "pnpm",
+    checks: {},
+    sourcePatterns: ["**/*.ts"],
+    testPatterns: ["**/*.test.ts"],
+    ignorePatterns: [],
+    allowedCommands: ["pnpm"],
+    adversarial: {
+      boundary: scopeConfig(true),
+      contract: scopeConfig(false),
+      behavioral: scopeConfig(false),
+    },
+  }
+  return {
+    runId: "run-verify-only",
+    task: "verify multiply",
+    blueprintId: "implement-feature",
+    config: {
+      llm: { default: { provider: "mock", model: "m" } },
+      agent: { max_cost_usd: 10, max_duration_minutes: 30 },
+    },
+    currentNode: "write-tests",
+    results: {},
+    changedFiles: [],
+    toolchainProfile: profile,
+    costTracker: new CostTracker(10),
+    startedAt: Date.now(),
+    log: {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    },
+    upgradeRunId: vi.fn(),
+    plan: {
+      affected_files: { modify: [], create: [], delete: [] },
+      steps: [{ files: ["packages/engine/src/cost-tracker.ts"] }],
+    },
+  }
+}
+
+describe("write-tests verification-only fallback", () => {
+  it("skips gracefully when grounded claims exist but source file cannot be inferred", async () => {
+    const bp = createImplementFeatureBlueprint("/tmp/w")
+    const node = bp.nodes.find((n) => n.id === "write-tests")
+    const execute = node?.execute
+    if (!execute) throw new Error("missing execute")
+
+    const ctx = makeWriteTestsCtx("/tmp/w")
+    ctx.plan = {
+      affected_files: { modify: [], create: [], delete: [] },
+      steps: [],
+    }
+    ctx.results["verify-boundary-grounding"] = {
+      data: {
+        claims: [
+          {
+            id: "unknown-format",
+            concern: "correctness",
+            claim: "test",
+            grounding: [{ quote: "x", source: "task" }],
+            test: "it('x', () => {})",
+          },
+        ],
+      },
+    }
+
+    const result = await execute(ctx)
+    expect(result.status).toBe("ok")
+    expect((result.data as { skipped?: boolean }).skipped).toBe(true)
+  })
+})
+
 function makeCtx(): PipelineContext {
   const scopeConfig = (enabled: boolean) => ({
     enabled,

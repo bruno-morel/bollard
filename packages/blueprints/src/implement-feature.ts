@@ -40,6 +40,7 @@ import { runStaticChecks } from "@bollard/verify/src/static.js"
 import { extractPrivateIdentifiers, getExtractor } from "@bollard/verify/src/type-extractor.js"
 import { assembleTestFile } from "./test-assembler.js"
 import {
+  inferSourceFileFromClaims,
   normalizeJvmWrittenTestClassName,
   sanitizeJavaPrimitiveInstanceofMisuse,
   stripStringLiteralsAndComments,
@@ -575,19 +576,40 @@ export function createImplementFeatureBlueprint(
             }
           }
 
-          const files = getAffectedSourceFiles(ctx)
+          let files = getAffectedSourceFiles(ctx)
+          const claims = verifyRes.claims
+          if (files.length === 0) {
+            const inferred = await inferSourceFileFromClaims(ctx, workDir, claims)
+            if (inferred) {
+              ctx.log.info(
+                "write-tests: inferred source file from claims (verification-only run)",
+                {
+                  inferredFile: inferred,
+                  firstClaimId: claims[0]?.id,
+                },
+              )
+              files = [inferred]
+            } else {
+              return {
+                status: "ok",
+                data: {
+                  skipped: true,
+                  reason: "No affected files — could not infer source file from claim IDs",
+                },
+              }
+            }
+          }
           const firstFile = files[0]
           if (!firstFile) {
             return {
-              status: "fail",
-              error: {
-                code: "NODE_EXECUTION_FAILED",
-                message: "No affected files to generate tests for",
+              status: "ok",
+              data: {
+                skipped: true,
+                reason: "No affected files — could not infer source file from claim IDs",
               },
             }
           }
 
-          const claims = verifyRes.claims
           const assembled = assembleTestFile({
             claims,
             profile,

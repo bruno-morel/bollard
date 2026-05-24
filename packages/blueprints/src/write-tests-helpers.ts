@@ -1,6 +1,118 @@
+import { glob } from "node:fs/promises"
 import { basename, dirname, extname, join } from "node:path"
 import type { AdversarialScope, LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
+import type { PipelineContext } from "@bollard/engine/src/context.js"
 import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
+import type { ClaimRecord } from "@bollard/verify/src/contract-grounding.js"
+
+function filterSourceFilePaths(files: string[], profile?: ToolchainProfile): string[] {
+  if (profile) {
+    const srcExts = profile.sourcePatterns
+      .filter((p) => p.startsWith("**/*."))
+      .map((p) => p.replace("**/*", ""))
+    const testExts = profile.testPatterns
+      .filter((p) => p.startsWith("**/*."))
+      .map((p) => p.replace("**/*", ""))
+
+    return files.filter((f) => {
+      if (testExts.some((ext) => f.endsWith(ext))) return false
+      if (f.includes(".test.") || f.includes(".spec.") || f.includes("test_")) return false
+      return srcExts.length === 0 || srcExts.some((ext) => f.endsWith(ext))
+    })
+  }
+
+  return files.filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
+}
+
+function moduleNameToKebab(moduleName: string): string {
+  return moduleName.replace(/([A-Z])/g, (_m, _p1, offset) =>
+    offset > 0 ? `-${_m.toLowerCase()}` : _m.toLowerCase(),
+  )
+}
+
+function fileBaseMatchesModule(file: string, moduleName: string): boolean {
+  const base = basename(file, extname(file)).toLowerCase()
+  const moduleLower = moduleName.toLowerCase()
+  if (base === moduleLower) return true
+  return base === moduleNameToKebab(moduleName).toLowerCase()
+}
+
+/**
+ * Fallback for verification-only runs where affected_files.modify is empty.
+ * Extracts the module name from boundary claim IDs (format: "bnd-<ModuleName>-<method>-NNN"
+ * or short "bnd1" when module name is absent) and searches plan steps, expanded files,
+ * then workspace source patterns.
+ *
+ * Returns the relative path to the inferred source file, or undefined if none found.
+ */
+export async function inferSourceFileFromClaims(
+  ctx: PipelineContext,
+  workDir: string,
+  claims: ClaimRecord[],
+): Promise<string | undefined> {
+  if (claims.length === 0) return undefined
+
+  const profile = ctx.toolchainProfile
+  const plan = ctx.plan as { steps?: Array<{ files?: string[] }> } | undefined
+  const stepFiles = (plan?.steps ?? []).flatMap((s) => s.files ?? [])
+
+  const firstClaim = claims[0]
+  if (!firstClaim) return undefined
+  const firstId = firstClaim.id
+  const match = /^bnd-([A-Za-z][A-Za-z0-9_]*)/.exec(firstId)
+  const moduleName = match?.[1]
+
+  if (moduleName) {
+    const stepMatch = stepFiles.find((f) => fileBaseMatchesModule(f, moduleName))
+    if (stepMatch) return stepMatch
+  } else {
+    const stepSource = filterSourceFilePaths(stepFiles, profile)[0]
+    if (stepSource) return stepSource
+  }
+
+  const expanded = ctx.results["expand-affected-files"]?.data as
+    | { expanded?: { files?: string[] } }
+    | undefined
+  const expandedFiles = expanded?.expanded?.files ?? []
+  if (moduleName) {
+    const expandedMatch = expandedFiles.find((f) => fileBaseMatchesModule(f, moduleName))
+    if (expandedMatch) return expandedMatch
+  } else {
+    const expandedSource = filterSourceFilePaths(expandedFiles, profile)[0]
+    if (expandedSource) return expandedSource
+  }
+
+  if (!moduleName) return undefined
+
+  const srcExts = profile
+    ? profile.sourcePatterns.filter((p) => p.startsWith("**/*.")).map((p) => p.replace("**/*", ""))
+    : [".ts"]
+
+  const kebab = moduleNameToKebab(moduleName)
+  const candidates = [moduleName.toLowerCase(), kebab]
+
+  for (const ext of srcExts) {
+    for (const candidate of candidates) {
+      try {
+        for await (const entry of glob(`**/${candidate}${ext}`, { cwd: workDir })) {
+          if (
+            entry.includes("node_modules/") ||
+            entry.includes(".bollard/") ||
+            entry.includes("/dist/") ||
+            entry.includes("/build/")
+          ) {
+            continue
+          }
+          return entry
+        }
+      } catch {
+        // glob unavailable — skip
+      }
+    }
+  }
+
+  return undefined
+}
 
 function deriveTypescriptTestPath(sourceFile: string): string {
   const ext = extname(sourceFile)
