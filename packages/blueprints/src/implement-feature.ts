@@ -1477,6 +1477,23 @@ export function createImplementFeatureBlueprint(
             affectedFileCount: affectedFiles.length,
           })
 
+          if (result.totalMutants === 0) {
+            ctx.log.warn("mutation_testing_result", {
+              event: "mutation_testing_result",
+              runId: ctx.runId,
+              warning: "stryker_no_mutants",
+              message:
+                "Stryker ran but found 0 mutants — vitest runner may have failed to locate test files inside Docker. Treating as skip.",
+              duration_ms: result.duration_ms,
+              scopedToFiles: affectedFiles.length > 0,
+              affectedFileCount: affectedFiles.length,
+            })
+            return {
+              status: "ok",
+              data: { ...result, skipped: true, reason: "stryker_no_mutants" },
+            }
+          }
+
           const threshold = profile.mutation.threshold
           if (result.totalMutants > 0 && result.score < threshold) {
             return {

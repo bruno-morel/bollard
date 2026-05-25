@@ -471,7 +471,8 @@ export class StrykerProvider implements MutationTestingProvider {
     }
 
     try {
-      await execFileAsync("pnpm", ["exec", "stryker", "run"], {
+      const strykerBin = join(workDir, "node_modules", ".bin", "stryker")
+      await execFileAsync(strykerBin, ["run"], {
         cwd: workDir,
         maxBuffer: 10 * 1024 * 1024,
         timeout: profile.mutation?.timeoutMs ?? 300_000,
@@ -500,6 +501,16 @@ export class StrykerProvider implements MutationTestingProvider {
       ...(reportPath ? { reportPath } : {}),
     }
   }
+}
+
+/**
+ * Verify that Stryker is callable in this environment (binary exists after pnpm install).
+ * A binary existence check is sufficient for now — the 0-mutant guard in the blueprint
+ * node handles the "binary runs but produces nothing" case.
+ */
+export async function strykerSmokeTest(workDir: string): Promise<boolean> {
+  const strykerBin = join(workDir, "node_modules", ".bin", "stryker")
+  return existsSync(strykerBin)
 }
 
 /** Map source paths to FQCNs for PIT `-DtargetClasses`. */

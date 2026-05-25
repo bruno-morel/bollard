@@ -197,6 +197,21 @@ describe("parseStrykerReport", () => {
   })
 })
 
+describe("StrykerProvider — 0-mutant detection", () => {
+  it("parseStrykerReport returns totalMutants: 0 when files is empty object", () => {
+    const report = JSON.stringify({ schemaVersion: "1.0", files: {} })
+    const result = parseStrykerReport(report)
+    expect(result.totalMutants).toBe(0)
+    expect(result.score).toBe(0)
+  })
+
+  it("parseStrykerReport returns totalMutants: 0 when files is missing", () => {
+    const report = JSON.stringify({ schemaVersion: "1.0" })
+    const result = parseStrykerReport(report)
+    expect(result.totalMutants).toBe(0)
+  })
+})
+
 describe("StrykerProvider.run config generation", () => {
   it("generates config with mutate derived from profile sourcePatterns", async () => {
     mockWriteFile.mockResolvedValue(undefined)
@@ -309,7 +324,7 @@ describe("runMutationTesting", () => {
 
   it("returns zero result when Stryker binary fails", async () => {
     mockWriteFile.mockResolvedValue(undefined)
-    const enoent = new Error("spawn pnpm ENOENT") as NodeJS.ErrnoException
+    const enoent = new Error("spawn stryker ENOENT") as NodeJS.ErrnoException
     enoent.code = "ENOENT"
     mockExecFileAsync.mockRejectedValue(enoent)
 
