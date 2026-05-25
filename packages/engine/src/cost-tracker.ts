@@ -57,6 +57,7 @@ export class CostTracker {
     return this._total
   }
 
+  /** Returns `true` if the accumulated total exceeds the limit; always a `boolean`. */
   exceeded(): boolean {
     return this._total > this._limit
   }
@@ -65,6 +66,7 @@ export class CostTracker {
     return this._total
   }
 
+  /** Returns the budget remaining (limit minus total). Always ≥ 0; never negative. */
   remaining(): number {
     return Math.max(0, this._limit - this._total)
   }
