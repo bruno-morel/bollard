@@ -1158,6 +1158,86 @@ describe("CostTracker", () => {
     })
   })
 
+  describe("limitUsd()", () => {
+    it("returns the limit passed to constructor", () => {
+      const tracker = new CostTracker(10.5)
+      expect(tracker.limitUsd()).toBe(10.5)
+    })
+
+    it("returns same value on repeated calls (idempotent)", () => {
+      const tracker = new CostTracker(25.75)
+      expect(tracker.limitUsd()).toBe(25.75)
+      expect(tracker.limitUsd()).toBe(25.75)
+      expect(tracker.limitUsd()).toBe(25.75)
+    })
+
+    it("works with zero limit", () => {
+      const tracker = new CostTracker(0)
+      expect(tracker.limitUsd()).toBe(0)
+    })
+
+    it("works with fractional limits", () => {
+      const tracker = new CostTracker(0.001)
+      expect(tracker.limitUsd()).toBe(0.001)
+    })
+
+    it("does not affect total(), remaining(), exceeded(), or other state-reading methods", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(3)
+
+      const initialTotal = tracker.total()
+      const initialRemaining = tracker.remaining()
+      const initialExceeded = tracker.exceeded()
+      const initialPeek = tracker.peek()
+
+      tracker.limitUsd()
+      tracker.limitUsd()
+      tracker.limitUsd()
+
+      expect(tracker.total()).toBe(initialTotal)
+      expect(tracker.remaining()).toBe(initialRemaining)
+      expect(tracker.exceeded()).toBe(initialExceeded)
+      expect(tracker.peek()).toBe(initialPeek)
+    })
+
+    it("returns exact value passed to constructor, not derived value", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(30)
+
+      expect(tracker.limitUsd()).toBe(100)
+      expect(tracker.total()).toBe(30)
+      expect(tracker.remaining()).toBe(70)
+    })
+
+    it("returns non-negative finite number as enforced by constructor", () => {
+      const tracker = new CostTracker(42.5)
+      const limit = tracker.limitUsd()
+
+      expect(Number.isFinite(limit)).toBe(true)
+      expect(limit).toBeGreaterThanOrEqual(0)
+    })
+
+    it("works correctly after state modifications", () => {
+      const tracker = new CostTracker(50)
+
+      tracker.add(10)
+      tracker.subtract(5)
+      tracker.clamp(0, 100)
+      tracker.multiply(2)
+      tracker.divide(2)
+
+      expect(tracker.limitUsd()).toBe(50)
+    })
+
+    it("works correctly after reset", () => {
+      const tracker = new CostTracker(75)
+      tracker.add(25)
+      tracker.reset()
+
+      expect(tracker.limitUsd()).toBe(75)
+    })
+  })
+
   describe("property-based tests", () => {
     it("remaining() is always non-negative", () => {
       fc.assert(

@@ -49,6 +49,10 @@ export class CostTracker {
     this._total -= usd
   }
 
+  limitUsd(): number {
+    return this._limit
+  }
+
   total(): number {
     return this._total
   }
