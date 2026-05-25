@@ -79,6 +79,39 @@ export class CostTracker {
   runCount(): number {
     return this._runCount
   }
+  clamp(min: number, max: number): CostTracker {
+    if (!Number.isFinite(min) || min < 0) {
+      throw new BollardError({
+        code: "CONTRACT_VIOLATION",
+        message: `min must be a non-negative finite number, got: ${min}`,
+        context: { min },
+      })
+    }
+
+    if (!Number.isFinite(max) || max < 0) {
+      throw new BollardError({
+        code: "CONTRACT_VIOLATION",
+        message: `max must be a non-negative finite number, got: ${max}`,
+        context: { max },
+      })
+    }
+
+    if (min > max) {
+      throw new BollardError({
+        code: "CONTRACT_VIOLATION",
+        message: `min must be less than or equal to max, got min: ${min}, max: ${max}`,
+        context: { min, max },
+      })
+    }
+
+    if (this._total < min) {
+      this._total = min
+    } else if (this._total > max) {
+      this._total = max
+    }
+
+    return this
+  }
 
   divide(divisor: number): CostTracker {
     if (!Number.isFinite(divisor) || divisor <= 0) {

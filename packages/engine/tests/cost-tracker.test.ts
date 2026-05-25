@@ -1137,4 +1137,178 @@ describe("CostTracker", () => {
       expect(tracker.snapshotTotal()).toBe(tracker.total())
     })
   })
+  describe("clamp()", () => {
+    it("clamps total below min to min value", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(2)
+      tracker.clamp(5, 10)
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("clamps total above max to max value", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(15)
+      tracker.clamp(5, 10)
+      expect(tracker.total()).toBe(10)
+    })
+
+    it("leaves total unchanged when within range", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(7)
+      tracker.clamp(5, 10)
+      expect(tracker.total()).toBe(7)
+    })
+
+    it("returns this for method chaining", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(3)
+      const result = tracker.clamp(5, 10)
+      expect(result).toBe(tracker)
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("works with method chaining", () => {
+      const tracker = new CostTracker(100)
+      const result = tracker.add(15).clamp(5, 10).total()
+      expect(result).toBe(10)
+    })
+
+    it("handles edge case where min equals max", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(7)
+      tracker.clamp(5, 5)
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("handles zero values correctly", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(0)
+      tracker.clamp(0, 10)
+      expect(tracker.total()).toBe(0)
+    })
+
+    it("clamps to zero when total is below zero min", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+      tracker.subtract(3) // total is now 2
+      tracker.clamp(0, 10)
+      expect(tracker.total()).toBe(2)
+    })
+
+    it("throws CONTRACT_VIOLATION for negative min", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+
+      expect(() => tracker.clamp(-1, 10)).toThrow(BollardError)
+      try {
+        tracker.clamp(-1, 10)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty("message", "min must be a non-negative finite number, got: -1")
+        expect(err).toHaveProperty("context", { min: -1 })
+      }
+      // Verify total unchanged after error
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("throws CONTRACT_VIOLATION for negative max", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+
+      expect(() => tracker.clamp(0, -5)).toThrow(BollardError)
+      try {
+        tracker.clamp(0, -5)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty("message", "max must be a non-negative finite number, got: -5")
+        expect(err).toHaveProperty("context", { max: -5 })
+      }
+      // Verify total unchanged after error
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("throws CONTRACT_VIOLATION for non-finite min", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+
+      expect(() => tracker.clamp(Number.NaN, 10)).toThrow(BollardError)
+      try {
+        tracker.clamp(Number.NaN, 10)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty("message", "min must be a non-negative finite number, got: NaN")
+        expect(err).toHaveProperty("context", { min: Number.NaN })
+      }
+      // Verify total unchanged after error
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("throws CONTRACT_VIOLATION for non-finite max", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+
+      expect(() => tracker.clamp(0, Number.POSITIVE_INFINITY)).toThrow(BollardError)
+      try {
+        tracker.clamp(0, Number.POSITIVE_INFINITY)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty(
+          "message",
+          "max must be a non-negative finite number, got: Infinity",
+        )
+        expect(err).toHaveProperty("context", { max: Number.POSITIVE_INFINITY })
+      }
+      // Verify total unchanged after error
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("throws CONTRACT_VIOLATION when min > max", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+
+      expect(() => tracker.clamp(10, 5)).toThrow(BollardError)
+      try {
+        tracker.clamp(10, 5)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty("message", "min must be <= max, got min: 10, max: 5")
+        expect(err).toHaveProperty("context", { min: 10, max: 5 })
+      }
+      // Verify total unchanged after error
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("does not affect other state (runCount, limit)", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+      tracker.add(3)
+      const runCountBefore = tracker.runCount()
+      const remainingBefore = tracker.remaining()
+
+      tracker.clamp(2, 6)
+
+      expect(tracker.runCount()).toBe(runCountBefore)
+      expect(tracker.remaining()).toBe(remainingBefore - (tracker.total() - 8)) // remaining changes due to total change
+    })
+
+    it("works with fractional values", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(3.7)
+      tracker.clamp(2.5, 8.9)
+      expect(tracker.total()).toBe(3.7)
+
+      tracker.clamp(4.1, 8.9)
+      expect(tracker.total()).toBe(4.1)
+
+      tracker.clamp(2.5, 4.0)
+      expect(tracker.total()).toBe(4.0)
+    })
+
+    it("works with large values", () => {
+      const tracker = new CostTracker(1000000)
+      tracker.add(500000)
+      tracker.clamp(100000, 800000)
+      expect(tracker.total()).toBe(500000)
+    })
+  })
 })

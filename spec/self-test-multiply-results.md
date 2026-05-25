@@ -253,3 +253,30 @@ Well under ceiling; lowest multiply self-test cost to date.
 | boundary grounding | — | 16/16 (0% drop) |
 
 **Conclusion:** Verification-only multiply self-test is **fully GREEN** on adversarial execution — boundary tests use valid `new CostTracker(<limit>)` instantiation. Promoted multiply-focused adversarial tests committed to `packages/engine/tests/cost-tracker.adversarial.test.ts`.
+
+## Forward Run: 2026-05-25 (clamp() — executor fix validation)
+
+**Run ID:** `20260525-0038-run-ee973e`
+**Status:** ✓ success (**31/31**)
+**Task:** Add `clamp(min: number, max: number): CostTracker` method
+
+**Context:** First full forward run (non-verification-only) after all infrastructure fixes from the multiply self-test series. Also validated the executor hard-exit `tool_use`/`tool_result` pairing fix. A prior clamp attempt (`20260525-0019-run-45addb`) failed at `messages[106]` with `400: tool_use id without matching tool_result` when the hard-exit fired at turn 53 and the executor pushed a plain string user message instead of stub `tool_result` blocks.
+
+### Fix validated
+
+**Executor pairing fix (`packages/agents/src/executor.ts`):** When `stopReason === "tool_use"` and the hard-exit fires, the follow-up user message is now a content block array:
+- One stub `tool_result` per pending `tool_use` (matching `toolUseId`, `text: "[forced completion — ignoring tool result]"`)
+- One `text` block with the existing `SYSTEM: You have N turns remaining…` instruction
+
+Coder crossed turn 53 (the prior failure point) and completed at turn 54 with `stop=end_turn`. No `LLM_PROVIDER_ERROR`.
+
+### Summary table (all multiply/clamp forward runs)
+
+| Run | Cost | Coder turns | Nodes | Notes |
+|-----|------|-------------|-------|-------|
+| 2026-05-23 multiply() | $1.66 | 33 | 14/31 ✗ | maxTokens regression |
+| 2026-05-24 2217 | $2.49 | 53 | 10/31 ✗ | write-tests fail |
+| 2026-05-24 2255 | — | — | 15/31 ✗ | write-contract-tests fail |
+| 2026-05-24 2344 | $0.43 | 11 | 31/31 ✓ | verification-only, run-tests fail/skip |
+| 2026-05-25 0006 | $0.39 | 10 | 31/31 ✓ | verification-only, run-tests 16/16 ✓ |
+| **2026-05-25 0038 (clamp)** | **—** | **54** | **31/31 ✓** | **forward run, executor pairing fix** |
