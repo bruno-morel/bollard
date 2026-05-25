@@ -137,6 +137,20 @@ export class CostTracker {
     return this
   }
 
+  merge(other: CostTracker): CostTracker {
+    if (other == null || !(other instanceof CostTracker)) {
+      throw new BollardError({
+        code: "CONTRACT_VIOLATION",
+        message: `other must be a CostTracker instance, got: ${other}`,
+        context: { other },
+      })
+    }
+
+    const newTracker = new CostTracker(this._limit)
+    newTracker._total = this._total + other._total
+    return newTracker
+  }
+
   snapshot(): Readonly<{ totalCostUsd: number }> {
     return Object.freeze({ totalCostUsd: this._total })
   }

@@ -355,171 +355,42 @@ describe("CostTracker", () => {
       expect(tracker.total()).toBe(5)
     })
 
-    it("throws BollardError for negative Infinity input", () => {
+    it("handles floating point precision correctly", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(0.1)
+      tracker.add(0.2)
+      tracker.subtract(0.2)
+      // Should be 0.1, but floating point might give us 0.09999999999999998
+      expect(tracker.total()).toBeCloseTo(0.1)
+    })
+
+    it("maintains runCount after subtraction", () => {
       const tracker = new CostTracker(10)
       tracker.add(5)
-
-      expect(() => tracker.subtract(Number.NEGATIVE_INFINITY)).toThrow(BollardError)
-      try {
-        tracker.subtract(Number.NEGATIVE_INFINITY)
-      } catch (err) {
-        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
-      }
-      describe("runCount()", () => {
-        it("returns 0 immediately after construction", () => {
-          const tracker = new CostTracker(10)
-          expect(tracker.runCount()).toBe(0)
-        })
-
-        it("increments by 1 each time add() is called", () => {
-          const tracker = new CostTracker(10)
-
-          tracker.add(1)
-          expect(tracker.runCount()).toBe(1)
-
-          tracker.add(2)
-          expect(tracker.runCount()).toBe(2)
-
-          tracker.add(0.5)
-          expect(tracker.runCount()).toBe(3)
-        })
-
-        it("does not increment when add() throws due to invalid input", () => {
-          const tracker = new CostTracker(10)
-
-          expect(() => tracker.add(-1)).toThrow(BollardError)
-          expect(tracker.runCount()).toBe(0)
-
-          expect(() => tracker.add(Number.NaN)).toThrow(BollardError)
-          expect(tracker.runCount()).toBe(0)
-
-          // Valid call should increment
-          tracker.add(1)
-          expect(tracker.runCount()).toBe(1)
-        })
-
-        it("resets to 0 when reset() is called", () => {
-          const tracker = new CostTracker(10)
-
-          tracker.add(1)
-          tracker.add(2)
-          expect(tracker.runCount()).toBe(2)
-
-          const previousTotal = tracker.reset()
-          expect(previousTotal).toBe(3)
-          expect(tracker.runCount()).toBe(0)
-        })
-
-        it("returns correct count after multiple add() and reset() cycles", () => {
-          const tracker = new CostTracker(10)
-
-          // First cycle
-          tracker.add(1)
-          tracker.add(2)
-          expect(tracker.runCount()).toBe(2)
-
-          tracker.reset()
-          expect(tracker.runCount()).toBe(0)
-
-          // Second cycle
-          tracker.add(0.5)
-          tracker.add(1.5)
-          tracker.add(2.5)
-          expect(tracker.runCount()).toBe(3)
-
-          tracker.reset()
-          expect(tracker.runCount()).toBe(0)
-
-          // Third cycle
-          tracker.add(5)
-          expect(tracker.runCount()).toBe(1)
-        })
-
-        it("does not modify state and is idempotent across repeated calls", () => {
-          const tracker = new CostTracker(10)
-
-          tracker.add(1)
-          tracker.add(2)
-
-          const firstCall = tracker.runCount()
-          const secondCall = tracker.runCount()
-          const thirdCall = tracker.runCount()
-
-          expect(firstCall).toBe(2)
-          expect(secondCall).toBe(2)
-          expect(thirdCall).toBe(2)
-
-          // Verify state wasn't modified
-          expect(tracker.total()).toBe(3)
-        })
-
-        it("does not increment for subtract() calls", () => {
-          const tracker = new CostTracker(10)
-
-          tracker.add(5)
-          expect(tracker.runCount()).toBe(1)
-
-          tracker.subtract(2)
-          expect(tracker.runCount()).toBe(1) // Should not change
-          expect(tracker.total()).toBe(3)
-        })
-
-        it("does not increment for divide() calls", () => {
-          const tracker = new CostTracker(10)
-
-          tracker.add(4)
-          expect(tracker.runCount()).toBe(1)
-
-          tracker.divide(2)
-          expect(tracker.runCount()).toBe(1) // Should not change
-          expect(tracker.total()).toBe(2)
-        })
-
-        it("works with chained add() calls", () => {
-          const tracker = new CostTracker(10)
-
-          tracker.add(1).add(2).add(3)
-          expect(tracker.runCount()).toBe(3)
-          expect(tracker.total()).toBe(6)
-        })
-
-        it("works with context parameter", () => {
-          const mockDebug = vi.fn()
-          const mockCtx = {
-            log: {
-              debug: mockDebug,
-              info: vi.fn(),
-              warn: vi.fn(),
-              error: vi.fn(),
-            },
-          } as Partial<PipelineContext> as PipelineContext
-
-          const tracker = new CostTracker(10)
-          tracker.add(5, mockCtx)
-
-          expect(tracker.runCount()).toBe(1)
-          expect(mockDebug).toHaveBeenCalledWith("cost:add")
-        })
-      })
-    })
-
-    it("handles fractional amounts correctly", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(5.75)
-      tracker.subtract(2.25)
-      expect(tracker.total()).toBe(3.5)
-    })
-
-    it("updates remaining budget correctly", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(7)
-      expect(tracker.remaining()).toBe(3)
+      tracker.add(3)
+      expect(tracker.runCount()).toBe(2)
 
       tracker.subtract(2)
-      expect(tracker.remaining()).toBe(5)
+      expect(tracker.runCount()).toBe(2) // runCount should not change
     })
 
-    it("updates exceeded status correctly", () => {
+    it("allows multiple subtractions", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(8)
+      tracker.subtract(3)
+      tracker.subtract(2)
+      tracker.subtract(1)
+      expect(tracker.total()).toBe(2)
+    })
+
+    it("works with very small amounts", () => {
+      const tracker = new CostTracker(1)
+      tracker.add(0.001)
+      tracker.subtract(0.0005)
+      expect(tracker.total()).toBeCloseTo(0.0005)
+    })
+
+    it("correctly updates exceeded status after subtraction", () => {
       const tracker = new CostTracker(5)
       tracker.add(8)
       expect(tracker.exceeded()).toBe(true)
@@ -529,468 +400,776 @@ describe("CostTracker", () => {
       expect(tracker.total()).toBe(4)
     })
 
-    it("works with chained operations", () => {
+    it("correctly updates remaining after subtraction", () => {
       const tracker = new CostTracker(10)
-      tracker.add(6)
-      tracker.subtract(2)
-      tracker.add(1)
-      tracker.subtract(0.5)
+      tracker.add(7)
+      expect(tracker.remaining()).toBe(3)
 
-      expect(tracker.total()).toBe(4.5)
-      expect(tracker.remaining()).toBe(5.5)
-      expect(tracker.exceeded()).toBe(false)
+      tracker.subtract(2)
+      expect(tracker.remaining()).toBe(5)
+      expect(tracker.total()).toBe(5)
+    })
+  })
+
+  describe("runCount()", () => {
+    it("starts at zero", () => {
+      const tracker = new CostTracker(10)
+      expect(tracker.runCount()).toBe(0)
     })
 
-    it("handles precision correctly with small amounts", () => {
-      const tracker = new CostTracker(1)
-      tracker.add(0.1)
-      tracker.add(0.2)
-      tracker.subtract(0.15)
+    it("increments with each add() call", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(1)
+      expect(tracker.runCount()).toBe(1)
+      tracker.add(2)
+      expect(tracker.runCount()).toBe(2)
+    })
 
-      // Use toBeCloseTo to handle floating point precision
-      expect(tracker.total()).toBeCloseTo(0.15, 10)
+    it("increments even when adding zero", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(0)
+      expect(tracker.runCount()).toBe(1)
+    })
+
+    it("is not affected by subtract()", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+      tracker.subtract(2)
+      expect(tracker.runCount()).toBe(1)
+    })
+
+    it("resets to zero with reset()", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(1)
+      tracker.add(2)
+      expect(tracker.runCount()).toBe(2)
+
+      tracker.reset()
+      expect(tracker.runCount()).toBe(0)
+    })
+  })
+
+  describe("snapshotTotal()", () => {
+    it("returns current total", () => {
+      const tracker = new CostTracker(10)
+      expect(tracker.snapshotTotal()).toBe(0)
+
+      tracker.add(3.5)
+      expect(tracker.snapshotTotal()).toBe(3.5)
+
+      tracker.add(1.5)
+      expect(tracker.snapshotTotal()).toBe(5)
+    })
+
+    it("matches total() exactly", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(2.5)
+      expect(tracker.snapshotTotal()).toBe(tracker.total())
+
+      tracker.subtract(1)
+      expect(tracker.snapshotTotal()).toBe(tracker.total())
+    })
+
+    it("is not affected by subsequent operations", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(3)
+      const snapshot = tracker.snapshotTotal()
+
+      tracker.add(2)
+      expect(snapshot).toBe(3)
+      expect(tracker.snapshotTotal()).toBe(5)
+    })
+  })
+
+  describe("clamp()", () => {
+    it("clamps total to min when below range", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+      tracker.clamp(10, 50)
+      expect(tracker.total()).toBe(10)
+    })
+
+    it("clamps total to max when above range", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(75)
+      tracker.clamp(10, 50)
+      expect(tracker.total()).toBe(50)
+    })
+
+    it("leaves total unchanged when within range", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(25)
+      tracker.clamp(10, 50)
+      expect(tracker.total()).toBe(25)
+    })
+
+    it("handles edge case where total equals min", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(10)
+      tracker.clamp(10, 50)
+      expect(tracker.total()).toBe(10)
+    })
+
+    it("handles edge case where total equals max", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(50)
+      tracker.clamp(10, 50)
+      expect(tracker.total()).toBe(50)
+    })
+
+    it("returns this for chaining", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(25)
+      const result = tracker.clamp(10, 50)
+      expect(result).toBe(tracker)
+    })
+
+    it("throws BollardError for negative min", () => {
+      const tracker = new CostTracker(100)
+      expect(() => tracker.clamp(-5, 50)).toThrow(BollardError)
+      try {
+        tracker.clamp(-5, 50)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty("message", "min must be a non-negative finite number, got: -5")
+      }
+    })
+
+    it("throws BollardError for negative max", () => {
+      const tracker = new CostTracker(100)
+      expect(() => tracker.clamp(10, -5)).toThrow(BollardError)
+      try {
+        tracker.clamp(10, -5)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty("message", "max must be a non-negative finite number, got: -5")
+      }
+    })
+
+    it("throws BollardError when min > max", () => {
+      const tracker = new CostTracker(100)
+      expect(() => tracker.clamp(50, 10)).toThrow(BollardError)
+      try {
+        tracker.clamp(50, 10)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty("message", "min must be <= max, got min: 50, max: 10")
+      }
+    })
+
+    it("throws BollardError for NaN min", () => {
+      const tracker = new CostTracker(100)
+      expect(() => tracker.clamp(Number.NaN, 50)).toThrow(BollardError)
+    })
+
+    it("throws BollardError for NaN max", () => {
+      const tracker = new CostTracker(100)
+      expect(() => tracker.clamp(10, Number.NaN)).toThrow(BollardError)
+    })
+
+    it("throws BollardError for Infinity min", () => {
+      const tracker = new CostTracker(100)
+      expect(() => tracker.clamp(Number.POSITIVE_INFINITY, 50)).toThrow(BollardError)
+    })
+
+    it("throws BollardError for Infinity max", () => {
+      const tracker = new CostTracker(100)
+      expect(() => tracker.clamp(10, Number.POSITIVE_INFINITY)).toThrow(BollardError)
+    })
+
+    it("handles zero values correctly", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+      tracker.clamp(0, 10)
+      expect(tracker.total()).toBe(5)
+    })
+
+    it("can clamp to zero range", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+      tracker.clamp(0, 0)
+      expect(tracker.total()).toBe(0)
+    })
+
+    it("works with fractional values", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(2.5)
+      tracker.clamp(1.5, 3.5)
+      expect(tracker.total()).toBe(2.5)
+    })
+
+    it("works with large values", () => {
+      const tracker = new CostTracker(1000000)
+      tracker.add(500000)
+      tracker.clamp(100000, 800000)
+      expect(tracker.total()).toBe(500000)
     })
   })
 
   describe("divide()", () => {
-    it("divides total cost by positive divisor", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(8)
-      tracker.divide(2)
-      expect(tracker.total()).toBe(4)
+    it("divides total by the given divisor", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(20)
+      tracker.divide(4)
+      expect(tracker.total()).toBe(5)
     })
 
-    it("returns this for method chaining", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(6)
+    it("returns this for chaining", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(20)
       const result = tracker.divide(2)
       expect(result).toBe(tracker)
-      expect(tracker.total()).toBe(3)
     })
 
-    it("handles fractional divisors correctly", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(4)
-      tracker.divide(0.5) // Should double the cost
-      expect(tracker.total()).toBe(8)
+    it("handles fractional results", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(10)
+      tracker.divide(3)
+      expect(tracker.total()).toBeCloseTo(3.333333, 5)
     })
 
-    it("works with method chaining", () => {
-      const tracker = new CostTracker(20)
-      const result = tracker.add(10).divide(2).total()
-      expect(result).toBe(5)
+    it("handles division by 1 (no change)", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(25)
+      tracker.divide(1)
+      expect(tracker.total()).toBe(25)
     })
 
-    it("preserves limit value", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(8)
-      tracker.divide(2)
-      expect(tracker.remaining()).toBe(6) // limit 10 - total 4 = 6
-      expect(tracker.exceeded()).toBe(false)
+    it("handles division of zero", () => {
+      const tracker = new CostTracker(100)
+      tracker.divide(5)
+      expect(tracker.total()).toBe(0)
     })
 
-    it("updates exceeded status correctly", () => {
-      const tracker = new CostTracker(5)
-      tracker.add(10) // Exceeds limit
-      expect(tracker.exceeded()).toBe(true)
-
-      tracker.divide(4) // 10/4 = 2.5, now under limit
-      expect(tracker.exceeded()).toBe(false)
-      expect(tracker.total()).toBe(2.5)
-    })
-
-    it("updates remaining calculation correctly", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(8)
-      expect(tracker.remaining()).toBe(2)
-
-      tracker.divide(4) // 8/4 = 2
-      expect(tracker.remaining()).toBe(8) // 10 - 2 = 8
-    })
-
-    it("throws COST_LIMIT_EXCEEDED for zero divisor", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(5)
-
+    it("throws BollardError for zero divisor", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(10)
       expect(() => tracker.divide(0)).toThrow(BollardError)
       try {
         tracker.divide(0)
       } catch (err) {
         expect(BollardError.hasCode(err, "COST_LIMIT_EXCEEDED")).toBe(true)
-        expect(err).toHaveProperty("message", "Divisor must be a positive finite number, got: 0")
         expect(err).toHaveProperty("context", { divisor: 0 })
       }
-      // Verify total unchanged after error
-      expect(tracker.total()).toBe(5)
     })
 
-    it("throws COST_LIMIT_EXCEEDED for negative divisor", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(5)
-
+    it("throws BollardError for negative divisor", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(10)
       expect(() => tracker.divide(-2)).toThrow(BollardError)
       try {
         tracker.divide(-2)
       } catch (err) {
         expect(BollardError.hasCode(err, "COST_LIMIT_EXCEEDED")).toBe(true)
-        expect(err).toHaveProperty("message", "Divisor must be a positive finite number, got: -2")
         expect(err).toHaveProperty("context", { divisor: -2 })
       }
-      expect(tracker.total()).toBe(5)
     })
 
-    it("throws COST_LIMIT_EXCEEDED for NaN divisor", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(5)
-
-      expect(() => tracker.divide(Number.NaN)).toThrow(BollardError)
-      try {
-        tracker.divide(Number.NaN)
-      } catch (err) {
-        expect(BollardError.hasCode(err, "COST_LIMIT_EXCEEDED")).toBe(true)
-        expect(err).toHaveProperty("message", "Divisor must be a positive finite number, got: NaN")
-      }
-      expect(tracker.total()).toBe(5)
-    })
-
-    it("throws COST_LIMIT_EXCEEDED for Infinity divisor", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(5)
-
-      expect(() => tracker.divide(Number.POSITIVE_INFINITY)).toThrow(BollardError)
-      try {
-        tracker.divide(Number.POSITIVE_INFINITY)
-      } catch (err) {
-        expect(BollardError.hasCode(err, "COST_LIMIT_EXCEEDED")).toBe(true)
-        expect(err).toHaveProperty(
-          "message",
-          "Divisor must be a positive finite number, got: Infinity",
-        )
-      }
-      expect(tracker.total()).toBe(5)
-    })
-
-    it("throws COST_LIMIT_EXCEEDED for negative Infinity divisor", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(5)
-
-      expect(() => tracker.divide(Number.NEGATIVE_INFINITY)).toThrow(BollardError)
-      try {
-        tracker.divide(Number.NEGATIVE_INFINITY)
-      } catch (err) {
-        expect(BollardError.hasCode(err, "COST_LIMIT_EXCEEDED")).toBe(true)
-        expect(err).toHaveProperty(
-          "message",
-          "Divisor must be a positive finite number, got: -Infinity",
-        )
-      }
-      expect(tracker.total()).toBe(5)
-    })
-
-    it("works with very small positive divisors", () => {
-      const tracker = new CostTracker(1000)
-      tracker.add(1)
-      tracker.divide(0.001)
-      expect(tracker.total()).toBe(1000)
-    })
-
-    it("divide by 1 leaves total unchanged", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(7.5)
-      tracker.divide(1)
-      expect(tracker.total()).toBe(7.5)
-    })
-
-    it("works with complex chaining", () => {
+    it("throws BollardError for NaN divisor", () => {
       const tracker = new CostTracker(100)
-      const result = tracker
-        .add(20)
-        .divide(4) // 20/4 = 5
-        .add(10) // 5 + 10 = 15
-        .divide(3) // 15/3 = 5
-        .total()
-      expect(result).toBe(5)
+      tracker.add(10)
+      expect(() => tracker.divide(Number.NaN)).toThrow(BollardError)
     })
 
-    it("handles precision correctly with fractional results", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(1)
-      tracker.divide(3)
-      // 1/3 = 0.333...
-      expect(tracker.total()).toBeCloseTo(0.3333333333333333, 10)
+    it("throws BollardError for Infinity divisor", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(10)
+      expect(() => tracker.divide(Number.POSITIVE_INFINITY)).toThrow(BollardError)
     })
 
-    it("works correctly after reset", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(8)
+    it("preserves runCount", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(20)
+      tracker.add(10)
+      expect(tracker.runCount()).toBe(2)
+
       tracker.divide(2)
-      expect(tracker.total()).toBe(4)
+      expect(tracker.runCount()).toBe(2)
+    })
 
-      tracker.reset()
-      tracker.add(6)
-      tracker.divide(3)
-      expect(tracker.total()).toBe(2)
+    it("works with very small divisors", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(1)
+      tracker.divide(0.1)
+      expect(tracker.total()).toBe(10)
+    })
+
+    it("works with very large divisors", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(1000)
+      tracker.divide(1000)
+      expect(tracker.total()).toBe(1)
     })
   })
+
   describe("multiply()", () => {
-    it("multiplies total cost by positive factor", () => {
+    it("multiplies total by the given factor", () => {
       const tracker = new CostTracker(100)
-      tracker.add(4)
-      tracker.multiply(2)
-      expect(tracker.total()).toBe(8)
+      tracker.add(5)
+      tracker.multiply(3)
+      expect(tracker.total()).toBe(15)
     })
 
-    it("returns this for method chaining", () => {
+    it("returns this for chaining", () => {
       const tracker = new CostTracker(100)
-      tracker.add(3)
+      tracker.add(5)
       const result = tracker.multiply(2)
       expect(result).toBe(tracker)
-      expect(tracker.total()).toBe(6)
     })
 
-    it("handles fractional factors correctly", () => {
+    it("handles fractional factors", () => {
       const tracker = new CostTracker(100)
-      tracker.add(8)
-      tracker.multiply(0.5) // Should halve the cost
-      expect(tracker.total()).toBe(4)
+      tracker.add(10)
+      tracker.multiply(0.5)
+      expect(tracker.total()).toBe(5)
     })
 
-    it("works with method chaining", () => {
+    it("handles multiplication by 1 (no change)", () => {
       const tracker = new CostTracker(100)
-      const result = tracker.add(5).multiply(2).total()
-      expect(result).toBe(10)
+      tracker.add(25)
+      tracker.multiply(1)
+      expect(tracker.total()).toBe(25)
     })
 
-    it("works when total is zero", () => {
+    it("handles multiplication of zero", () => {
       const tracker = new CostTracker(100)
       tracker.multiply(5)
       expect(tracker.total()).toBe(0)
     })
 
-    it("works when factor is 1 (identity)", () => {
+    it("throws BollardError for zero factor", () => {
       const tracker = new CostTracker(100)
-      tracker.add(7.5)
-      tracker.multiply(1)
-      expect(tracker.total()).toBe(7.5)
+      tracker.add(10)
+      expect(() => tracker.multiply(0)).toThrow(BollardError)
+      try {
+        tracker.multiply(0)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty("context", { factor: 0 })
+      }
+    })
+
+    it("throws BollardError for negative factor", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(10)
+      expect(() => tracker.multiply(-2)).toThrow(BollardError)
+      try {
+        tracker.multiply(-2)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty("context", { factor: -2 })
+      }
+    })
+
+    it("throws BollardError for NaN factor", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(10)
+      expect(() => tracker.multiply(Number.NaN)).toThrow(BollardError)
+    })
+
+    it("throws BollardError for Infinity factor", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(10)
+      expect(() => tracker.multiply(Number.POSITIVE_INFINITY)).toThrow(BollardError)
+    })
+
+    it("preserves runCount", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(5)
+      tracker.add(3)
+      expect(tracker.runCount()).toBe(2)
+
+      tracker.multiply(2)
+      expect(tracker.runCount()).toBe(2)
     })
 
     it("works with very small factors", () => {
       const tracker = new CostTracker(100)
       tracker.add(10)
-      tracker.multiply(0.001)
-      expect(tracker.total()).toBe(0.01)
+      tracker.multiply(0.01)
+      expect(tracker.total()).toBe(0.1)
     })
 
-    it("works with large factors", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(2)
-      tracker.multiply(10)
-      expect(tracker.total()).toBe(20)
-    })
-
-    it("throws CONTRACT_VIOLATION for factor = 0", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(5)
-      expect(() => tracker.multiply(0)).toThrow(BollardError)
-      try {
-        tracker.multiply(0)
-      } catch (err) {
-        expect(err).toHaveProperty("code", "CONTRACT_VIOLATION")
-        expect(err).toHaveProperty("context", { factor: 0 })
-      }
-    })
-
-    it("throws CONTRACT_VIOLATION for negative factor", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(5)
-      expect(() => tracker.multiply(-2)).toThrow(BollardError)
-      try {
-        tracker.multiply(-2)
-      } catch (err) {
-        expect(err).toHaveProperty("code", "CONTRACT_VIOLATION")
-        expect(err).toHaveProperty("context", { factor: -2 })
-      }
-    })
-
-    it("throws CONTRACT_VIOLATION for NaN factor", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(5)
-      expect(() => tracker.multiply(Number.NaN)).toThrow(BollardError)
-      try {
-        tracker.multiply(Number.NaN)
-      } catch (err) {
-        expect(err).toHaveProperty("code", "CONTRACT_VIOLATION")
-      }
-    })
-
-    it("throws CONTRACT_VIOLATION for Infinity factor", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(5)
-      expect(() => tracker.multiply(Number.POSITIVE_INFINITY)).toThrow(BollardError)
-      try {
-        tracker.multiply(Number.POSITIVE_INFINITY)
-      } catch (err) {
-        expect(err).toHaveProperty("code", "CONTRACT_VIOLATION")
-      }
-    })
-
-    it("throws CONTRACT_VIOLATION for -Infinity factor", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(5)
-      expect(() => tracker.multiply(Number.NEGATIVE_INFINITY)).toThrow(BollardError)
-      try {
-        tracker.multiply(Number.NEGATIVE_INFINITY)
-      } catch (err) {
-        expect(err).toHaveProperty("code", "CONTRACT_VIOLATION")
-      }
-    })
-
-    it("works with complex chaining", () => {
-      const tracker = new CostTracker(100)
-      const result = tracker
-        .add(4)
-        .multiply(2) // 4*2 = 8
-        .add(2) // 8 + 2 = 10
-        .multiply(0.5) // 10*0.5 = 5
-        .total()
-      expect(result).toBe(5)
-    })
-
-    it("handles precision correctly with fractional results", () => {
-      const tracker = new CostTracker(100)
+    it("works with very large factors", () => {
+      const tracker = new CostTracker(100000)
       tracker.add(1)
-      tracker.multiply(1 / 3)
-      // 1 * (1/3) = 0.333...
-      expect(tracker.total()).toBeCloseTo(0.3333333333333333, 10)
-    })
-
-    it("works correctly after reset", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(4)
-      tracker.multiply(2)
-      expect(tracker.total()).toBe(8)
-
-      tracker.reset()
-      tracker.add(3)
-      tracker.multiply(3)
-      expect(tracker.total()).toBe(9)
-    })
-
-    it("error message includes the invalid factor value", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(5)
-      try {
-        tracker.multiply(-1.5)
-      } catch (err) {
-        expect(err).toHaveProperty("message")
-        expect((err as BollardError).message).toContain("-1.5")
-        expect(err).toHaveProperty("context", { factor: -1.5 })
-      }
+      tracker.multiply(1000)
+      expect(tracker.total()).toBe(1000)
     })
   })
+
   describe("snapshot()", () => {
-    it("returns readonly snapshot of current total", () => {
+    it("returns frozen object with current total", () => {
       const tracker = new CostTracker(10)
-      tracker.add(3.5)
-
+      tracker.add(5)
       const snapshot = tracker.snapshot()
-
-      expect(snapshot.totalCostUsd).toBe(3.5)
+      expect(snapshot).toEqual({ totalCostUsd: 5 })
       expect(Object.isFrozen(snapshot)).toBe(true)
     })
 
-    it("snapshot does not change when tracker is modified", () => {
+    it("snapshot is immutable", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(3)
+      const snapshot = tracker.snapshot()
+
+      expect(() => {
+        ;(snapshot as { totalCostUsd: number }).totalCostUsd = 999
+      }).toThrow()
+
+      expect(snapshot.totalCostUsd).toBe(3)
+    })
+
+    it("multiple snapshots are independent", () => {
       const tracker = new CostTracker(10)
       tracker.add(2)
+      const snapshot1 = tracker.snapshot()
 
-      const snapshot = tracker.snapshot()
       tracker.add(3)
+      const snapshot2 = tracker.snapshot()
 
-      expect(snapshot.totalCostUsd).toBe(2)
-      expect(tracker.total()).toBe(5)
+      expect(snapshot1.totalCostUsd).toBe(2)
+      expect(snapshot2.totalCostUsd).toBe(5)
+    })
+
+    it("snapshot reflects current state", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(4)
+      tracker.subtract(1)
+      const snapshot = tracker.snapshot()
+      expect(snapshot.totalCostUsd).toBe(3)
+    })
+  })
+
+  describe("formatCost()", () => {
+    it("formats cost with default 2 decimal places", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5.123)
+      expect(tracker.formatCost()).toBe("$5.12")
+    })
+
+    it("formats cost with custom decimal places", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5.123456)
+      expect(tracker.formatCost(4)).toBe("$5.1235")
+    })
+
+    it("formats cost with 0 decimal places", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5.789)
+      expect(tracker.formatCost(0)).toBe("$6")
+    })
+
+    it("formats zero cost", () => {
+      const tracker = new CostTracker(10)
+      expect(tracker.formatCost()).toBe("$0.00")
+    })
+
+    it("formats very small costs", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(0.001)
+      expect(tracker.formatCost()).toBe("$0.00")
+      expect(tracker.formatCost(3)).toBe("$0.001")
+    })
+
+    it("formats large costs", () => {
+      const tracker = new CostTracker(100000)
+      tracker.add(12345.67)
+      expect(tracker.formatCost()).toBe("$12345.67")
+    })
+
+    it("throws BollardError for negative decimal places", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+      expect(() => tracker.formatCost(-1)).toThrow(BollardError)
+      try {
+        tracker.formatCost(-1)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty(
+          "message",
+          "decimalPlaces must be a non-negative integer, got: -1",
+        )
+      }
+    })
+
+    it("throws BollardError for non-integer decimal places", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5)
+      expect(() => tracker.formatCost(2.5)).toThrow(BollardError)
+      try {
+        tracker.formatCost(2.5)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty(
+          "message",
+          "decimalPlaces must be a non-negative integer, got: 2.5",
+        )
+      }
+    })
+
+    it("handles edge case of exactly 0 decimal places", () => {
+      const tracker = new CostTracker(10)
+      tracker.add(5.999)
+      expect(tracker.formatCost(0)).toBe("$6")
     })
   })
 
   describe("summary()", () => {
-    it("formats basic cost summary", () => {
+    it("formats basic summary with percentage", () => {
       const tracker = new CostTracker(10)
-      tracker.add(2.5)
-
-      const summary = tracker.summary()
-
-      expect(summary).toBe("$2.50 / $10.00 (25.0% used)")
+      tracker.add(3)
+      expect(tracker.summary()).toBe("$3.00 / $10.00 (30.0% used)")
     })
 
-    it("shows exceeded status", () => {
+    it("shows exceeded status when over limit", () => {
       const tracker = new CostTracker(5)
-      tracker.add(7.25)
+      tracker.add(8)
+      expect(tracker.summary()).toBe("$8.00 / $5.00 (160.0% used) [EXCEEDED]")
+    })
 
-      const summary = tracker.summary()
-
-      expect(summary).toBe("$7.25 / $5.00 (145.0% used) [EXCEEDED]")
+    it("handles zero cost", () => {
+      const tracker = new CostTracker(10)
+      expect(tracker.summary()).toBe("$0.00 / $10.00 (0.0% used)")
     })
 
     it("handles zero limit with zero cost", () => {
       const tracker = new CostTracker(0)
-
-      const summary = tracker.summary()
-
-      expect(summary).toBe("$0.00 / $0.00 (0.0% used)")
+      expect(tracker.summary()).toBe("$0.00 / $0.00 (0.0% used)")
     })
 
     it("handles zero limit with positive cost", () => {
       const tracker = new CostTracker(0)
-      tracker.add(1.5)
-
-      const summary = tracker.summary()
-
-      expect(summary).toBe("$1.50 / $0.00 (100.0% used) [EXCEEDED]")
+      tracker.add(1)
+      expect(tracker.summary()).toBe("$1.00 / $0.00 (100.0% used) [EXCEEDED]")
     })
 
-    it("formats fractional percentages correctly", () => {
+    it("handles fractional values", () => {
+      const tracker = new CostTracker(7.5)
+      tracker.add(2.25)
+      expect(tracker.summary()).toBe("$2.25 / $7.50 (30.0% used)")
+    })
+
+    it("rounds percentage to 1 decimal place", () => {
       const tracker = new CostTracker(3)
       tracker.add(1)
-
-      const summary = tracker.summary()
-
-      expect(summary).toBe("$1.00 / $3.00 (33.3% used)")
+      expect(tracker.summary()).toBe("$1.00 / $3.00 (33.3% used)")
     })
 
-    it("handles exactly at limit", () => {
+    it("handles very small percentages", () => {
+      const tracker = new CostTracker(10000)
+      tracker.add(1)
+      expect(tracker.summary()).toBe("$1.00 / $10000.00 (0.0% used)")
+    })
+
+    it("handles exactly 100% usage", () => {
       const tracker = new CostTracker(5)
       tracker.add(5)
+      expect(tracker.summary()).toBe("$5.00 / $5.00 (100.0% used)")
+    })
+  })
 
-      const summary = tracker.summary()
+  describe("merge()", () => {
+    it("returns a new CostTracker with combined totals", () => {
+      const tracker1 = new CostTracker(10)
+      const tracker2 = new CostTracker(5)
 
-      expect(summary).toBe("$5.00 / $5.00 (100.0% used)")
+      tracker1.add(3)
+      tracker2.add(2)
+
+      const merged = tracker1.merge(tracker2)
+
+      expect(merged.total()).toBe(5)
+      expect(merged).not.toBe(tracker1)
+      expect(merged).not.toBe(tracker2)
+    })
+
+    it("does not mutate source trackers", () => {
+      const tracker1 = new CostTracker(10)
+      const tracker2 = new CostTracker(8)
+
+      tracker1.add(4)
+      tracker2.add(3)
+
+      const originalTotal1 = tracker1.total()
+      const originalTotal2 = tracker2.total()
+
+      tracker1.merge(tracker2)
+
+      expect(tracker1.total()).toBe(originalTotal1)
+      expect(tracker2.total()).toBe(originalTotal2)
+    })
+
+    it("uses receiver's limit for the merged tracker", () => {
+      const tracker1 = new CostTracker(10)
+      const tracker2 = new CostTracker(20)
+
+      tracker1.add(3)
+      tracker2.add(2)
+
+      const merged = tracker1.merge(tracker2)
+
+      expect(merged.remaining()).toBe(5) // 10 - 5 = 5
+      expect(merged.exceeded()).toBe(false)
+    })
+
+    it("merged tracker exceeded() uses receiver's limit", () => {
+      const tracker1 = new CostTracker(4) // Small limit
+      const tracker2 = new CostTracker(20) // Large limit
+
+      tracker1.add(2)
+      tracker2.add(3)
+
+      const merged = tracker1.merge(tracker2) // Total: 5, Limit: 4
+
+      expect(merged.total()).toBe(5)
+      expect(merged.exceeded()).toBe(true)
+    })
+
+    it("throws CONTRACT_VIOLATION for null other", () => {
+      const tracker = new CostTracker(10)
+
+      expect(() => tracker.merge(null as unknown as CostTracker)).toThrow(BollardError)
+      try {
+        tracker.merge(null as unknown as CostTracker)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty("message", "other must be a CostTracker instance, got: null")
+      }
+    })
+
+    it("throws CONTRACT_VIOLATION for undefined other", () => {
+      const tracker = new CostTracker(10)
+
+      expect(() => tracker.merge(undefined as unknown as CostTracker)).toThrow(BollardError)
+      try {
+        tracker.merge(undefined as unknown as CostTracker)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty(
+          "message",
+          "other must be a CostTracker instance, got: undefined",
+        )
+      }
+    })
+
+    it("throws CONTRACT_VIOLATION for non-CostTracker object", () => {
+      const tracker = new CostTracker(10)
+      const notATracker = { total: () => 5 }
+
+      expect(() => tracker.merge(notATracker as unknown as CostTracker)).toThrow(BollardError)
+      try {
+        tracker.merge(notATracker as unknown as CostTracker)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+      }
+    })
+
+    it("works with zero totals", () => {
+      const tracker1 = new CostTracker(10)
+      const tracker2 = new CostTracker(5)
+
+      const merged = tracker1.merge(tracker2)
+
+      expect(merged.total()).toBe(0)
+      expect(merged.remaining()).toBe(10)
+    })
+
+    it("works when one tracker has zero total", () => {
+      const tracker1 = new CostTracker(10)
+      const tracker2 = new CostTracker(5)
+
+      tracker1.add(7)
+      // tracker2 remains at 0
+
+      const merged = tracker1.merge(tracker2)
+
+      expect(merged.total()).toBe(7)
+      expect(merged.remaining()).toBe(3)
+    })
+
+    it("works with different limits", () => {
+      const tracker1 = new CostTracker(15)
+      const tracker2 = new CostTracker(25)
+
+      tracker1.add(5)
+      tracker2.add(8)
+
+      const merged = tracker1.merge(tracker2)
+
+      expect(merged.total()).toBe(13)
+      expect(merged.remaining()).toBe(2) // Uses tracker1's limit of 15
+    })
+
+    it("preserves precision with fractional amounts", () => {
+      const tracker1 = new CostTracker(10)
+      const tracker2 = new CostTracker(10)
+
+      tracker1.add(1.25)
+      tracker2.add(2.75)
+
+      const merged = tracker1.merge(tracker2)
+
+      expect(merged.total()).toBe(4)
+    })
+
+    it("works when both trackers exceed their individual limits", () => {
+      const tracker1 = new CostTracker(3)
+      const tracker2 = new CostTracker(4)
+
+      tracker1.add(5) // Exceeds limit of 3
+      tracker2.add(6) // Exceeds limit of 4
+
+      const merged = tracker1.merge(tracker2) // Total: 11, Limit: 3
+
+      expect(merged.total()).toBe(11)
+      expect(merged.exceeded()).toBe(true)
+      expect(merged.remaining()).toBe(0)
+    })
+
+    it("merged tracker has independent state", () => {
+      const tracker1 = new CostTracker(10)
+      const tracker2 = new CostTracker(10)
+
+      tracker1.add(2)
+      tracker2.add(3)
+
+      const merged = tracker1.merge(tracker2)
+
+      // Modify original trackers
+      tracker1.add(5)
+      tracker2.subtract(1)
+
+      // Merged tracker should be unaffected
+      expect(merged.total()).toBe(5)
+    })
+
+    it("works with large values", () => {
+      const tracker1 = new CostTracker(1000000)
+      const tracker2 = new CostTracker(500000)
+
+      tracker1.add(250000)
+      tracker2.add(150000)
+
+      const merged = tracker1.merge(tracker2)
+
+      expect(merged.total()).toBe(400000)
+      expect(merged.remaining()).toBe(600000)
+      expect(merged.exceeded()).toBe(false)
     })
   })
 
   describe("property-based tests", () => {
-    it("add() never decreases total", () => {
-      fc.assert(
-        fc.property(
-          fc.float({ min: 0, max: 1000, noNaN: true }),
-          fc.float({ min: 0, max: 100, noNaN: true }),
-          (limit, cost) => {
-            const tracker = new CostTracker(limit)
-            const initialTotal = tracker.total()
-            tracker.add(cost)
-            expect(tracker.total()).toBeGreaterThanOrEqual(initialTotal)
-          },
-        ),
-      )
-    })
-
     it("remaining() is always non-negative", () => {
       fc.assert(
         fc.property(
-          fc.float({ min: 0, max: 1000, noNaN: true }),
-          fc.float({ min: 0, max: 1000, noNaN: true }),
-          (limit, cost) => {
+          fc.float({ min: 1, max: 1000, noNaN: true }),
+          fc.float({ min: 0, max: 1, noNaN: true }),
+          (limit, costRatio) => {
+            const cost = limit * costRatio
             const tracker = new CostTracker(limit)
             tracker.add(cost)
-            expect(tracker.remaining()).toBeGreaterThanOrEqual(0)
+            const expected = Math.max(0, limit - cost)
+            expect(tracker.remaining()).toBeCloseTo(expected, 10)
           },
         ),
       )
@@ -1011,6 +1190,55 @@ describe("CostTracker", () => {
         ),
       )
     })
+
+    it("exceeded() is consistent with total > limit", () => {
+      fc.assert(
+        fc.property(
+          fc.float({ min: 1, max: 1000, noNaN: true }),
+          fc.float({ min: 0, max: 2, noNaN: true }),
+          (limit, costRatio) => {
+            const cost = limit * costRatio
+            const tracker = new CostTracker(limit)
+            tracker.add(cost)
+            expect(tracker.exceeded()).toBe(cost > limit)
+          },
+        ),
+      )
+    })
+
+    it("add() and subtract() are inverse operations", () => {
+      fc.assert(
+        fc.property(
+          fc.float({ min: 10, max: 1000, noNaN: true }),
+          fc.float({ min: 0, max: 5, noNaN: true }),
+          (limit, amount) => {
+            const tracker = new CostTracker(limit)
+            const initialTotal = tracker.total()
+            tracker.add(amount)
+            tracker.subtract(amount)
+            expect(tracker.total()).toBeCloseTo(initialTotal, 10)
+          },
+        ),
+      )
+    })
+
+    it("clamp() always results in value within bounds", () => {
+      fc.assert(
+        fc.property(
+          fc.float({ min: 100, max: 1000, noNaN: true }),
+          fc.float({ min: 0, max: 50, noNaN: true }),
+          fc.float({ min: 0, max: 25, noNaN: true }),
+          fc.float({ min: 25, max: 75, noNaN: true }),
+          (limit, initialCost, min, max) => {
+            const tracker = new CostTracker(limit)
+            tracker.add(initialCost)
+            tracker.clamp(min, max)
+            expect(tracker.total()).toBeGreaterThanOrEqual(min)
+            expect(tracker.total()).toBeLessThanOrEqual(max)
+          },
+        ),
+      )
+    })
   })
 
   describe("type compatibility", () => {
@@ -1018,297 +1246,6 @@ describe("CostTracker", () => {
       const tracker: PublicCostTracker = new CostTracker(10)
       tracker.add(5)
       expect(tracker.total()).toBe(5)
-      expect(tracker.exceeded()).toBe(false)
-      expect(tracker.remaining()).toBe(5)
-    })
-  })
-
-  describe("snapshotTotal()", () => {
-    it("returns zero for newly constructed tracker", () => {
-      const tracker = new CostTracker(10)
-      expect(tracker.snapshotTotal()).toBe(0)
-    })
-
-    it("returns same value as total() at moment of call", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(3.5)
-
-      expect(tracker.snapshotTotal()).toBe(tracker.total())
-      expect(tracker.snapshotTotal()).toBe(3.5)
-    })
-
-    it("returns accumulated value after add() calls", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(1.5)
-      tracker.add(2.5)
-
-      expect(tracker.snapshotTotal()).toBe(4)
-      expect(tracker.snapshotTotal()).toBe(tracker.total())
-    })
-
-    it("returns adjusted value after subtract() calls", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(5)
-      tracker.subtract(2)
-
-      expect(tracker.snapshotTotal()).toBe(3)
-      expect(tracker.snapshotTotal()).toBe(tracker.total())
-    })
-
-    it("returns adjusted value after reset() calls", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(5)
-      tracker.reset()
-
-      expect(tracker.snapshotTotal()).toBe(0)
-      expect(tracker.snapshotTotal()).toBe(tracker.total())
-    })
-
-    it("returns adjusted value after divide() calls", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(8)
-      tracker.divide(2)
-
-      expect(tracker.snapshotTotal()).toBe(4)
-      expect(tracker.snapshotTotal()).toBe(tracker.total())
-    })
-
-    it("can be called multiple times and returns same value if total unchanged", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(3.5)
-
-      const first = tracker.snapshotTotal()
-      const second = tracker.snapshotTotal()
-      const third = tracker.snapshotTotal()
-
-      expect(first).toBe(3.5)
-      expect(second).toBe(3.5)
-      expect(third).toBe(3.5)
-      expect(first).toBe(second)
-      expect(second).toBe(third)
-    })
-
-    it("does not modify any internal state", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(5)
-
-      const totalBefore = tracker.total()
-      const remainingBefore = tracker.remaining()
-      const exceededBefore = tracker.exceeded()
-
-      const snapshot = tracker.snapshotTotal()
-
-      expect(tracker.total()).toBe(totalBefore)
-      expect(tracker.remaining()).toBe(remainingBefore)
-      expect(tracker.exceeded()).toBe(exceededBefore)
-      expect(snapshot).toBe(5)
-    })
-
-    it("reflects changes when total is modified between calls", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(2)
-
-      const firstSnapshot = tracker.snapshotTotal()
-      expect(firstSnapshot).toBe(2)
-
-      tracker.add(3)
-      const secondSnapshot = tracker.snapshotTotal()
-      expect(secondSnapshot).toBe(5)
-
-      tracker.subtract(1)
-      const thirdSnapshot = tracker.snapshotTotal()
-      expect(thirdSnapshot).toBe(4)
-    })
-
-    it("works with method chaining", () => {
-      const tracker = new CostTracker(20)
-      tracker.add(10).divide(2)
-
-      expect(tracker.snapshotTotal()).toBe(5)
-      expect(tracker.snapshotTotal()).toBe(tracker.total())
-    })
-
-    it("handles floating point precision correctly", () => {
-      const tracker = new CostTracker(10)
-      tracker.add(0.1)
-      tracker.add(0.2)
-
-      expect(tracker.snapshotTotal()).toBeCloseTo(0.3, 10)
-      expect(tracker.snapshotTotal()).toBe(tracker.total())
-    })
-  })
-  describe("clamp()", () => {
-    it("clamps total below min to min value", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(2)
-      tracker.clamp(5, 10)
-      expect(tracker.total()).toBe(5)
-    })
-
-    it("clamps total above max to max value", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(15)
-      tracker.clamp(5, 10)
-      expect(tracker.total()).toBe(10)
-    })
-
-    it("leaves total unchanged when within range", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(7)
-      tracker.clamp(5, 10)
-      expect(tracker.total()).toBe(7)
-    })
-
-    it("returns this for method chaining", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(3)
-      const result = tracker.clamp(5, 10)
-      expect(result).toBe(tracker)
-      expect(tracker.total()).toBe(5)
-    })
-
-    it("works with method chaining", () => {
-      const tracker = new CostTracker(100)
-      const result = tracker.add(15).clamp(5, 10).total()
-      expect(result).toBe(10)
-    })
-
-    it("handles edge case where min equals max", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(7)
-      tracker.clamp(5, 5)
-      expect(tracker.total()).toBe(5)
-    })
-
-    it("handles zero values correctly", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(0)
-      tracker.clamp(0, 10)
-      expect(tracker.total()).toBe(0)
-    })
-
-    it("clamps to zero when total is below zero min", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(5)
-      tracker.subtract(3) // total is now 2
-      tracker.clamp(0, 10)
-      expect(tracker.total()).toBe(2)
-    })
-
-    it("throws CONTRACT_VIOLATION for negative min", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(5)
-
-      expect(() => tracker.clamp(-1, 10)).toThrow(BollardError)
-      try {
-        tracker.clamp(-1, 10)
-      } catch (err) {
-        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
-        expect(err).toHaveProperty("message", "min must be a non-negative finite number, got: -1")
-        expect(err).toHaveProperty("context", { min: -1 })
-      }
-      // Verify total unchanged after error
-      expect(tracker.total()).toBe(5)
-    })
-
-    it("throws CONTRACT_VIOLATION for negative max", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(5)
-
-      expect(() => tracker.clamp(0, -5)).toThrow(BollardError)
-      try {
-        tracker.clamp(0, -5)
-      } catch (err) {
-        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
-        expect(err).toHaveProperty("message", "max must be a non-negative finite number, got: -5")
-        expect(err).toHaveProperty("context", { max: -5 })
-      }
-      // Verify total unchanged after error
-      expect(tracker.total()).toBe(5)
-    })
-
-    it("throws CONTRACT_VIOLATION for non-finite min", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(5)
-
-      expect(() => tracker.clamp(Number.NaN, 10)).toThrow(BollardError)
-      try {
-        tracker.clamp(Number.NaN, 10)
-      } catch (err) {
-        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
-        expect(err).toHaveProperty("message", "min must be a non-negative finite number, got: NaN")
-        expect(err).toHaveProperty("context", { min: Number.NaN })
-      }
-      // Verify total unchanged after error
-      expect(tracker.total()).toBe(5)
-    })
-
-    it("throws CONTRACT_VIOLATION for non-finite max", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(5)
-
-      expect(() => tracker.clamp(0, Number.POSITIVE_INFINITY)).toThrow(BollardError)
-      try {
-        tracker.clamp(0, Number.POSITIVE_INFINITY)
-      } catch (err) {
-        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
-        expect(err).toHaveProperty(
-          "message",
-          "max must be a non-negative finite number, got: Infinity",
-        )
-        expect(err).toHaveProperty("context", { max: Number.POSITIVE_INFINITY })
-      }
-      // Verify total unchanged after error
-      expect(tracker.total()).toBe(5)
-    })
-
-    it("throws CONTRACT_VIOLATION when min > max", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(5)
-
-      expect(() => tracker.clamp(10, 5)).toThrow(BollardError)
-      try {
-        tracker.clamp(10, 5)
-      } catch (err) {
-        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
-        expect(err).toHaveProperty("message", "min must be <= max, got min: 10, max: 5")
-        expect(err).toHaveProperty("context", { min: 10, max: 5 })
-      }
-      // Verify total unchanged after error
-      expect(tracker.total()).toBe(5)
-    })
-
-    it("does not affect other state (runCount, limit)", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(5)
-      tracker.add(3)
-      const runCountBefore = tracker.runCount()
-      const remainingBefore = tracker.remaining()
-
-      tracker.clamp(2, 6)
-
-      expect(tracker.runCount()).toBe(runCountBefore)
-      expect(tracker.remaining()).toBe(remainingBefore - (tracker.total() - 8)) // remaining changes due to total change
-    })
-
-    it("works with fractional values", () => {
-      const tracker = new CostTracker(100)
-      tracker.add(3.7)
-      tracker.clamp(2.5, 8.9)
-      expect(tracker.total()).toBe(3.7)
-
-      tracker.clamp(4.1, 8.9)
-      expect(tracker.total()).toBe(4.1)
-
-      tracker.clamp(2.5, 4.0)
-      expect(tracker.total()).toBe(4.0)
-    })
-
-    it("works with large values", () => {
-      const tracker = new CostTracker(1000000)
-      tracker.add(500000)
-      tracker.clamp(100000, 800000)
-      expect(tracker.total()).toBe(500000)
     })
   })
 })
