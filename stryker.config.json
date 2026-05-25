@@ -4,7 +4,13 @@
     "configFile": "vitest.config.ts"
   },
   "mutate": [
-    "packages/engine/src/cost-tracker.ts"
+    "**/*.ts",
+    "**/*.tsx",
+    "!**/node_modules/**",
+    "!**/dist/**",
+    "!**/*.test.ts",
+    "!**/*.spec.ts",
+    "!**/__tests__/**"
   ],
   "reporters": [
     "json",

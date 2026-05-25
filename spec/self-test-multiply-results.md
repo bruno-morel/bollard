@@ -235,3 +235,21 @@ Well under ceiling; lowest multiply self-test cost to date.
 ### Conclusion
 
 **31/31 GREEN** for pipeline completion and verification-only fallbacks. Adversarial vitest routing confirmed. `run-tests` still records `fail` (test assertion/setup), not infra skip. Signal 1 and boundary test pass rate remain follow-ups.
+
+## Re-run: 2026-05-25 (post extract-signatures plan-steps fallback)
+
+**Run ID:** `20260525-0006-run-19742a`
+**Status:** ✓ success (**31/31**)
+**Total cost:** $0.39
+**Duration:** 136.4s
+**Coder turns:** 10
+
+**Fix validated:** `extract-signatures` logged `source: plan-steps-fallback` for `packages/engine/src/cost-tracker.ts`; corpus included `constructor(limitUsd: number)`.
+
+| Step | Node | Result |
+|------|------|--------|
+| 7 | `extract-signatures` | ok — `filesExtracted: 1` |
+| 11 | `run-tests` | ok — **16 passed / 0 failed** (`cost-tracker.adversarial.test.ts`) |
+| boundary grounding | — | 16/16 (0% drop) |
+
+**Conclusion:** Verification-only multiply self-test is **fully GREEN** on adversarial execution — boundary tests use valid `new CostTracker(<limit>)` instantiation. Promoted multiply-focused adversarial tests committed to `packages/engine/tests/cost-tracker.adversarial.test.ts`.
