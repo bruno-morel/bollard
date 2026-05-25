@@ -12,6 +12,7 @@ dist/
 .bollard/runs/.history.lock.*
 .bollard/.metrics-run-task.txt
 .bollard/last-metrics-run.log
+.bollard/self-test-*.log
 .bollard/tests/
 _tmp_*/
 .cursor/
