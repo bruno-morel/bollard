@@ -1,8 +1,12 @@
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { CostTracker } from "@bollard/engine/src/cost-tracker.js"
 import { describe, expect, it, vi } from "vitest"
 import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 
 describe("createImplementFeatureBlueprint", () => {
   const bp = createImplementFeatureBlueprint("/tmp/test")
@@ -258,6 +262,67 @@ function makeWriteTestsCtx(workDir: string): PipelineContext {
     },
   }
 }
+
+function makeExtractSignaturesCtx(workDir: string, plan: PipelineContext["plan"]): PipelineContext {
+  const ctx = makeWriteTestsCtx(workDir)
+  ctx.currentNode = "extract-signatures"
+  ctx.plan = plan
+  return ctx
+}
+
+describe("extract-signatures verification-only fallback", () => {
+  it("falls back to plan steps files when affected_files.modify is empty", async () => {
+    const bp = createImplementFeatureBlueprint(REPO_ROOT)
+    const node = bp.nodes.find((n) => n.id === "extract-signatures")
+    const execute = node?.execute
+    if (!execute) throw new Error("missing execute")
+
+    const ctx = makeExtractSignaturesCtx(REPO_ROOT, {
+      affected_files: { modify: [], create: [], delete: [] },
+      steps: [{ files: ["packages/engine/src/cost-tracker.ts"] }],
+    })
+
+    const result = await execute(ctx)
+    expect(result.status).toBe("ok")
+    const data = result.data as {
+      filesExtracted?: number
+      signatures?: Array<{ signatures?: string }>
+    }
+    expect(data.filesExtracted).toBeGreaterThan(0)
+    const corpus = (data.signatures ?? []).map((s) => s.signatures ?? "").join("\n")
+    expect(corpus).toMatch(/constructor\s*\(\s*limitUsd/)
+  })
+
+  it("returns empty extraction when modify and steps are empty", async () => {
+    const bp = createImplementFeatureBlueprint(REPO_ROOT)
+    const execute = bp.nodes.find((n) => n.id === "extract-signatures")?.execute
+    if (!execute) throw new Error("missing execute")
+
+    const ctx = makeExtractSignaturesCtx(REPO_ROOT, {
+      affected_files: { modify: [], create: [], delete: [] },
+      steps: [],
+    })
+
+    const result = await execute(ctx)
+    expect(result.status).toBe("ok")
+    expect(result.data).toEqual({ filesExtracted: 0, signatures: [], types: [] })
+  })
+
+  it("filters test files from plan steps", async () => {
+    const bp = createImplementFeatureBlueprint(REPO_ROOT)
+    const execute = bp.nodes.find((n) => n.id === "extract-signatures")?.execute
+    if (!execute) throw new Error("missing execute")
+
+    const ctx = makeExtractSignaturesCtx(REPO_ROOT, {
+      affected_files: { modify: [], create: [], delete: [] },
+      steps: [{ files: ["packages/engine/tests/cost-tracker.test.ts"] }],
+    })
+
+    const result = await execute(ctx)
+    expect(result.status).toBe("ok")
+    expect(result.data).toEqual({ filesExtracted: 0, signatures: [], types: [] })
+  })
+})
 
 describe("write-tests verification-only fallback", () => {
   it("skips gracefully when grounded claims exist but source file cannot be inferred", async () => {

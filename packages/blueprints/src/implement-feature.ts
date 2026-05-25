@@ -421,10 +421,29 @@ export function createImplementFeatureBlueprint(
           const profile = ctx.toolchainProfile
           const lang = profile?.language ?? "typescript"
 
-          const files = getAffectedSourceFiles(ctx)
+          let files = getAffectedSourceFiles(ctx)
+          let extractionSource: "affected-files" | "plan-steps-fallback" = "affected-files"
+
+          if (files.length === 0) {
+            const plan = ctx.plan as { steps?: Array<{ files?: string[] }> } | undefined
+            const stepFiles = (plan?.steps ?? []).flatMap((s) => s.files ?? [])
+            if (stepFiles.length > 0) {
+              files = getAffectedSourceFiles({
+                ...ctx,
+                plan: { affected_files: { modify: stepFiles, create: [] } },
+              } as PipelineContext)
+              if (files.length > 0) extractionSource = "plan-steps-fallback"
+            }
+          }
+
           if (files.length === 0) {
             return { status: "ok", data: { filesExtracted: 0, signatures: [], types: [] } }
           }
+
+          ctx.log.info("extract-signatures: extracting from files", {
+            files,
+            source: extractionSource,
+          })
 
           const fullPaths = files.map((f) => resolve(workDir, f))
           const extractor = getExtractor(lang, llmConfig?.provider, llmConfig?.model, ctx.log.warn)
