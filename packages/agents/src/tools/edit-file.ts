@@ -1,5 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises"
-import { resolve } from "node:path"
+import { dirname, resolve } from "node:path"
 import type { AgentTool } from "../types.js"
 
 export const editFileTool: AgentTool = {
@@ -44,6 +44,16 @@ export const editFileTool: AgentTool = {
     const filePath = resolve(ctx.workDir, String(input["path"] ?? ""))
     if (!filePath.startsWith(resolve(ctx.workDir))) {
       throw new Error("Path traversal detected: path must be within the project directory")
+    }
+
+    if (ctx.allowedWritePaths !== undefined) {
+      const workDir = resolve(ctx.workDir)
+      if (dirname(filePath) === workDir) {
+        return `Error: editing files directly at the project root is not allowed. Allowed paths: ${ctx.allowedWritePaths.map((p) => p.replace(`${workDir}/`, "")).join(", ")}`
+      }
+      if (!ctx.allowedWritePaths.includes(filePath)) {
+        return `Error: "${String(input["path"])}" is not in the plan's affected_files. Only allowed to edit: ${ctx.allowedWritePaths.map((p) => p.replace(`${workDir}/`, "")).join(", ")}. If you need to modify this file, read the plan again — it must be listed there.`
+      }
     }
 
     const newString = String(input["new_string"] ?? "")

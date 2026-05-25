@@ -528,6 +528,19 @@ export async function createAgenticHandler(
       progress: (ev) => spinner.handleEvent(ev),
     }
 
+    if (agentRole === "coder" && ctx.plan) {
+      const plan = ctx.plan as {
+        affected_files?: { modify?: string[]; create?: string[] }
+      }
+      const affectedFiles = [
+        ...(plan.affected_files?.modify ?? []),
+        ...(plan.affected_files?.create ?? []),
+      ]
+      if (affectedFiles.length > 0) {
+        agentCtx.allowedWritePaths = affectedFiles.map((f) => resolve(workDir, f))
+      }
+    }
+
     let userMessage = `Task: ${ctx.task}`
     let executorOptions: ExecutorOptions | undefined
 

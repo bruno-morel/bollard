@@ -19,6 +19,17 @@ export const writeFileTool: AgentTool = {
     if (!filePath.startsWith(resolve(ctx.workDir))) {
       throw new Error("Path traversal detected: path must be within the project directory")
     }
+
+    if (ctx.allowedWritePaths !== undefined) {
+      const workDir = resolve(ctx.workDir)
+      if (dirname(filePath) === workDir) {
+        return `Error: writing files directly to the project root is not allowed. Allowed paths: ${ctx.allowedWritePaths.map((p) => p.replace(`${workDir}/`, "")).join(", ")}`
+      }
+      if (!ctx.allowedWritePaths.includes(filePath)) {
+        return `Error: "${String(input["path"])}" is not in the plan's affected_files. Only allowed to write: ${ctx.allowedWritePaths.map((p) => p.replace(`${workDir}/`, "")).join(", ")}. If you need to modify this file, read the plan again — it must be listed there.`
+      }
+    }
+
     const content = String(input["content"] ?? "")
     await mkdir(dirname(filePath), { recursive: true })
     await writeFile(filePath, content, "utf-8")

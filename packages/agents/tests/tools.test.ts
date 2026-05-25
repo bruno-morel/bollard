@@ -99,6 +99,43 @@ describe("write_file", () => {
       writeFileTool.execute({ path: "../../../tmp/evil", content: "x" }, ctx),
     ).rejects.toThrow("Path traversal")
   })
+
+  it("returns error when path is outside allowedWritePaths", async () => {
+    const allowed = join(tempDir, "src/allowed.ts")
+    const ctxWithScope = { ...ctx, allowedWritePaths: [allowed] }
+    const result = await writeFileTool.execute({ path: "src/other.ts", content: "x" }, ctxWithScope)
+    expect(result).toContain("Error:")
+    expect(result).toContain("not in the plan's affected_files")
+    expect(result).toContain("src/allowed.ts")
+  })
+
+  it("allows write to a path that is in allowedWritePaths", async () => {
+    const allowed = join(tempDir, "src/allowed.ts")
+    const ctxWithScope = { ...ctx, allowedWritePaths: [allowed] }
+    const result = await writeFileTool.execute(
+      { path: "src/allowed.ts", content: "export const x = 1" },
+      ctxWithScope,
+    )
+    expect(result).toContain("bytes")
+    expect(result).not.toContain("Error:")
+  })
+
+  it("blocks write to workspace root when allowedWritePaths is set", async () => {
+    const allowed = join(tempDir, "src/allowed.ts")
+    const ctxWithScope = { ...ctx, allowedWritePaths: [allowed] }
+    const result = await writeFileTool.execute({ path: "scratch.ts", content: "x" }, ctxWithScope)
+    expect(result).toContain("Error:")
+    expect(result).toContain("project root is not allowed")
+  })
+
+  it("allows write to any path when allowedWritePaths is not set (backward-compatible)", async () => {
+    const result = await writeFileTool.execute(
+      { path: "anywhere/file.ts", content: "export {}" },
+      ctx,
+    )
+    expect(result).toContain("bytes")
+    expect(result).not.toContain("Error:")
+  })
 })
 
 describe("list_dir", () => {
@@ -273,6 +310,44 @@ describe("edit_file", () => {
     await expect(
       editFileTool.execute({ path: "../../../etc/passwd", old_string: "x", new_string: "y" }, ctx),
     ).rejects.toThrow("Path traversal")
+  })
+
+  it("returns error when path is outside allowedWritePaths", async () => {
+    mkdirSync(join(tempDir, "src"), { recursive: true })
+    writeFileSync(join(tempDir, "src", "other.ts"), "const x = 1\n")
+    const allowed = join(tempDir, "src/allowed.ts")
+    const ctxWithScope = { ...ctx, allowedWritePaths: [allowed] }
+    const result = await editFileTool.execute(
+      { path: "src/other.ts", old_string: "const x = 1", new_string: "const x = 2" },
+      ctxWithScope,
+    )
+    expect(result).toContain("Error:")
+    expect(result).toContain("not in the plan's affected_files")
+  })
+
+  it("allows edit to a path in allowedWritePaths", async () => {
+    mkdirSync(join(tempDir, "src"), { recursive: true })
+    writeFileSync(join(tempDir, "src", "allowed.ts"), "const x = 1\n")
+    const allowed = join(tempDir, "src/allowed.ts")
+    const ctxWithScope = { ...ctx, allowedWritePaths: [allowed] }
+    const result = await editFileTool.execute(
+      { path: "src/allowed.ts", old_string: "const x = 1", new_string: "const x = 2" },
+      ctxWithScope,
+    )
+    expect(result).toContain("Replaced")
+    expect(result).not.toContain("Error:")
+  })
+
+  it("blocks edit to workspace root when allowedWritePaths is set", async () => {
+    writeFileSync(join(tempDir, "debug.ts"), "const x = 1\n")
+    const allowed = join(tempDir, "src/allowed.ts")
+    const ctxWithScope = { ...ctx, allowedWritePaths: [allowed] }
+    const result = await editFileTool.execute(
+      { path: "debug.ts", old_string: "const x = 1", new_string: "const x = 2" },
+      ctxWithScope,
+    )
+    expect(result).toContain("Error:")
+    expect(result).toContain("project root is not allowed")
   })
 
   it("handles empty new_string for deletion", async () => {

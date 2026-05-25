@@ -99,7 +99,7 @@ export class CostTracker {
     if (min > max) {
       throw new BollardError({
         code: "CONTRACT_VIOLATION",
-        message: `min must be less than or equal to max, got min: ${min}, max: ${max}`,
+        message: `min must be <= max, got min: ${min}, max: ${max}`,
         context: { min, max },
       })
     }

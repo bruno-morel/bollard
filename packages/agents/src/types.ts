@@ -43,6 +43,7 @@ export interface AgentContext {
   pipelineCtx: PipelineContext
   workDir: string
   allowedCommands?: string[]
+  allowedWritePaths?: string[]
   progress?: AgentProgressCallback
 }
 
