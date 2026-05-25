@@ -471,8 +471,14 @@ export class StrykerProvider implements MutationTestingProvider {
     }
 
     try {
-      const strykerBin = join(workDir, "node_modules", ".bin", "stryker")
-      await execFileAsync(strykerBin, ["run"], {
+      // Invoke Stryker via `node` directly on the JS entry point rather than the
+      // pnpm-generated shell wrapper. The shell wrapper sets NODE_PATH to absolute
+      // host paths (baked at install time), which don't exist inside Docker — causing
+      // the @stryker-mutator/vitest-runner plugin to silently fail to resolve and
+      // Stryker to exit 0 with an empty files:{} report (0 mutants). Calling node
+      // directly lets standard node_modules resolution work in any environment.
+      const strykerJs = join(workDir, "node_modules", "@stryker-mutator", "core", "bin", "stryker.js")
+      await execFileAsync("node", [strykerJs, "run"], {
         cwd: workDir,
         maxBuffer: 10 * 1024 * 1024,
         timeout: profile.mutation?.timeoutMs ?? 300_000,
@@ -504,13 +510,13 @@ export class StrykerProvider implements MutationTestingProvider {
 }
 
 /**
- * Verify that Stryker is callable in this environment (binary exists after pnpm install).
- * A binary existence check is sufficient for now — the 0-mutant guard in the blueprint
- * node handles the "binary runs but produces nothing" case.
+ * Verify that Stryker is callable in this environment.
+ * Checks the JS entry point directly (not the pnpm shell wrapper, which contains
+ * hardcoded host paths that break in Docker).
  */
 export async function strykerSmokeTest(workDir: string): Promise<boolean> {
-  const strykerBin = join(workDir, "node_modules", ".bin", "stryker")
-  return existsSync(strykerBin)
+  const strykerJs = join(workDir, "node_modules", "@stryker-mutator", "core", "bin", "stryker.js")
+  return existsSync(strykerJs)
 }
 
 /** Map source paths to FQCNs for PIT `-DtargetClasses`. */

@@ -350,6 +350,20 @@ describe("runMutationTesting", () => {
     expect(result.totalMutants).toBe(0)
   })
 
+  it("invokes node directly on stryker.js entry point (not the pnpm shell wrapper)", async () => {
+    mockWriteFile.mockResolvedValue(undefined)
+    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
+    mockReadFile.mockResolvedValue(makeSampleReport([{ status: "Killed" }]))
+
+    await runMutationTesting("/tmp/test", makeProfile())
+
+    expect(mockExecFileAsync).toHaveBeenCalledOnce()
+    const [executable, args] = mockExecFileAsync.mock.calls[0] as [string, string[]]
+    expect(executable).toBe("node")
+    expect(args[0]).toContain("@stryker-mutator/core/bin/stryker.js")
+    expect(args[1]).toBe("run")
+  })
+
   it("threads mutateFiles to provider", async () => {
     mockWriteFile.mockResolvedValue(undefined)
     mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
