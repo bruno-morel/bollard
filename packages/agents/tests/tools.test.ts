@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { editFileTool } from "../src/tools/edit-file.js"
 import { listDirTool } from "../src/tools/list-dir.js"
 import { readFileTool } from "../src/tools/read-file.js"
-import { runCommandTool } from "../src/tools/run-command.js"
+import {
+  formatVitestFailureSummary,
+  isTestCommand,
+  runCommandTool,
+} from "../src/tools/run-command.js"
 import { searchTool } from "../src/tools/search.js"
 import { writeFileTool } from "../src/tools/write-file.js"
 import type { AgentContext } from "../src/types.js"
@@ -270,6 +274,93 @@ describe("run_command", () => {
     const result = await runCommandTool.execute({ command: "node emit200fail.js" }, ctx)
     expect(result).toContain("Command failed")
     expect(result).toMatch(/\[\.\.\.truncated: \d+ more lines not shown\]/)
+  })
+
+  it("formatVitestFailureSummary extracts suites, tests, errors, and summary", () => {
+    const simulatedStdout = [
+      " FAIL  packages/engine/tests/cost-tracker.test.ts",
+      " FAIL  packages/agents/tests/executor.test.ts",
+      "",
+      " FAIL  packages/engine/tests/cost-tracker.test.ts > CostTracker > clamp",
+      " FAIL  packages/agents/tests/executor.test.ts > executeAgent > handles tool errors",
+      "",
+      "  AssertionError: expected -5 to be 0",
+      "  Expected: 0",
+      "  Received: -5",
+      "",
+      "Tests  2 failed | 1154 passed | 6 skipped",
+    ].join("\n")
+
+    const summary = formatVitestFailureSummary(simulatedStdout, "")
+
+    expect(summary).toContain("Summary: Tests  2 failed | 1154 passed | 6 skipped")
+    expect(summary).toContain("packages/engine/tests/cost-tracker.test.ts")
+    expect(summary).toContain("packages/agents/tests/executor.test.ts")
+    expect(summary).toContain("× CostTracker > clamp")
+    expect(summary).toContain("× executeAgent > handles tool errors")
+    expect(summary).toContain("AssertionError: expected -5 to be 0")
+    expect(summary).toContain("Expected: 0")
+    expect(summary).toContain("Received: -5")
+  })
+
+  it("formatVitestFailureSummary falls back when unparseable", () => {
+    const longOutput = Array.from({ length: 150 }, (_, i) => `line ${i}`).join("\n")
+    const summary = formatVitestFailureSummary(longOutput, "")
+    expect(summary).toMatch(/stdout:|stderr:/)
+    expect(summary).toMatch(/\[\.\.\.truncated: \d+ more lines not shown\]/)
+  })
+
+  it("isTestCommand recognizes pnpm test variants", () => {
+    const trueCases = [
+      "pnpm test",
+      "pnpm run test",
+      "pnpm exec vitest run",
+      "vitest run",
+      "npx vitest run",
+    ]
+    for (const cmd of trueCases) {
+      expect(isTestCommand(cmd.split(/\s+/))).toBe(true)
+    }
+
+    const falseCases = ["node -v", "pnpm run lint", "pnpm exec biome check"]
+    for (const cmd of falseCases) {
+      expect(isTestCommand(cmd.split(/\s+/))).toBe(false)
+    }
+  })
+
+  it("returns structured summary for failed pnpm run test", async () => {
+    const vitestOutput = [
+      " FAIL  packages/engine/tests/cost-tracker.test.ts",
+      " FAIL  packages/agents/tests/executor.test.ts",
+      "",
+      " FAIL  packages/engine/tests/cost-tracker.test.ts > CostTracker > clamp",
+      " FAIL  packages/agents/tests/executor.test.ts > executeAgent > handles tool errors",
+      "",
+      "  AssertionError: expected -5 to be 0",
+      "  Expected: 0",
+      "  Received: -5",
+      "",
+      "Tests  2 failed | 1154 passed | 6 skipped",
+    ].join("\n")
+
+    const padding = Array.from({ length: 200 }, (_, i) => `padding line ${i}`).join("\n")
+
+    writeFileSync(
+      join(tempDir, "emit-vitest-fail.js"),
+      `console.log(${JSON.stringify(`${padding}\n${vitestOutput}`)})\nprocess.exit(1)\n`,
+    )
+    writeFileSync(
+      join(tempDir, "package.json"),
+      JSON.stringify({ scripts: { test: "node emit-vitest-fail.js" } }, null, 2),
+    )
+
+    const result = await runCommandTool.execute({ command: "pnpm run test" }, ctx)
+
+    expect(result).toContain("test failure summary")
+    expect(result).toContain("packages/engine/tests/cost-tracker.test.ts")
+    expect(result).toContain("× CostTracker > clamp")
+    expect(result).toContain("× executeAgent > handles tool errors")
+    expect(result).not.toContain("[...truncated")
   })
 })
 
