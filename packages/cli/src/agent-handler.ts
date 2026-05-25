@@ -541,6 +541,11 @@ export async function createAgenticHandler(
       }
     }
 
+    const agentBudget = config.llm.agentBudgets?.[agentRole]
+
+    const resolvedMaxCostUsd: number | undefined =
+      agentRole === "coder" ? (agentBudget ?? config.agent.max_cost_usd / 2) : agentBudget
+
     let userMessage = `Task: ${ctx.task}`
     let executorOptions: ExecutorOptions | undefined
 
@@ -558,7 +563,7 @@ export async function createAgenticHandler(
         postCompletionHook: createVerificationHook(workDir, profile, config.localModels),
         maxVerificationRetries: 3,
         deferPostCompletionVerifyFromTurn: Math.floor(agents.coder.maxTurns * 0.8),
-        maxCostUsd: config.agent.max_cost_usd / 2,
+        maxCostUsd: agentBudget ?? config.agent.max_cost_usd / 2,
       }
     }
 
@@ -576,6 +581,10 @@ export async function createAgenticHandler(
 
     if (agentRole === "semantic-reviewer") {
       userMessage = buildSemanticReviewerMessage(ctx)
+    }
+
+    if (agentRole !== "coder" && resolvedMaxCostUsd !== undefined) {
+      executorOptions = { ...(executorOptions ?? {}), maxCostUsd: resolvedMaxCostUsd }
     }
 
     const rollbackSha = agentRole === "coder" ? ctx.rollbackSha : undefined

@@ -88,6 +88,20 @@ The full design is in [stage5d-token-economy.md](./stage5d-token-economy.md). Th
 
 **Achieved results (2026-05-19):** `runCount()` validation: $0.88, 19 coder turns, 31/31 nodes. `formatCost()` validation: $1.63, 32 coder turns, 31/31 nodes. Average: $1.255, well under $1.96 ceiling. Coder turns < 40 target: ✓ (19 and 32). Average context < 15K tokens/turn: not yet measured on recent runs. Full cost data in [stage5d-token-economy.md](./stage5d-token-economy.md).
 
+**Bollard-on-Bollard hardening (2026-05-25) — post-clamp() self-test analysis:**
+
+These two fixes shipped after studying the clamp() run logs (`20260525-0038-run-ee973e`) to find deterministic improvements:
+
+- ~~**Coder write-scope guard (Phase 11):**~~ **DONE (2026-05-25, commit `48dc24a`).** `allowedWritePaths?: string[]` added to `AgentContext`. When set, `write_file` and `edit_file` return an error string (not throw) for any path outside the plan's `affected_files.modify + create`. Workspace-root writes (scratch files like `debug.ts`, `test-foo.js`) blocked unconditionally. `agent-handler.ts` populates the field from the plan for the coder role. Enforces the prompt-level scope constraint in infrastructure — the clamp() coder violated it for 25+ turns (42% of a 54-turn run), causing line-number corruption and 14 TS errors. +7 tests in `tools.test.ts`. 1175→1181 passed.
+- ~~**Structured test failure output (Phase 12):**~~ **DONE (2026-05-25, commit `64980b1`).** `isTestCommand()` + `formatVitestFailureSummary()` added to `run-command.ts`. When a test command exits non-zero, `run_command` returns a compact summary (~15 lines: failing suite paths, test names, first error snippets, counts) instead of 100 truncated raw lines. ANSI stripped before parsing. The clamp() coder ran `pnpm test` 10 times and created scratch files to work around the truncated output — this gives it actionable structured output on the first run. +4 tests. 1177→1181 passed.
+
+- ~~**`agentBudgets` enforcement (Phase 13):**~~ **DONE (2026-05-25).** `config.llm.agentBudgets?.[agentRole]` is now resolved and applied as `ExecutorOptions.maxCostUsd` for every agent role. Coder: uses `agentBudgets.coder` if set, falls back to `max_cost_usd / 2` (existing behavior preserved). All other agents: applies `agentBudgets[role]` when configured, otherwise no cap (backward-compatible). Previously parsed and stored but silently ignored at runtime — the comment in `context.ts` said "Enforcement is Stage 6." +5 tests in `agent-handler.test.ts`. 1181→1186 passed.
+
+**Two structural issues remain open (observed in all logged self-test runs):**
+
+- **Contract grounding drop rate (55–100% per run):** The contract tester generates claims referencing the full module graph (`ContractContext`), but the grounding corpus is scoped to the single affected file. Claims that reference cross-module interfaces or dependencies from other packages fail grounding even when substantively correct. Needs a corpus-expansion step that follows the affected file's import edges one level, matching what the tester actually sees. Prompt for Cursor: `spec/prompts/fix-contract-grounding-corpus.md` (not yet written).
+- **Stryker silent no-op in Docker container:** `run-mutation-testing` has succeeded in all 3 logged runs (status `ok`) but produced 0 mutants — the Stryker vitest plugin fails to resolve inside the container (`spawn pnpm ENOENT` or missing report at `reports/mutation/mutation.json`). The node passes via graceful degradation but produces no mutation signal. Needs a smoke-test step that validates the Stryker report exists and has `mutants > 0` before treating the node as passed, plus a Docker-context fix for the pnpm path. Prompt for Cursor: `spec/prompts/fix-stryker-docker-resolution.md` (not yet written).
+
 ### Lessons from Stage 4d that shape Stage 5
 
 These findings are architectural — they affect how every future stage is designed:
