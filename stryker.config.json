@@ -1,4 +1,8 @@
 {
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "plugins": ["@stryker-mutator/vitest-runner"],
   "testRunner": "vitest",
   "vitest": {
     "configFile": "vitest.config.ts"
@@ -14,7 +18,7 @@
     "fileName": "reports/mutation/mutation.json"
   },
   "thresholds": {
-    "high": 80,
+    "high": 60,
     "low": 60,
     "break": null
   },

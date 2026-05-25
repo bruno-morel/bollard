@@ -445,6 +445,10 @@ export class StrykerProvider implements MutationTestingProvider {
       mutateFiles && mutateFiles.length > 0 ? mutateFiles : deriveMutatePatterns(profile)
 
     const config = {
+      // pnpm hoists @stryker-mutator/vitest-runner to workspace root; Stryker's
+      // default plugin loader only scans core's nested node_modules — explicit
+      // plugins array required for vitest-runner to load in Docker and on host.
+      plugins: ["@stryker-mutator/vitest-runner"],
       testRunner: "vitest",
       vitest: {
         configFile: deriveVitestConfigFile(profile),

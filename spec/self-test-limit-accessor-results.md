@@ -97,7 +97,7 @@ none — no promotion candidates surfaced at `approve-pr`.
 
 3. **`write-tests` replaced adversarial suite:** Boundary node overwrote `cost-tracker.adversarial.test.ts` (283-line clamp corpus → 9 limitUsd tests). Reverted from main at commit time (not in commit scope).
 
-4. **Phase 15 not validated:** `stryker_no_mutants` despite direct binary path — needs Docker/vitest plugin investigation.
+4. **Phase 15 not validated (pre-15b):** `stryker_no_mutants` on run `20260525-2109-run-b8c50b` — superseded by Phase 15b/15c Docker validation (202 mutants). See [stage5d-phase15b-validation-results.md](./stage5d-phase15b-validation-results.md).
 
 5. **Semantic review findings:** 6 proposed, 0 kept (100% drop at grounding layer).
 
@@ -121,7 +121,7 @@ none — no promotion candidates surfaced at `approve-pr`.
 
 ## Recommended Follow-ups
 
-1. **Stryker Docker env (Phase 15 remainder):** Investigate why `@stryker-mutator/vitest-runner` produces empty report inside `dev` container despite direct binary invocation. Run `strykerSmokeTest` + manual `node_modules/.bin/stryker run` with debug logging. ROADMAP item.
+1. ~~**Stryker Docker env (Phase 15 remainder):**~~ **DONE (2026-05-25).** Phase 15b (`node` + `stryker.js`) + 15c (explicit `plugins` in generated config). Docker validation: 202 mutants, 90.10% score. See [stage5d-phase15b-validation-results.md](./stage5d-phase15b-validation-results.md).
 
 2. **Coder test-file churn:** 54 turns on a getter suggests post-completion verify hook or prompt hardening for "do not re-run full suite more than twice" — token economy follow-up.
 
