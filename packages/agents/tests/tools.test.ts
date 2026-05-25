@@ -104,6 +104,24 @@ describe("write_file", () => {
     ).rejects.toThrow("Path traversal")
   })
 
+  it("strips pre-existing test files from allowedWritePaths (Layer 1 guard)", () => {
+    const isTestFile = (p: string) => /\.test\.[jt]s$/.test(p)
+    const mockExists = (p: string) => p.includes("cost-tracker.test.ts")
+
+    const resolved = [
+      "/app/packages/engine/src/cost-tracker.ts",
+      "/app/packages/engine/tests/cost-tracker.test.ts",
+      "/app/packages/engine/tests/cost-tracker.adversarial.test.ts",
+    ]
+
+    const filtered = resolved.filter((p) => !(isTestFile(p) && mockExists(p)))
+
+    expect(filtered).toHaveLength(2)
+    expect(filtered).not.toContain("/app/packages/engine/tests/cost-tracker.test.ts")
+    expect(filtered).toContain("/app/packages/engine/src/cost-tracker.ts")
+    expect(filtered).toContain("/app/packages/engine/tests/cost-tracker.adversarial.test.ts")
+  })
+
   it("returns error when path is outside allowedWritePaths", async () => {
     const allowed = join(tempDir, "src/allowed.ts")
     const ctxWithScope = { ...ctx, allowedWritePaths: [allowed] }

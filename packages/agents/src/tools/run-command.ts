@@ -7,6 +7,9 @@ const execFileAsync = promisify(execFile)
 
 const MAX_OUTPUT_LINES = 100
 
+/** Hard stop after this many test-command invocations per coder session. */
+const MAX_TEST_INVOCATIONS = 5
+
 const ANSI_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g")
 
 function stripAnsi(text: string): string {
@@ -158,6 +161,18 @@ export const runCommandTool: AgentTool = {
     const cmdStr = String(input["command"] ?? "")
     const parts = cmdStr.split(/\s+/)
     const executable = parts[0]
+
+    if (isTestCommand(parts)) {
+      ctx.testInvocationCount = (ctx.testInvocationCount ?? 0) + 1
+      if (ctx.testInvocationCount > MAX_TEST_INVOCATIONS) {
+        return [
+          `Error: test suite invoked ${ctx.testInvocationCount} times this session (max ${MAX_TEST_INVOCATIONS}).`,
+          "Stop retrying. Report the remaining failures as-is and end your response.",
+          "Continuing to loop on test failures wastes the turn budget without making progress.",
+        ].join(" ")
+      }
+    }
+
     const allowed = ctx.allowedCommands ?? DEFAULT_ALLOWED_COMMANDS
 
     if (!executable || !allowed.includes(executable)) {

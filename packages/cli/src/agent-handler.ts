@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process"
+import { existsSync } from "node:fs"
 import { readFile, readdir } from "node:fs/promises"
 import { resolve } from "node:path"
 import { promisify } from "node:util"
@@ -537,7 +538,13 @@ export async function createAgenticHandler(
         ...(plan.affected_files?.create ?? []),
       ]
       if (affectedFiles.length > 0) {
-        agentCtx.allowedWritePaths = affectedFiles.map((f) => resolve(workDir, f))
+        const resolved = affectedFiles.map((f) => resolve(workDir, f))
+        // Strip pre-existing test files — the coder must write a new test file,
+        // never edit an existing test suite. Prevents test-surgery loops.
+        agentCtx.allowedWritePaths = resolved.filter((p) => {
+          const isTestFile = /\.test\.[jt]s$/.test(p)
+          return !(isTestFile && existsSync(p))
+        })
       }
     }
 

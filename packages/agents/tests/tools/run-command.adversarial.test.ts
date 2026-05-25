@@ -50,6 +50,57 @@ describe("runCommandTool", () => {
     const out = await runCommandTool.execute({ command: "cat sample.txt" }, ctx)
     expect(out).toContain("hello-verify")
   })
+
+  it("increments testInvocationCount on each test command", async () => {
+    const testCtx: AgentContext = {
+      ...ctx,
+      allowedCommands: ["pnpm"],
+      testInvocationCount: 0,
+    }
+    await runCommandTool.execute({ command: "pnpm test" }, testCtx)
+    expect(testCtx.testInvocationCount).toBe(1)
+  })
+
+  it("does not increment counter for non-test commands", async () => {
+    const testCtx: AgentContext = {
+      ...ctx,
+      allowedCommands: ["node"],
+      testInvocationCount: 0,
+    }
+    await runCommandTool.execute({ command: "node -e console.log(1)" }, testCtx)
+    expect(testCtx.testInvocationCount).toBe(0)
+  })
+
+  it("returns hard-stop after MAX_TEST_INVOCATIONS exceeded", async () => {
+    const testCtx: AgentContext = {
+      ...ctx,
+      allowedCommands: ["pnpm"],
+      testInvocationCount: 5,
+    }
+    const out = await runCommandTool.execute({ command: "pnpm test" }, testCtx)
+    expect(typeof out).toBe("string")
+    expect(out).toMatch(/invoked \d+ times/)
+    expect(out).toContain("Stop retrying")
+    expect(out).not.toMatch(/Command failed/)
+  })
+
+  it("resets testInvocationCount per AgentContext", async () => {
+    const exhausted: AgentContext = {
+      ...ctx,
+      allowedCommands: ["pnpm"],
+      testInvocationCount: 5,
+    }
+    const out1 = await runCommandTool.execute({ command: "pnpm test" }, exhausted)
+    expect(out1).toContain("Stop retrying")
+
+    const fresh: AgentContext = {
+      ...ctx,
+      allowedCommands: ["pnpm"],
+      testInvocationCount: 0,
+    }
+    await runCommandTool.execute({ command: "pnpm test" }, fresh)
+    expect(fresh.testInvocationCount).toBe(1)
+  })
 })
 
 describe("runCommandTool property tests", () => {

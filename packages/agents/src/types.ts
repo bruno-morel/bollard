@@ -45,6 +45,8 @@ export interface AgentContext {
   allowedCommands?: string[]
   allowedWritePaths?: string[]
   progress?: AgentProgressCallback
+  /** Test commands (pnpm test / vitest) invoked this agent session; mutated by run_command. */
+  testInvocationCount?: number
 }
 
 export interface AgentDefinition {
