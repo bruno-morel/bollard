@@ -150,6 +150,19 @@ export class CostTracker {
     newTracker._total = this._total + other._total
     return newTracker
   }
+  withLimit(newLimit: number): CostTracker {
+    if (!Number.isFinite(newLimit) || newLimit < 0) {
+      throw new BollardError({
+        code: "CONTRACT_VIOLATION",
+        message: `newLimit must be a non-negative finite number, got: ${newLimit}`,
+        context: { newLimit },
+      })
+    }
+
+    const newTracker = new CostTracker(newLimit)
+    newTracker._total = this._total
+    return newTracker
+  }
 
   snapshot(): Readonly<{ totalCostUsd: number }> {
     return Object.freeze({ totalCostUsd: this._total })
