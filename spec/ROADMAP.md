@@ -107,6 +107,7 @@ These two fixes shipped after studying the clamp() run logs (`20260525-0038-run-
 - ~~**Contract-tester negative-remaining() issue:**~~ **Mitigated (2026-05-25).** JSDoc on `remaining()` and `exceeded()` committed; `limitUsd()` self-test completed 31/31 with contract tests 6/6 pass (no negative-remaining assertions).
 - ~~**Phase 15 validation prompt (limitUsd()):**~~ **RUN (2026-05-25).** Run `20260525-2109-run-b8c50b` — 31/31 nodes, Phase 14 held (25% contract drop). Phase 15: `stryker_no_mutants` — superseded by 15b/15c Docker validation.
 - ~~**Stryker vitest-runner Docker env:**~~ **DONE (2026-05-25).** Resolved via node+stryker.js + explicit plugins in generated config. See [stage5d-phase15b-validation-results.md](./stage5d-phase15b-validation-results.md).
+- ~~**Phase 15 live pipeline (`toJSON()` self-test):**~~ **GREEN (2026-05-25).** Run `20260525-2222-run-39f3e2` — node 22 `run-mutation-testing` → **totalMutants 204**, score **90.20%**. `deriveVitestConfigFile` now prefers `vitest.stryker.config.ts`. Stryker Phase 15 fully closed (Docker smoke + live pipeline). See [self-test-to-json-results.md](./self-test-to-json-results.md).
 
 ### Lessons from Stage 4d that shape Stage 5
 

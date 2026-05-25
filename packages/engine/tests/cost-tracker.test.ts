@@ -1530,3 +1530,189 @@ describe("type compatibility", () => {
     expect(tracker.total()).toBe(5)
   })
 })
+describe("toJSON()", () => {
+  it("returns object with correct properties and types", () => {
+    const tracker = new CostTracker(10)
+    tracker.add(5)
+
+    const json = tracker.toJSON()
+
+    expect(json).toEqual({
+      totalCostUsd: 5,
+      limitUsd: 10,
+      runCount: 1,
+    })
+    expect(typeof json.totalCostUsd).toBe("number")
+    expect(typeof json.limitUsd).toBe("number")
+    expect(typeof json.runCount).toBe("number")
+  })
+
+  it("values match accessor methods", () => {
+    const tracker = new CostTracker(25.5)
+    tracker.add(7.25)
+    tracker.add(3.75)
+
+    const json = tracker.toJSON()
+
+    expect(json.totalCostUsd).toBe(tracker.total())
+    expect(json.limitUsd).toBe(tracker.limitUsd())
+    expect(json.runCount).toBe(tracker.runCount())
+  })
+
+  it("does not modify internal state", () => {
+    const tracker = new CostTracker(15)
+    tracker.add(8)
+
+    const totalBefore = tracker.total()
+    const limitBefore = tracker.limitUsd()
+    const runCountBefore = tracker.runCount()
+
+    tracker.toJSON()
+
+    expect(tracker.total()).toBe(totalBefore)
+    expect(tracker.limitUsd()).toBe(limitBefore)
+    expect(tracker.runCount()).toBe(runCountBefore)
+  })
+
+  it("works with zero values", () => {
+    const tracker = new CostTracker(0)
+
+    const json = tracker.toJSON()
+
+    expect(json).toEqual({
+      totalCostUsd: 0,
+      limitUsd: 0,
+      runCount: 0,
+    })
+  })
+
+  it("works with fractional values", () => {
+    const tracker = new CostTracker(12.345)
+    tracker.add(6.789)
+
+    const json = tracker.toJSON()
+
+    expect(json.totalCostUsd).toBe(6.789)
+    expect(json.limitUsd).toBe(12.345)
+    expect(json.runCount).toBe(1)
+  })
+
+  it("reflects multiple operations", () => {
+    const tracker = new CostTracker(100)
+    tracker.add(10)
+    tracker.add(20)
+    tracker.subtract(5)
+
+    const json = tracker.toJSON()
+
+    expect(json.totalCostUsd).toBe(25)
+    expect(json.limitUsd).toBe(100)
+    expect(json.runCount).toBe(2) // add() increments runCount, subtract() does not
+  })
+
+  it("is idempotent - multiple calls return equivalent objects", () => {
+    const tracker = new CostTracker(50)
+    tracker.add(15)
+    tracker.add(10)
+
+    const json1 = tracker.toJSON()
+    const json2 = tracker.toJSON()
+    const json3 = tracker.toJSON()
+
+    expect(json1).toEqual(json2)
+    expect(json2).toEqual(json3)
+    expect(json1).toEqual({
+      totalCostUsd: 25,
+      limitUsd: 50,
+      runCount: 2,
+    })
+  })
+
+  it("returns a plain object (not a class instance)", () => {
+    const tracker = new CostTracker(10)
+    tracker.add(5)
+
+    const json = tracker.toJSON()
+
+    expect(json.constructor).toBe(Object)
+    expect(json instanceof CostTracker).toBe(false)
+    expect(Object.getPrototypeOf(json)).toBe(Object.prototype)
+  })
+
+  it("serializes correctly with JSON.stringify", () => {
+    const tracker = new CostTracker(30.5)
+    tracker.add(12.25)
+    tracker.add(8.75)
+
+    const json = tracker.toJSON()
+    const serialized = JSON.stringify(json)
+    const parsed = JSON.parse(serialized)
+
+    expect(parsed).toEqual({
+      totalCostUsd: 21,
+      limitUsd: 30.5,
+      runCount: 2,
+    })
+    expect(typeof serialized).toBe("string")
+    expect(serialized).toContain('"totalCostUsd":21')
+    expect(serialized).toContain('"limitUsd":30.5')
+    expect(serialized).toContain('"runCount":2')
+  })
+
+  it("JSON.stringify on tracker instance uses toJSON automatically", () => {
+    const tracker = new CostTracker(40)
+    tracker.add(15)
+    tracker.add(5)
+
+    const serialized = JSON.stringify(tracker)
+    const parsed = JSON.parse(serialized)
+
+    expect(parsed).toEqual({
+      totalCostUsd: 20,
+      limitUsd: 40,
+      runCount: 2,
+    })
+  })
+
+  it("works after reset", () => {
+    const tracker = new CostTracker(20)
+    tracker.add(10)
+    tracker.add(5)
+    tracker.reset()
+
+    const json = tracker.toJSON()
+
+    expect(json).toEqual({
+      totalCostUsd: 0,
+      limitUsd: 20,
+      runCount: 0,
+    })
+  })
+
+  it("works with chained operations", () => {
+    const tracker = new CostTracker(100)
+    tracker.add(50).clamp(10, 30).multiply(2)
+
+    const json = tracker.toJSON()
+
+    expect(json.totalCostUsd).toBe(60) // clamped to 30, then multiplied by 2
+    expect(json.limitUsd).toBe(100)
+    expect(json.runCount).toBe(1) // only add() increments runCount
+  })
+
+  it("handles edge case with very large numbers", () => {
+    const tracker = new CostTracker(Number.MAX_SAFE_INTEGER)
+    tracker.add(1000000)
+
+    const json = tracker.toJSON()
+
+    expect(json.totalCostUsd).toBe(1000000)
+    expect(json.limitUsd).toBe(Number.MAX_SAFE_INTEGER)
+    expect(json.runCount).toBe(1)
+
+    // Verify it serializes correctly
+    const serialized = JSON.stringify(json)
+    const parsed = JSON.parse(serialized)
+    expect(parsed.limitUsd).toBe(Number.MAX_SAFE_INTEGER)
+  })
+})

@@ -241,6 +241,19 @@ describe("StrykerProvider.run config generation", () => {
     expect(writtenJson.vitest.configFile).toBe("vitest.config.ts")
   })
 
+  it("prefers vitest.stryker.config.ts when present in workDir", async () => {
+    mockWriteFile.mockResolvedValue(undefined)
+    mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })
+    mockReadFile.mockResolvedValue(makeSampleReport([{ status: "Killed" }]))
+
+    const profile = makeProfile()
+    const provider = new StrykerProvider()
+    await provider.run("/app", profile)
+
+    const writtenJson = JSON.parse(mockWriteFile.mock.calls[0][1] as string)
+    expect(writtenJson.vitest.configFile).toBe("vitest.stryker.config.ts")
+  })
+
   it("includes vitest-runner in plugins for pnpm workspace resolution", async () => {
     mockWriteFile.mockResolvedValue(undefined)
     mockExecFileAsync.mockResolvedValue({ stdout: "", stderr: "" })

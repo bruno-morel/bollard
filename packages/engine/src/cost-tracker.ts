@@ -119,6 +119,13 @@ export class CostTracker {
     return this
   }
 
+  toJSON(): { totalCostUsd: number; limitUsd: number; runCount: number } {
+    return {
+      totalCostUsd: this.total(),
+      limitUsd: this.limitUsd(),
+      runCount: this.runCount(),
+    }
+  }
   divide(divisor: number): CostTracker {
     if (!Number.isFinite(divisor) || divisor <= 0) {
       throw new BollardError({

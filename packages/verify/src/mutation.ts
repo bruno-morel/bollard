@@ -112,7 +112,10 @@ export function parseStrykerReport(reportJson: string): MutationTestResult {
 
 const TEST_FILE_PATTERN = /\.test\.|\.spec\.|__tests__/
 
-function deriveVitestConfigFile(profile: ToolchainProfile): string {
+function deriveVitestConfigFile(workDir: string, profile: ToolchainProfile): string {
+  if (existsSync(join(workDir, "vitest.stryker.config.ts"))) {
+    return "vitest.stryker.config.ts"
+  }
   const testArgs = profile.checks.test?.args
   if (testArgs) {
     for (let i = 0; i < testArgs.length; i++) {
@@ -451,7 +454,7 @@ export class StrykerProvider implements MutationTestingProvider {
       plugins: ["@stryker-mutator/vitest-runner"],
       testRunner: "vitest",
       vitest: {
-        configFile: deriveVitestConfigFile(profile),
+        configFile: deriveVitestConfigFile(workDir, profile),
       },
       mutate: mutatePatterns,
       reporters: ["json", "clear-text"],
@@ -481,7 +484,14 @@ export class StrykerProvider implements MutationTestingProvider {
       // the @stryker-mutator/vitest-runner plugin to silently fail to resolve and
       // Stryker to exit 0 with an empty files:{} report (0 mutants). Calling node
       // directly lets standard node_modules resolution work in any environment.
-      const strykerJs = join(workDir, "node_modules", "@stryker-mutator", "core", "bin", "stryker.js")
+      const strykerJs = join(
+        workDir,
+        "node_modules",
+        "@stryker-mutator",
+        "core",
+        "bin",
+        "stryker.js",
+      )
       await execFileAsync("node", [strykerJs, "run"], {
         cwd: workDir,
         maxBuffer: 10 * 1024 * 1024,

@@ -1,221 +1,133 @@
 import { describe, it, expect, vi } from "vitest"
 import { CostTracker } from "../src/cost-tracker.js"
-import { BollardError } from "../src/errors.js"
 
 describe("boundary tests", () => {
-it('clamps total below min to min', () => {
+it('toJSON returns object with three number properties', () => {
   const tracker = new CostTracker(100)
-  tracker.add(5)
-  tracker.clamp(10, 50)
-  expect(tracker.total()).toBe(10)
+  tracker.add(25)
+  const result = tracker.toJSON()
+  expect(result).toHaveProperty('totalCostUsd')
+  expect(result).toHaveProperty('limitUsd')
+  expect(result).toHaveProperty('runCount')
+  expect(typeof result.totalCostUsd).toBe('number')
+  expect(typeof result.limitUsd).toBe('number')
+  expect(typeof result.runCount).toBe('number')
+  expect(Object.keys(result).length).toBe(3)
 })
 
-it('clamps total above max to max', () => {
+it('totalCostUsd equals total()', () => {
   const tracker = new CostTracker(100)
-  tracker.add(75)
-  tracker.clamp(10, 50)
-  expect(tracker.total()).toBe(50)
+  tracker.add(15.5)
+  tracker.add(24.3)
+  const result = tracker.toJSON()
+  expect(result.totalCostUsd).toBe(tracker.total())
 })
 
-it('leaves total unchanged when within range', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(30)
-  tracker.clamp(10, 50)
-  expect(tracker.total()).toBe(30)
+it('limitUsd equals limitUsd()', () => {
+  const tracker = new CostTracker(250.75)
+  tracker.add(50)
+  const result = tracker.toJSON()
+  expect(result.limitUsd).toBe(tracker.limitUsd())
 })
 
-it('clamps total equal to min', () => {
+it('runCount equals runCount()', () => {
   const tracker = new CostTracker(100)
   tracker.add(10)
-  tracker.clamp(10, 50)
-  expect(tracker.total()).toBe(10)
+  tracker.add(20)
+  tracker.add(30)
+  const result = tracker.toJSON()
+  expect(result.runCount).toBe(tracker.runCount())
 })
 
-it('clamps total equal to max', () => {
+it('toJSON does not modify internal state', () => {
+  const tracker = new CostTracker(500)
+  tracker.add(100)
+  tracker.add(50)
+  const totalBefore = tracker.total()
+  const limitBefore = tracker.limitUsd()
+  const runCountBefore = tracker.runCount()
+  tracker.toJSON()
+  const totalAfter = tracker.total()
+  const limitAfter = tracker.limitUsd()
+  const runCountAfter = tracker.runCount()
+  expect(totalAfter).toBe(totalBefore)
+  expect(limitAfter).toBe(limitBefore)
+  expect(runCountAfter).toBe(runCountBefore)
+})
+
+it('toJSON result serializes with JSON.stringify', () => {
+  const tracker = new CostTracker(1000)
+  tracker.add(333.33)
+  const result = tracker.toJSON()
+  const jsonString = JSON.stringify(result)
+  expect(typeof jsonString).toBe('string')
+  const parsed = JSON.parse(jsonString)
+  expect(parsed.totalCostUsd).toBe(result.totalCostUsd)
+  expect(parsed.limitUsd).toBe(result.limitUsd)
+  expect(parsed.runCount).toBe(result.runCount)
+})
+
+it('toJSON accepts no parameters and does not throw', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(25)
+  expect(() => {
+    tracker.toJSON()
+  }).not.toThrow()
+})
+
+it('toJSON returns a plain object', () => {
   const tracker = new CostTracker(100)
   tracker.add(50)
-  tracker.clamp(10, 50)
-  expect(tracker.total()).toBe(50)
+  const result = tracker.toJSON()
+  expect(Object.getPrototypeOf(result)).toBe(Object.prototype)
 })
 
-it('returns this for chaining', () => {
-  const tracker = new CostTracker(100)
-  const result = tracker.clamp(10, 50)
-  expect(result).toBe(tracker)
+it('toJSON is idempotent', () => {
+  const tracker = new CostTracker(200)
+  tracker.add(75)
+  const result1 = tracker.toJSON()
+  const result2 = tracker.toJSON()
+  const result3 = tracker.toJSON()
+  expect(result1.totalCostUsd).toBe(result2.totalCostUsd)
+  expect(result1.limitUsd).toBe(result2.limitUsd)
+  expect(result1.runCount).toBe(result2.runCount)
+  expect(result2.totalCostUsd).toBe(result3.totalCostUsd)
+  expect(result2.limitUsd).toBe(result3.limitUsd)
+  expect(result2.runCount).toBe(result3.runCount)
 })
 
-it('allows method chaining after clamp', () => {
-  const tracker = new CostTracker(100)
-  const result = tracker.add(25).clamp(10, 50).add(5)
-  expect(tracker.total()).toBe(30)
-  expect(result).toBe(tracker)
+it('toJSON reflects current state after multiple operations', () => {
+  const tracker = new CostTracker(500)
+  tracker.add(100)
+  let result = tracker.toJSON()
+  expect(result.totalCostUsd).toBe(100)
+  expect(result.runCount).toBe(1)
+  tracker.add(50)
+  result = tracker.toJSON()
+  expect(result.totalCostUsd).toBe(150)
+  expect(result.runCount).toBe(2)
+  tracker.add(25)
+  result = tracker.toJSON()
+  expect(result.totalCostUsd).toBe(175)
+  expect(result.runCount).toBe(3)
 })
 
-it('throws CONTRACT_VIOLATION if min is negative', () => {
+it('toJSON works with zero total and zero run count', () => {
   const tracker = new CostTracker(100)
-  try {
-    tracker.clamp(-1, 50)
-    expect.fail('should have thrown')
-  } catch (err) {
-    expect(err).toBeInstanceOf(BollardError)
-    expect(err.code).toBe('CONTRACT_VIOLATION')
-  }
+  const result = tracker.toJSON()
+  expect(result.totalCostUsd).toBe(0)
+  expect(result.runCount).toBe(0)
+  expect(result.limitUsd).toBe(100)
 })
 
-it('throws CONTRACT_VIOLATION if min is Infinity', () => {
-  const tracker = new CostTracker(100)
-  try {
-    tracker.clamp(Infinity, 50)
-    expect.fail('should have thrown')
-  } catch (err) {
-    expect(err).toBeInstanceOf(BollardError)
-    expect(err.code).toBe('CONTRACT_VIOLATION')
-  }
-})
-
-it('throws CONTRACT_VIOLATION if min is -Infinity', () => {
-  const tracker = new CostTracker(100)
-  try {
-    tracker.clamp(-Infinity, 50)
-    expect.fail('should have thrown')
-  } catch (err) {
-    expect(err).toBeInstanceOf(BollardError)
-    expect(err.code).toBe('CONTRACT_VIOLATION')
-  }
-})
-
-it('throws CONTRACT_VIOLATION if min is NaN', () => {
-  const tracker = new CostTracker(100)
-  try {
-    tracker.clamp(NaN, 50)
-    expect.fail('should have thrown')
-  } catch (err) {
-    expect(err).toBeInstanceOf(BollardError)
-    expect(err.code).toBe('CONTRACT_VIOLATION')
-  }
-})
-
-it('throws CONTRACT_VIOLATION if min > max', () => {
-  const tracker = new CostTracker(100)
-  try {
-    tracker.clamp(50, 10)
-    expect.fail('should have thrown')
-  } catch (err) {
-    expect(err).toBeInstanceOf(BollardError)
-    expect(err.code).toBe('CONTRACT_VIOLATION')
-  }
-})
-
-it('throws CONTRACT_VIOLATION if max is negative', () => {
-  const tracker = new CostTracker(100)
-  try {
-    tracker.clamp(0, -1)
-    expect.fail('should have thrown')
-  } catch (err) {
-    expect(err).toBeInstanceOf(BollardError)
-    expect(err.code).toBe('CONTRACT_VIOLATION')
-  }
-})
-
-it('throws CONTRACT_VIOLATION if max is Infinity', () => {
-  const tracker = new CostTracker(100)
-  try {
-    tracker.clamp(0, Infinity)
-    expect.fail('should have thrown')
-  } catch (err) {
-    expect(err).toBeInstanceOf(BollardError)
-    expect(err.code).toBe('CONTRACT_VIOLATION')
-  }
-})
-
-it('throws CONTRACT_VIOLATION if max is -Infinity', () => {
-  const tracker = new CostTracker(100)
-  try {
-    tracker.clamp(0, -Infinity)
-    expect.fail('should have thrown')
-  } catch (err) {
-    expect(err).toBeInstanceOf(BollardError)
-    expect(err.code).toBe('CONTRACT_VIOLATION')
-  }
-})
-
-it('throws CONTRACT_VIOLATION if max is NaN', () => {
-  const tracker = new CostTracker(100)
-  try {
-    tracker.clamp(0, NaN)
-    expect.fail('should have thrown')
-  } catch (err) {
-    expect(err).toBeInstanceOf(BollardError)
-    expect(err.code).toBe('CONTRACT_VIOLATION')
-  }
-})
-
-it('clamps zero total to min when min > 0', () => {
-  const tracker = new CostTracker(100)
-  tracker.clamp(25, 75)
-  expect(tracker.total()).toBe(25)
-})
-
-it('clamps large total to max', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(99)
-  tracker.clamp(10, 50)
-  expect(tracker.total()).toBe(50)
-})
-
-it('handles min equals max', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(30)
-  tracker.clamp(25, 25)
-  expect(tracker.total()).toBe(25)
-})
-
-it('handles min equals zero', () => {
-  const tracker = new CostTracker(100)
-  tracker.clamp(0, 50)
-  expect(tracker.total()).toBe(0)
-})
-
-it('rejects both min and max as Infinity', () => {
-  const tracker = new CostTracker(100)
-  try {
-    tracker.clamp(Infinity, Infinity)
-    expect.fail('should have thrown')
-  } catch (err) {
-    expect(err).toBeInstanceOf(BollardError)
-    expect(err.code).toBe('CONTRACT_VIOLATION')
-  }
-})
-
-it('rejects min as NaN even if max is valid', () => {
-  const tracker = new CostTracker(100)
-  try {
-    tracker.clamp(NaN, 50)
-    expect.fail('should have thrown')
-  } catch (err) {
-    expect(err).toBeInstanceOf(BollardError)
-    expect(err.code).toBe('CONTRACT_VIOLATION')
-  }
-})
-
-it('clamps with decimal min and max', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(5.5)
-  tracker.clamp(2.5, 7.5)
-  expect(tracker.total()).toBe(5.5)
-})
-
-it('clamps fractional total to fractional min', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(1.25)
-  tracker.clamp(2.75, 10)
-  expect(tracker.total()).toBe(2.75)
-})
-
-it('clamps fractional total to fractional max', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(15.75)
-  tracker.clamp(5.5, 10.25)
-  expect(tracker.total()).toBe(10.25)
+it('toJSON serializes correctly in nested JSON structures', () => {
+  const tracker = new CostTracker(1000)
+  tracker.add(250)
+  const container = { tracker: tracker.toJSON(), metadata: 'test' }
+  const jsonString = JSON.stringify(container)
+  const parsed = JSON.parse(jsonString)
+  expect(parsed.tracker.totalCostUsd).toBe(250)
+  expect(parsed.tracker.limitUsd).toBe(1000)
+  expect(parsed.tracker.runCount).toBe(1)
 })
 })
