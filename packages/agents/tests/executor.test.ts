@@ -73,18 +73,42 @@ function cloneMessages(messages: LLMMessage[]): LLMMessage[] {
   return JSON.parse(JSON.stringify(messages)) as LLMMessage[]
 }
 
+function isHardExitUserMessage(m: LLMMessage): boolean {
+  if (m.role !== "user") return false
+  if (typeof m.content === "string") {
+    return m.content.includes("SYSTEM: You have")
+  }
+  if (Array.isArray(m.content)) {
+    return m.content.some(
+      (b) => b.type === "text" && typeof b.text === "string" && b.text.includes("SYSTEM: You have"),
+    )
+  }
+  return false
+}
+
 function hardExitUserMessageCountInTranscript(messages: LLMMessage[]): number {
   let n = 0
   for (const m of messages) {
-    if (
-      m.role === "user" &&
-      typeof m.content === "string" &&
-      m.content.includes("SYSTEM: You have")
-    ) {
+    if (isHardExitUserMessage(m)) {
       n++
     }
   }
   return n
+}
+
+function findHardExitInjectionPair(
+  messages: LLMMessage[],
+): { assistant: LLMMessage; user: LLMMessage } | undefined {
+  for (let i = 0; i < messages.length - 1; i++) {
+    const assistant = messages[i]
+    const user = messages[i + 1]
+    if (assistant?.role !== "assistant" || user?.role !== "user") continue
+    if (!isHardExitUserMessage(user)) continue
+    const assistantBlocks = Array.isArray(assistant.content) ? assistant.content : []
+    if (!assistantBlocks.some((b) => b.type === "tool_use")) continue
+    return { assistant, user }
+  }
+  return undefined
 }
 
 const noopTool: AgentTool = {
@@ -303,6 +327,32 @@ describe("executeAgent", () => {
     for (let i = injectionSeenAt + 1; i < recorded.length; i++) {
       expect(hardExitUserMessageCountInTranscript(recorded[i] ?? [])).toBe(1)
     }
+
+    const injectionTranscript = recorded[injectionSeenAt + 1] ?? []
+    const pair = findHardExitInjectionPair(injectionTranscript)
+    expect(pair).toBeDefined()
+    if (pair === undefined) {
+      throw new Error("expected hard-exit injection pair in transcript")
+    }
+    const { assistant, user } = pair
+
+    expect(typeof user.content).not.toBe("string")
+    const userBlocks = user.content as LLMContentBlock[]
+    const assistantBlocks = Array.isArray(assistant.content) ? assistant.content : []
+    const toolUseIds = assistantBlocks
+      .filter(
+        (b): b is LLMContentBlock & { type: "tool_use"; toolUseId: string } =>
+          b.type === "tool_use" && typeof b.toolUseId === "string",
+      )
+      .map((b) => b.toolUseId)
+
+    for (const id of toolUseIds) {
+      expect(userBlocks.some((b) => b.type === "tool_result" && b.toolUseId === id)).toBe(true)
+    }
+
+    const textBlocks = userBlocks.filter((b) => b.type === "text")
+    expect(textBlocks).toHaveLength(1)
+    expect(textBlocks[0]?.text).toContain("SYSTEM: You have")
   })
 
   it("throws COST_LIMIT_EXCEEDED from per-attempt cap before maxTurns", async () => {

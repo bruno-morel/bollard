@@ -273,10 +273,21 @@ export async function executeAgent(
     ) {
       hasInjectedHardExit = true
       messages.push({ role: "assistant", content: response.content })
-      messages.push({
-        role: "user",
-        content: `SYSTEM: You have ${agent.maxTurns - turns} turns remaining. You MUST emit your completion JSON on your next response. Do not make any more tool calls. Emit the completion JSON now.`,
+      const stubResults: LLMContentBlock[] = response.content
+        .filter(
+          (b): b is LLMContentBlock & { type: "tool_use"; toolUseId: string } =>
+            b.type === "tool_use" && typeof b.toolUseId === "string",
+        )
+        .map((b) => ({
+          type: "tool_result" as const,
+          toolUseId: b.toolUseId,
+          text: "[forced completion — ignoring tool result]",
+        }))
+      stubResults.push({
+        type: "text" as const,
+        text: `SYSTEM: You have ${agent.maxTurns - turns} turns remaining. You MUST emit your completion JSON on your next response. Do not make any more tool calls. Emit the completion JSON now.`,
       })
+      messages.push({ role: "user", content: stubResults })
       compactOlderTurns(messages)
       turns++
       continue
