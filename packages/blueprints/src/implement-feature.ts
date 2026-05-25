@@ -867,7 +867,11 @@ export function createImplementFeatureBlueprint(
           const plan = ctx.plan as Record<string, unknown> | undefined
           const planSummary =
             typeof plan?.["summary"] === "string" ? (plan["summary"] as string) : undefined
-          const corpus = contractContextToCorpus(contract, planSummary)
+          const taskStr = ctx.task
+          const acceptanceCriteria = Array.isArray(plan?.["acceptance_criteria"])
+            ? (plan["acceptance_criteria"] as unknown[]).map((c) => String(c))
+            : []
+          const corpus = contractContextToCorpus(contract, planSummary, taskStr, acceptanceCriteria)
 
           const concerns = profile.adversarial.contract.concerns
           const enabled: EnabledConcerns = {

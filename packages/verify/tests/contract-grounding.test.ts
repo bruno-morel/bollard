@@ -302,3 +302,84 @@ describe("contractContextToCorpus", () => {
     expect(corpus.entries).toHaveLength(0)
   })
 })
+
+describe("contractContextToCorpus — task and acceptance criteria", () => {
+  const emptyCtx: ContractContext = { modules: [], edges: [], affectedEdges: [] }
+
+  it("includes taskStr as a corpus entry when provided", () => {
+    const corpus = contractContextToCorpus(emptyCtx, undefined, "Add merge(other) method")
+    expect(corpus.entries).toContain("Add merge(other) method")
+  })
+
+  it("includes each acceptance criterion as a separate corpus entry", () => {
+    const corpus = contractContextToCorpus(emptyCtx, undefined, undefined, [
+      "throws BollardError with CONTRACT_VIOLATION when other is null",
+      "returns a new tracker with combined totals",
+    ])
+    expect(corpus.entries).toContain(
+      "throws BollardError with CONTRACT_VIOLATION when other is null",
+    )
+    expect(corpus.entries).toContain("returns a new tracker with combined totals")
+  })
+
+  it("a claim quoting acceptance criterion text passes grounding", () => {
+    const corpus = contractContextToCorpus(
+      emptyCtx,
+      undefined,
+      "Add merge(other: CostTracker): CostTracker",
+      ["throws BollardError with CONTRACT_VIOLATION if other is not a CostTracker"],
+    )
+    const doc: ClaimDocument = {
+      claims: [
+        {
+          id: "c1",
+          concern: "correctness",
+          claim: "merge throws when other is invalid",
+          grounding: [
+            {
+              quote: "throws BollardError with CONTRACT_VIOLATION if other is not a CostTracker",
+              source: "acceptance_criteria:1",
+            },
+          ],
+          test: "it('placeholder', () => {})",
+        },
+      ],
+    }
+    const result = verifyClaimGrounding(doc, corpus, { correctness: true })
+    expect(result.kept).toHaveLength(1)
+    expect(result.dropped).toHaveLength(0)
+  })
+
+  it("a claim quoting task description text passes grounding", () => {
+    const corpus = contractContextToCorpus(
+      emptyCtx,
+      undefined,
+      "Add merge(other: CostTracker): CostTracker method that combines totals",
+      [],
+    )
+    const doc: ClaimDocument = {
+      claims: [
+        {
+          id: "c2",
+          concern: "correctness",
+          claim: "merge combines totals",
+          grounding: [
+            {
+              quote: "combines totals",
+              source: "task_description",
+            },
+          ],
+          test: "it('placeholder', () => {})",
+        },
+      ],
+    }
+    const result = verifyClaimGrounding(doc, corpus, { correctness: true })
+    expect(result.kept).toHaveLength(1)
+    expect(result.dropped).toHaveLength(0)
+  })
+
+  it("omitting taskStr and criteria preserves existing corpus behavior", () => {
+    const corpus = contractContextToCorpus(emptyCtx, "plan summary text")
+    expect(corpus.entries).toEqual(["plan summary text"])
+  })
+})

@@ -274,6 +274,8 @@ export function verifyClaimGrounding(
 export function contractContextToCorpus(
   ctx: ContractContext,
   planSummary?: string,
+  taskStr?: string,
+  acceptanceCriteria?: string[],
 ): ContractCorpus {
   const entries: string[] = []
 
@@ -301,6 +303,14 @@ export function contractContextToCorpus(
 
   if (planSummary) {
     entries.push(planSummary)
+  }
+
+  if (taskStr) {
+    entries.push(taskStr)
+  }
+
+  for (const criterion of acceptanceCriteria ?? []) {
+    if (criterion) entries.push(criterion)
   }
 
   return { entries }
