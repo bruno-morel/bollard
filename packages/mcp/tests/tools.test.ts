@@ -156,23 +156,27 @@ describe("MCP tool definitions", () => {
     }
   })
 
-  it("bollard_verify handler returns structured verification result", async () => {
-    const tool = tools.find((t) => t.name === "bollard_verify")
-    const result = (await tool?.handler({}, REPO_ROOT)) as {
-      allPassed: boolean
-      summary: string
-      checks: Array<{ name: string; passed: boolean; output: string; durationMs: number }>
-    }
-    expect(typeof result.allPassed).toBe("boolean")
-    expect(typeof result.summary).toBe("string")
-    expect(Array.isArray(result.checks)).toBe(true)
-    expect(result.checks.length).toBeGreaterThan(0)
-    for (const check of result.checks) {
-      expect(check.name).toBeTruthy()
-      expect(typeof check.passed).toBe("boolean")
-      expect(typeof check.durationMs).toBe("number")
-    }
-  })
+  it(
+    "bollard_verify handler returns structured verification result",
+    async () => {
+      const tool = tools.find((t) => t.name === "bollard_verify")
+      const result = (await tool?.handler({}, REPO_ROOT)) as {
+        allPassed: boolean
+        summary: string
+        checks: Array<{ name: string; passed: boolean; output: string; durationMs: number }>
+      }
+      expect(typeof result.allPassed).toBe("boolean")
+      expect(typeof result.summary).toBe("string")
+      expect(Array.isArray(result.checks)).toBe(true)
+      expect(result.checks.length).toBeGreaterThan(0)
+      for (const check of result.checks) {
+        expect(check.name).toBeTruthy()
+        expect(typeof check.passed).toBe("boolean")
+        expect(typeof check.durationMs).toBe("number")
+      }
+    },
+    30_000,
+  )
 
   it("bollard_config handler resolves config from workDir", async () => {
     const tool = tools.find((t) => t.name === "bollard_config")

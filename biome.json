@@ -49,6 +49,7 @@
     "ignore": [
       "node_modules",
       "dist",
+      ".bollard",
       "*.json",
       "*.d.ts",
       "*.js",
