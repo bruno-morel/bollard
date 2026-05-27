@@ -8,102 +8,166 @@
 
 ## What Is Bollard?
 
-Bollard is an **artifact integrity framework** for AI-assisted software development. It ensures that every artifact in your project — code, tests, documentation, infrastructure config, API schemas, production probes, feature flags — is produced, verified, and maintained through the same adversarial pipeline.
+Bollard is an **artifact integrity framework** for AI-assisted software development. It ensures every artifact — code, tests, documentation, infrastructure config — is produced, adversarially verified, and mechanically proven sound before shipping.
 
-The core insight: code, tests, and docs all suffer from the same failure modes when AI agents produce them. They can be hallucinated, they can drift from reality, they can be internally consistent but wrong. The solution is the same for all of them: **separate the producer from the verifier, then mechanically prove the verification itself is sound.**
+The core insight: **separate the producer from the verifier, then prove the verification itself is meaningful** (via mutation testing). Code, tests, and docs all suffer from the same failure modes when AI agents produce them — hallucination, drift, internal consistency without correctness. The solution is the same for all of them.
 
 Bollard is **open source** (Apache 2.0), **API-first** (library → CLI + MCP server), and **battery-included** (auto-detects your project, zero config for most setups). Use it from the terminal, from Claude Code, from Cursor, or from any MCP-compatible tool.
 
 ---
 
-## Design Documents
+## Status
 
-| # | Document | What It Covers |
-|---|----------|---------------|
-| [01](01-architecture.md) | **Architecture** | Universal artifact pattern, adversarial verification, blueprint engine, CLI + API-first + MCP interface, production feedback loop, resilience model, project structure |
-| [02](02-bootstrap.md) | **Bootstrap Roadmap** | How Bollard builds itself: 5 stages from hand-written kernel to self-hosting, prompt evaluation framework, dependency graph, time estimates |
-| [03](03-providers.md) | **Providers** | Cloud abstraction: the 4-method provider interface, 3 provider implementations (local, GitHub Actions, GCP), network isolation |
-| [04](04-configuration.md) | **Configuration** | Auto-detect everything, derive the rest: provider detection, env vars, convention over configuration, minimal `.bollard.yml` for overrides only |
-| [05](05-risk-model.md) | **Risk Model** | Trust but verify: 5 risk dimensions, risk scoring, graduated gating (auto-merge → notify → approve), escape hatches, meta-verification, notification model |
-| — | [ROADMAP.md](ROADMAP.md) | **Roadmap** | Features deferred from v0.1: SLO tracking, error budgets, progressive rollout, additional cloud providers, full prompt eval framework |
+**Active development — Stages 0 through 5b complete.**
 
-### Reading Order
+The full `implement-feature` pipeline (31 nodes) runs end-to-end on the Bollard codebase itself:
+plan → implement → static checks → boundary adversarial → contract adversarial → behavioral adversarial → mutation testing → semantic review → Docker-isolated verify → human gate → PR.
 
-**First time?** Read 01 → 05 → 02.
-**Deploying?** Read 04 → 03.
-**Contributing?** Read 02 → 01.
+**Languages supported:** TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin.
+**LLM providers:** Anthropic (Claude), OpenAI, Google (Gemini). Local inference via llama.cpp (opt-in).
+**IDE integrations:** Claude Code, Cursor, Codex, Antigravity (via `bollard init --ide`).
+**MCP server:** 16 tools, 6 resource endpoints, 3 prompt templates.
 
----
-
-## Key Architectural Decisions
-
-| Decision | Choice | Rationale | ADR |
-|----------|--------|-----------|-----|
-| Universal artifact pattern | Every artifact (code, tests, docs, IaC) goes through: produce → adversarial verify → mechanical proof → drift detection | Same failure modes, same solution | 001 |
-| API-first, CLI + MCP | Engine is a library; CLI and MCP server are equal clients | Use Bollard from terminal, Claude Code, Cursor, or any MCP client — same capabilities | — |
-| pnpm over Turborepo | pnpm workspaces, no build orchestration service | Minimal dependencies, no external infrastructure | 002 |
-| Risk-based gating | Graduated autonomy based on blast radius, reversibility, security, cost, novelty | Scales beyond binary human gates; humans focus where it matters | 003 |
-| All artifacts are equal | Docs, IaC, schemas verified through the same pattern as code | Prevents silent drift in any artifact type | 004 |
-| Cloud-agnostic providers | 4-method interface, 3 providers (local, GitHub Actions, GCP), more via ROADMAP | Run anywhere Docker runs; no vendor lock-in | — |
-| Blueprint engine (~500 LOC) | Custom TypeScript, not LangChain/CrewAI | Full control, no framework lock-in, minimal dependencies | — |
-| Production Feedback Loop | Canary rollout by risk tier → probe → fix forward + drift detection → system converges | Defense in depth: pipeline verifies against spec, canary verifies against reality | — |
-| Open source (Apache 2.0) | Permissive license with patent grant | Encourages adoption without scaring enterprise; standard for developer tools | — |
+**Test suite:** 1305 passed / 6 skipped · Adversarial suite: 337 passed.
 
 ---
 
 ## Getting Started
 
-**Prerequisites:** Docker and Docker Compose. That's it — no local Node.js, pnpm, or other tooling needed.
+**Prerequisites:** Docker and Docker Compose. No local Node.js, pnpm, or other tooling needed.
 
 ```bash
-# Clone the repo
+# Clone and build
 git clone <repo-url> && cd bollard
-
-# Build the dev image
 docker compose build dev
 
-# Run tests
+# Verify the repo (typecheck + lint + audit)
+docker compose run --rm dev --filter @bollard/cli run start -- verify
+
+# Run the full test suite
 docker compose run --rm dev run test
 
-# Type-check
-docker compose run --rm dev run typecheck
+# Generate a plan for a task (requires ANTHROPIC_API_KEY in .env)
+docker compose run --rm -e BOLLARD_AUTO_APPROVE=1 dev sh -c \
+  'pnpm --filter @bollard/cli run start -- plan --task "Add retry logic to HTTP client"'
 
-# Lint
-docker compose run --rm dev run lint
+# Run the full implement-feature pipeline
+docker compose run --rm -e BOLLARD_AUTO_APPROVE=1 dev sh -c \
+  'pnpm --filter @bollard/cli run start -- run implement-feature --task "Add health check endpoint"'
 
-# Run the demo blueprint (requires ANTHROPIC_API_KEY)
-ANTHROPIC_API_KEY=sk-... docker compose run --rm dev --filter @bollard/cli run start -- run demo --task "Say hello"
+# Run history / cost baseline / doctor
+docker compose run --rm dev --filter @bollard/cli run start -- history
+docker compose run --rm dev --filter @bollard/cli run start -- cost-baseline show
+docker compose run --rm dev --filter @bollard/cli run start -- doctor --history
 ```
+
+---
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `verify [--quiet] [--ci-passed <list>]` | Static verification (typecheck, lint, audit, secretScan) |
+| `run implement-feature --task "..."` | Full 31-node pipeline with human gates |
+| `plan --task "..."` | Standalone planner agent |
+| `contract` | Print contract graph JSON |
+| `behavioral` | Print behavioral context JSON |
+| `init --ide <platform>` | Generate IDE config (`cursor`, `claude-code`, `codex`, `all`) |
+| `watch` | Continuous verification on file changes |
+| `history [show\|compare\|summary\|rebuild]` | Run history with filters |
+| `cost-baseline [tag\|show\|diff]` | Cost regression tracking |
+| `eval [agent]` | Run prompt eval sets |
+| `doctor [--history]` | Health check with run history diagnostics |
+| `probe / deploy / flag / drift` | Production feedback loop commands |
+
+---
+
+## Architecture
+
+Bollard has a layered architecture. Each layer only knows about the layer below it.
+
+```
+CLI / MCP server          ← equal clients of the engine library
+     ↓
+Blueprint engine          ← sequential node runner, cost tracker, history
+     ↓
+Agents + Tools            ← planner, coder, 3 adversarial testers, reviewer
+     ↓
+Verify + Detect           ← static checks, dynamic tests, extractors, mutation
+     ↓
+LLM providers             ← Anthropic, OpenAI, Google, local (llama.cpp)
+```
+
+**Three adversarial scopes** — each with its own agent, context, and concern weights:
+- **Boundary** — type-level correctness, edge cases, security (injection, auth bypass)
+- **Contract** — cross-module API contracts, interface compatibility, behavioral contracts
+- **Behavioral** — endpoint behavior, config, dependencies, fault injection, failure modes
+
+**Mutation testing** (Stryker / mutmut / cargo-mutants / PIT) proves the adversarial tests are meaningful — not just passing because they never assert anything sharp.
+
+---
+
+## Design Documents
+
+All specs live in [`spec/`](spec/):
+
+| Document | What It Covers |
+|----------|----------------|
+| [spec/01-architecture.md](spec/01-architecture.md) | Engine types, blueprint runner, pipeline layers, production feedback loop |
+| [spec/02-bootstrap.md](spec/02-bootstrap.md) | Stage-by-stage build history (Stages 0 → 2) |
+| [spec/04-configuration.md](spec/04-configuration.md) | Auto-detection, `.bollard.yml` reference, config priority |
+| [spec/05-risk-model.md](spec/05-risk-model.md) | Risk dimensions, scoring, graduated gating |
+| [spec/06-toolchain-profiles.md](spec/06-toolchain-profiles.md) | Language-agnostic verification, `ToolchainProfile`, Docker isolation |
+| [spec/07-adversarial-scopes.md](spec/07-adversarial-scopes.md) | Boundary / contract / behavioral scopes, concern weights, forward roadmap |
+| [spec/ROADMAP.md](spec/ROADMAP.md) | Forward roadmap (Stages 5c → 6+) |
+| [spec/README.md](spec/README.md) | Spec index |
+
+**ADRs** in [`spec/adr/`](spec/adr/):
+
+| ADR | Decision |
+|-----|----------|
+| [0001](spec/adr/0001-deterministic-filters-for-llm-output.md) | Deterministic post-filters for LLM output (grounding, claim parsing) |
+| [0002](spec/adr/0002-syn-helper-for-rust-extraction.md) | syn-based Rust extractor helper binary |
+| [0003](spec/adr/0003-agent-protocol-compliance.md) | WHY + DO NOT + SELF-CHECK protocol structure for agent prompts |
+| [0004](spec/adr/0004-determinism-local-frontier-tiers.md) | Determinism-first → local → frontier tier model for token economy |
 
 ---
 
 ## Tech Stack
 
-**Required:** Docker (all tooling runs in containers).
-**Inside the container:** Node.js 22+, pnpm, TypeScript (strict), Vitest, fast-check, Biome, Zod, tsx.
-**Later stages:** Stryker, gitleaks, Pact, Playwright, OpenTelemetry, Sentry.
-**Explicitly excluded:** Turborepo, ESLint+Prettier, Jest, LangChain/CrewAI, remote caching services.
+**Required:** Docker (all tooling runs in containers — nothing installed locally except Docker).
+
+**Inside the container:** Node.js 22+, pnpm workspaces, TypeScript 5.x strict, Vitest, fast-check, Biome, Zod, tsx.
+
+**Mutation testing:** Stryker (TS/JS), mutmut (Python), cargo-mutants (Rust), PIT (Java/Kotlin).
+
+**Explicitly excluded:** Turborepo, ESLint+Prettier, Jest, LangChain/CrewAI, any agent framework.
 
 ---
 
-## Open Source
+## Key Architectural Decisions
 
-**License:** Apache 2.0 — permissive, includes patent grant, standard for developer infrastructure (Kubernetes, Terraform, Docker).
-
-**Why Apache 2.0 over MIT?** The patent grant protects both contributors and users. MIT is simpler but leaves patent claims ambiguous. AGPL would limit enterprise adoption without clear benefit.
-
-**Why open source at all?** Bollard verifies AI agents — the verification logic itself must be auditable. A closed-source verifier asks you to trust the trust layer. That defeats the purpose. Open source means the adversarial pipeline is itself adversarially verifiable by anyone.
-
-**Contribution model:** Bollard verifies its own contributions. PRs go through the same adversarial pipeline as any other project using Bollard. At Stage 4 (self-hosting), Bollard's risk model gates community contributions: documentation fixes auto-merge, engine changes require maintainer review.
-
-**Extension model:** MCP is the plugin system. Custom agents, custom probes, custom providers, external integrations — all work through MCP tools or the BollardProvider interface. No proprietary plugin format, no marketplace, no vendor lock-in.
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Separate producer from verifier | Planner + coder agents produce; three adversarial agents independently verify | Same person writing and reviewing is the core failure mode of AI code |
+| Mutation testing proves coverage | Stryker/mutmut/cargo-mutants after adversarial test generation | Adversarial tests that never kill a mutant aren't testing anything sharp |
+| Determinism first | Anything that can be deterministic must be; LLM reserved for creative work | ADR-0004; operationalized in Stage 5d token economy |
+| Blueprint engine (~500 LOC) | Custom TypeScript, not LangChain/CrewAI | Full control, minimal dependencies, no framework lock-in |
+| API-first, CLI + MCP equal | Engine is a library; CLI and MCP server are equal clients | Use from terminal, Claude Code, Cursor, or any MCP client — same capabilities |
+| Docker-isolated adversarial tests | Adversarial tests run in separate containers from production code | Tests in the same process share failure modes with the code they test |
+| Open source (Apache 2.0) | Permissive license with patent grant | The verification logic must be auditable; a closed verifier defeats the purpose |
 
 ---
 
-## Status
+## Self-Hosting
 
-**Phase:** Stage 0 in progress (the kernel: engine types, runner, LLM client, CLI skeleton)
-**Development:** All via Docker Compose — `docker compose run --rm dev run test`
+Bollard verifies its own contributions. The Bollard-on-Bollard CI pipeline runs on every PR:
+
+- **`.github/workflows/bollard-verify.yml`** — typecheck + lint + `bollard verify --quiet` on every push/PR (zero LLM cost)
+- **`.github/workflows/cost-regression.yml`** — full `implement-feature` pipeline weekly; exits 1 if average cost regresses beyond threshold
+- **`.github/workflows/eval-regression.yml`** — prompt eval suite weekly; exits 1 if any agent's pass rate drops > 10 pp
+
+Run history, cost baselines, and prompt eval baselines are all stored in `.bollard/` and tracked by the CI.
 
 ---
 

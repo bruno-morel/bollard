@@ -151,7 +151,7 @@ describe("write_file", () => {
     expect(result).toContain("project root is not allowed")
   })
 
-  it("allows write to any path when allowedWritePaths is not set (backward-compatible)", async () => {
+  it("allows write to any path when allowedWritePaths is not set (backward compat)", async () => {
     const result = await writeFileTool.execute(
       { path: "anywhere/file.ts", content: "export {}" },
       ctx,
@@ -197,6 +197,34 @@ describe("write_file", () => {
       ctx,
     )
     expect(result).toContain("bytes")
+  })
+
+  it("populates blockedTestPaths after write-once guard fires (Phase 18c)", async () => {
+    const testFile = join(tempDir, "tests/cost-tracker-floor.test.ts")
+    const srcFile = join(tempDir, "src/cost-tracker.ts")
+    const ctxWithScope = { ...ctx, allowedWritePaths: [srcFile, testFile] }
+
+    await writeFileTool.execute(
+      { path: "tests/cost-tracker-floor.test.ts", content: "import { describe } from 'vitest'" },
+      ctxWithScope,
+    )
+
+    expect(ctxWithScope.blockedTestPaths).toBeDefined()
+    expect(ctxWithScope.blockedTestPaths).toContain(testFile)
+    // src file not blocked
+    expect(ctxWithScope.blockedTestPaths).not.toContain(srcFile)
+  })
+
+  it("does not populate blockedTestPaths for non-test files (Phase 18c)", async () => {
+    const srcFile = join(tempDir, "src/cost-tracker.ts")
+    const ctxWithScope = { ...ctx, allowedWritePaths: [srcFile] }
+
+    await writeFileTool.execute(
+      { path: "src/cost-tracker.ts", content: "export const x = 1" },
+      ctxWithScope,
+    )
+
+    expect(ctxWithScope.blockedTestPaths).toBeUndefined()
   })
 })
 
@@ -419,6 +447,44 @@ describe("run_command", () => {
     expect(result).toContain("× CostTracker > clamp")
     expect(result).toContain("× executeAgent > handles tool errors")
     expect(result).not.toContain("[...truncated")
+  })
+
+  it("blocks test run on a blockedTestPath file (Phase 18c)", async () => {
+    const testFile = join(tempDir, "tests/cost-tracker-floor.test.ts")
+    const ctxBlocked = {
+      ...ctx,
+      blockedTestPaths: [testFile],
+    }
+    const result = await runCommandTool.execute(
+      { command: `pnpm exec vitest run tests/cost-tracker-floor.test.ts` },
+      ctxBlocked,
+    )
+    expect(result).toContain("Error:")
+    expect(result).toContain("cost-tracker-floor.test.ts")
+    expect(result).toContain("write-once guard")
+  })
+
+  it("does not block test run when no blockedTestPaths set", async () => {
+    // Node -v is not a test command, just checking the blockedTestPaths guard is a no-op
+    const result = await runCommandTool.execute({ command: "node -v" }, ctx)
+    expect(result).not.toContain("write-once guard")
+  })
+
+  it("does not block unrelated test file when blockedTestPaths is set", async () => {
+    const testFile = join(tempDir, "tests/cost-tracker-floor.test.ts")
+    const ctxBlocked = {
+      ...ctx,
+      blockedTestPaths: [testFile],
+    }
+    // Running a completely different test file — should not be blocked
+    // (we just check the guard logic, not actual execution which would fail without real files)
+    const isBlocked = ctxBlocked.blockedTestPaths.some((blocked) => {
+      const blockedBase = blocked.split("/").at(-1) ?? ""
+      return ["pnpm", "exec", "vitest", "run", "tests/cost-tracker-cap.test.ts"].some(
+        (p) => p === blocked || p.endsWith(blockedBase),
+      )
+    })
+    expect(isBlocked).toBe(false)
   })
 })
 

@@ -163,6 +163,24 @@ export const runCommandTool: AgentTool = {
     const executable = parts[0]
 
     if (isTestCommand(parts)) {
+      // Phase 18c: block run_command on test files removed by write-once guard.
+      // The coder wrote the file once — it must not run it again. Check if any
+      // command argument matches a blocked path (by basename or full path).
+      if (ctx.blockedTestPaths !== undefined && ctx.blockedTestPaths.length > 0) {
+        const blocked = ctx.blockedTestPaths.find((blocked) => {
+          const blockedBase = blocked.split("/").at(-1) ?? ""
+          return parts.some((p) => p === blocked || p.endsWith(blockedBase))
+        })
+        if (blocked !== undefined) {
+          const base = blocked.split("/").at(-1) ?? blocked
+          return [
+            `Error: "${base}" was written by write-once guard and cannot be run again.`,
+            "You wrote the test file once — do not run or edit it.",
+            "Proceed to the next step.",
+          ].join(" ")
+        }
+      }
+
       ctx.testInvocationCount = (ctx.testInvocationCount ?? 0) + 1
       if (ctx.testInvocationCount > MAX_TEST_INVOCATIONS) {
         return [

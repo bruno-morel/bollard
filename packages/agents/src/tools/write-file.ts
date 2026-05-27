@@ -37,10 +37,16 @@ export const writeFileTool: AgentTool = {
     // Write-once guard for new test files (Phase 18): after the coder writes a *.test.ts
     // file that was in allowedWritePaths, remove it so subsequent edit_file calls are
     // blocked. This prevents the fast-check iteration loop seen in the scale() self-test.
+    // Phase 18c: also push to blockedTestPaths so run_command rejects test invocations
+    // that reference this file — prevents the coder from running the new test file again.
     if (ctx.allowedWritePaths !== undefined && /\.test\.[jt]s$/.test(filePath)) {
       const idx = ctx.allowedWritePaths.indexOf(filePath)
       if (idx !== -1) {
         ctx.allowedWritePaths.splice(idx, 1)
+        if (ctx.blockedTestPaths === undefined) {
+          ctx.blockedTestPaths = []
+        }
+        ctx.blockedTestPaths.push(filePath)
       }
     }
 

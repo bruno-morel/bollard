@@ -44,6 +44,12 @@ export interface AgentContext {
   workDir: string
   allowedCommands?: string[]
   allowedWritePaths?: string[]
+  /**
+   * Paths removed by the write-once guard (Phase 18). run_command rejects test invocations
+   * that reference any path in this set, preventing the coder from iterating on a test file
+   * after writing it once.
+   */
+  blockedTestPaths?: string[]
   progress?: AgentProgressCallback
   /** Test commands (pnpm test / vitest) invoked this agent session; mutated by run_command. */
   testInvocationCount?: number
