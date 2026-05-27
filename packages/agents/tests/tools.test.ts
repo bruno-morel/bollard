@@ -182,7 +182,10 @@ describe("write_file", () => {
     const allowedWritePaths = [srcFile]
     const ctxWithScope = { ...ctx, allowedWritePaths }
 
-    await writeFileTool.execute({ path: "src/cost-tracker.ts", content: "export const x = 1" }, ctxWithScope)
+    await writeFileTool.execute(
+      { path: "src/cost-tracker.ts", content: "export const x = 1" },
+      ctxWithScope,
+    )
     // src file stays in allowedWritePaths after write
     expect(ctxWithScope.allowedWritePaths).toContain(srcFile)
   })
