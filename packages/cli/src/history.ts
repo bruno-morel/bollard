@@ -235,7 +235,9 @@ async function cmdShow(workDir: string, runId: string, json: boolean): Promise<v
         : ` ${DIM}$0.00${RESET}`
     const dur = n.durationMs !== undefined ? formatMs(n.durationMs) : "—"
     const turnsStr = n.turns !== undefined ? ` ${DIM}${n.turns}t${RESET}` : ""
-    log(`  ${statusIcon(n.status)} ${padEndVisible(n.name, 28)} ${padEndVisible(dur, 8)}${cost}${turnsStr}`)
+    log(
+      `  ${statusIcon(n.status)} ${padEndVisible(n.name, 28)} ${padEndVisible(dur, 8)}${cost}${turnsStr}`,
+    )
     if (n.error) {
       log(`      ${RED}${n.error.code}:${RESET} ${n.error.message}`)
     }
