@@ -109,6 +109,8 @@ These two fixes shipped after studying the clamp() run logs (`20260525-0038-run-
 - ~~**Stryker vitest-runner Docker env:**~~ **DONE (2026-05-25).** Resolved via node+stryker.js + explicit plugins in generated config. See [stage5d-phase15b-validation-results.md](./stage5d-phase15b-validation-results.md).
 - ~~**Phase 15 live pipeline (`toJSON()` self-test):**~~ **GREEN (2026-05-25).** Run `20260525-2222-run-39f3e2` — node 22 `run-mutation-testing` → **totalMutants 204**, score **90.20%**. `deriveVitestConfigFile` now prefers `vitest.stryker.config.ts`. Stryker Phase 15 fully closed (Docker smoke + live pipeline). See [self-test-to-json-results.md](./self-test-to-json-results.md).
 
+- ~~**Coder test-surgery-loop guard (Phase 16):**~~ **DONE (commit `0843bc8`).** Layer 1: pre-existing `*.test.ts` / `*.test.js` paths stripped from coder `allowedWritePaths` in `agent-handler.ts` even when the planner lists them in `affected_files.modify`. Layer 2: `testInvocationCount` on `AgentContext`, hard-stop after `MAX_TEST_INVOCATIONS` (5) in `run-command.ts`. +5 tests (`tools.test.ts` Layer 1 predicate, `run-command.adversarial.test.ts` counter). **Live validated (2026-05-27, run `20260527-0056-run-ace38a`):** coder **22** turns / **$1.90**. Phase 16 guard fired Layer 1 (blocked `cost-tracker.test.ts` edits); Layer 2 did not fire. Surgery-loop pattern **eliminated** vs clamp/merge/limitUsd ($3.21–$5.02, 51–54 turns). See [self-test-percent-used-results.md](./self-test-percent-used-results.md).
+
 ### Lessons from Stage 4d that shape Stage 5
 
 These findings are architectural — they affect how every future stage is designed:

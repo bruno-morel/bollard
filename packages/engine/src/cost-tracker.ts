@@ -199,7 +199,20 @@ export class CostTracker {
     // Format the total using toFixed and prepend dollar sign
     return `$${this._total.toFixed(places)}`
   }
+  percentUsed(): number {
+    // Handle percentage calculation with edge case for zero limit
+    let percentage: number
+    if (this._limit === 0) {
+      // When limit is 0, if total is also 0, percentage is 0%
+      // If total > 0, we show it as exceeded (100% to avoid "Infinity")
+      percentage = this._total === 0 ? 0 : 100
+    } else {
+      percentage = (this._total / this._limit) * 100
+    }
 
+    // Clamp result to [0, 100] to ensure no NaN, Infinity, or out-of-range values
+    return Math.min(Math.max(percentage, 0), 100)
+  }
   summary(): string {
     const totalFormatted = this._total.toFixed(2)
     const limitFormatted = this._limit.toFixed(2)
