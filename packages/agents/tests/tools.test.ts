@@ -456,7 +456,7 @@ describe("run_command", () => {
       blockedTestPaths: [testFile],
     }
     const result = await runCommandTool.execute(
-      { command: `pnpm exec vitest run tests/cost-tracker-floor.test.ts` },
+      { command: "pnpm exec vitest run tests/cost-tracker-floor.test.ts" },
       ctxBlocked,
     )
     expect(result).toContain("Error:")
