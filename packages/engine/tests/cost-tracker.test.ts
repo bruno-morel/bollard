@@ -606,6 +606,74 @@ describe("CostTracker", () => {
     })
   })
 
+  describe("cap()", () => {
+    it("caps total to maxUsd when above ceiling", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(75)
+      tracker.cap(50)
+      expect(tracker.total()).toBe(50)
+    })
+
+    it("leaves total unchanged when at or below maxUsd", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(25)
+      tracker.cap(50)
+      expect(tracker.total()).toBe(25)
+    })
+
+    it("leaves total unchanged when equal to maxUsd", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(50)
+      tracker.cap(50)
+      expect(tracker.total()).toBe(50)
+    })
+
+    it("returns this for chaining", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(25)
+      const result = tracker.cap(50)
+      expect(result).toBe(tracker)
+    })
+
+    it("accepts maxUsd = 0", () => {
+      const tracker = new CostTracker(100)
+      tracker.add(50)
+      tracker.cap(0)
+      expect(tracker.total()).toBe(0)
+    })
+
+    it("throws BollardError for negative maxUsd", () => {
+      const tracker = new CostTracker(100)
+      expect(() => tracker.cap(-1)).toThrow(BollardError)
+      try {
+        tracker.cap(-1)
+      } catch (err) {
+        expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
+        expect(err).toHaveProperty(
+          "message",
+          "maxUsd must be a non-negative finite number, got: -1",
+        )
+      }
+    })
+
+    it("throws BollardError for NaN maxUsd", () => {
+      const tracker = new CostTracker(100)
+      expect(() => tracker.cap(Number.NaN)).toThrow(BollardError)
+    })
+
+    it("throws BollardError for Infinity maxUsd", () => {
+      const tracker = new CostTracker(100)
+      expect(() => tracker.cap(Number.POSITIVE_INFINITY)).toThrow(BollardError)
+    })
+
+    it("can be chained with add", () => {
+      const tracker = new CostTracker(100)
+      const result = tracker.add(30).cap(50).add(10)
+      expect(result).toBe(tracker)
+      expect(tracker.total()).toBe(40)
+    })
+  })
+
   describe("divide()", () => {
     it("divides total by the given divisor", () => {
       const tracker = new CostTracker(100)

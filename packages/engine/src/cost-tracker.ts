@@ -119,6 +119,22 @@ export class CostTracker {
     return this
   }
 
+  cap(maxUsd: number): CostTracker {
+    if (!Number.isFinite(maxUsd) || maxUsd < 0) {
+      throw new BollardError({
+        code: "CONTRACT_VIOLATION",
+        message: `maxUsd must be a non-negative finite number, got: ${maxUsd}`,
+        context: { maxUsd },
+      })
+    }
+
+    if (this._total > maxUsd) {
+      this._total = maxUsd
+    }
+
+    return this
+  }
+
   toJSON(): { totalCostUsd: number; limitUsd: number; runCount: number } {
     return {
       totalCostUsd: this.total(),
