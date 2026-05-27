@@ -21,3 +21,4 @@ _tmp_*/
 reports/
 .stryker-tmp/
 scripts/extract_java/target/
+.bollard-*/
