@@ -113,23 +113,24 @@ All specs live in [`spec/`](spec/):
 
 | Document | What It Covers |
 |----------|----------------|
-| [spec/01-architecture.md](spec/01-architecture.md) | Engine types, blueprint runner, pipeline layers, production feedback loop |
-| [spec/02-bootstrap.md](spec/02-bootstrap.md) | Stage-by-stage build history (Stages 0 → 2) |
-| [spec/04-configuration.md](spec/04-configuration.md) | Auto-detection, `.bollard.yml` reference, config priority |
-| [spec/05-risk-model.md](spec/05-risk-model.md) | Risk dimensions, scoring, graduated gating |
-| [spec/06-toolchain-profiles.md](spec/06-toolchain-profiles.md) | Language-agnostic verification, `ToolchainProfile`, Docker isolation |
-| [spec/07-adversarial-scopes.md](spec/07-adversarial-scopes.md) | Boundary / contract / behavioral scopes, concern weights, forward roadmap |
-| [spec/ROADMAP.md](spec/ROADMAP.md) | Forward roadmap (Stages 5c → 6+) |
-| [spec/README.md](spec/README.md) | Spec index |
+| [01 — Architecture](spec/01-architecture.md) | Universal artifact pattern, adversarial verification, blueprint engine, CLI + MCP interface, production feedback loop, project structure |
+| [02 — Bootstrap Roadmap](spec/02-bootstrap.md) | How Bollard built itself: Stages 0 → 2, prompt evaluation framework, dependency graph |
+| [03 — Cloud Providers](spec/03-providers.md) | Cloud abstraction layer: 4-method provider interface, local / GitHub Actions / GCP implementations |
+| [04 — Configuration](spec/04-configuration.md) | Auto-detect everything, derive the rest: toolchain detection, env vars, `.bollard.yml` reference |
+| [05 — Risk Model](spec/05-risk-model.md) | Risk-based gating: 5 dimensions, scoring, graduated autonomy (auto-merge → notify → approve) |
+| [06 — Toolchain Profiles](spec/06-toolchain-profiles.md) | Language-agnostic verification: `ToolchainProfile`, per-language detection, Docker isolation, adversarial lifecycle |
+| [07 — Adversarial Scopes](spec/07-adversarial-scopes.md) | Boundary / contract / behavioral scopes × correctness / security / performance / resilience concerns — **primary forward roadmap** |
+| [08 — Contract Grounding](spec/08-contract-tester-grounding.md) | Contract-tester grounding architecture: deterministic filters, corpus construction, claim lifecycle |
+| [ROADMAP](spec/ROADMAP.md) | Forward roadmap (Stages 5c → 6+), deferred features |
 
 **ADRs** in [`spec/adr/`](spec/adr/):
 
 | ADR | Decision |
 |-----|----------|
-| [0001](spec/adr/0001-deterministic-filters-for-llm-output.md) | Deterministic post-filters for LLM output (grounding, claim parsing) |
-| [0002](spec/adr/0002-syn-helper-for-rust-extraction.md) | syn-based Rust extractor helper binary |
-| [0003](spec/adr/0003-agent-protocol-compliance.md) | WHY + DO NOT + SELF-CHECK protocol structure for agent prompts |
-| [0004](spec/adr/0004-determinism-local-frontier-tiers.md) | Determinism-first → local → frontier tier model for token economy |
+| [0001](spec/adr/0001-deterministic-filters-for-llm-output.md) | Deterministic post-filters for LLM output (grounding, claim parsing) — when and how |
+| [0002](spec/adr/0002-syn-helper-for-rust-extraction.md) | syn-based Rust extractor helper binary over regex or LLM fallback |
+| [0003](spec/adr/0003-agent-protocol-compliance.md) | WHY + DO NOT + SELF-CHECK structure for all agent protocol prompts |
+| [0004](spec/adr/0004-determinism-local-frontier-tiers.md) | Determinism-first → local inference → frontier: token economy tier model |
 
 ---
 
