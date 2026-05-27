@@ -1,6 +1,6 @@
 import { resolve, sep } from "node:path"
 import { describe, expect, it } from "vitest"
-import { deriveUnitTestPath, injectUnitTestIfMissing } from "../src/agent-handler.js"
+import { deriveSourceFileFromTask, deriveUnitTestPath, injectUnitTestIfMissing } from "../src/agent-handler.js"
 
 const workDir = "/app"
 const srcRel = "packages/engine/src/cost-tracker.ts"
@@ -39,6 +39,26 @@ describe("deriveUnitTestPath", () => {
   })
 })
 
+describe("deriveSourceFileFromTask", () => {
+  it("resolves CostTracker to packages/engine/src/cost-tracker.ts when it exists", () => {
+    const task = "Add CostTracker.exceeded(): boolean method"
+    const result = deriveSourceFileFromTask(task, workDir, (p) => p === srcAbs)
+    expect(result).toBe(srcAbs)
+  })
+
+  it("returns undefined when no matching source file exists on disk", () => {
+    const task = "Add CostTracker.exceeded(): boolean method"
+    const result = deriveSourceFileFromTask(task, workDir, () => false)
+    expect(result).toBeUndefined()
+  })
+
+  it("returns undefined when task has no PascalCase class name", () => {
+    const task = "refactor the codebase"
+    const result = deriveSourceFileFromTask(task, workDir, () => true)
+    expect(result).toBeUndefined()
+  })
+})
+
 describe("injectUnitTestIfMissing", () => {
   const task = "Add a cap(maxUsd: number): CostTracker method..."
 
@@ -48,10 +68,21 @@ describe("injectUnitTestIfMissing", () => {
     expect(result).toEqual(filtered)
   })
 
-  it("does not inject when modifyFiles and createFiles are both empty", () => {
+  it("does not inject when modifyFiles and createFiles are both empty and source not found on disk", () => {
     const filtered = [srcAbs]
+    // fileExists always false → deriveSourceFileFromTask finds nothing
     const result = injectUnitTestIfMissing(filtered, [], task, workDir, () => false, [])
     expect(result).toEqual(filtered)
+  })
+
+  it("injects via task-string inference when both lists are empty but source exists on disk (degenerate run)", () => {
+    const filtered: string[] = []
+    const capTask = "Add CostTracker.cap(maxUsd: number): CostTracker method"
+    // fileExists returns true only for the cost-tracker.ts source path
+    const fileExists = (p: string) => p === srcAbs
+    const result = injectUnitTestIfMissing(filtered, [], capTask, workDir, fileExists, [])
+    expect(result).toHaveLength(1)
+    expect(result[0]).toContain("cost-tracker-cap.test.ts")
   })
 
   it("injects from createFiles when modifyFiles is empty (verification-only run)", () => {
@@ -64,14 +95,9 @@ describe("injectUnitTestIfMissing", () => {
   it("does not inject from createFiles when synthesized path already exists on disk", () => {
     const filtered = [srcAbs]
     const injectedPath = deriveUnitTestPath(srcAbs, task)
-    const result = injectUnitTestIfMissing(
-      filtered,
-      [],
-      task,
-      workDir,
-      (p) => p === injectedPath,
-      [srcRel],
-    )
+    const result = injectUnitTestIfMissing(filtered, [], task, workDir, (p) => p === injectedPath, [
+      srcRel,
+    ])
     expect(result).toEqual(filtered)
   })
 

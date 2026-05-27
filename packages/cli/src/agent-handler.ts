@@ -76,6 +76,75 @@ export function deriveUnitTestPath(sourceFilePath: string, taskStr: string): str
   return resolve(dirname(srcDir), "tests", `${srcBase}-${slug}.test.ts`)
 }
 
+/**
+ * Derives a source file path from the task string by extracting a class name
+ * (e.g. "CostTracker" → "cost-tracker") and resolving it against known workspace
+ * source packages. Used as a last-resort fallback when the planner emits empty
+ * affected_files (degenerate verification-only runs).
+ */
+const TASK_VERB_SKIP = new Set([
+  "Add",
+  "The",
+  "For",
+  "Get",
+  "Set",
+  "Run",
+  "Use",
+  "Fix",
+  "Update",
+  "Create",
+  "Build",
+  "Make",
+  "Remove",
+  "Delete",
+  "Write",
+  "Read",
+  "Implement",
+  "Refactor",
+  "Extract",
+  "This",
+  "With",
+  "From",
+  "Into",
+  "When",
+  "Return",
+])
+
+export function deriveSourceFileFromTask(
+  taskStr: string,
+  workDir: string,
+  fileExists: (p: string) => boolean = existsSync,
+): string | undefined {
+  // Extract PascalCase compound class name from task (e.g. "CostTracker", "RunHistory")
+  // Requires at least two words joined (contains a lowercase letter after the first char)
+  // and skips common English verb/preposition words.
+  const classMatches = [...taskStr.matchAll(/\b([A-Z][a-z][a-zA-Z0-9]*)\b/g)]
+  const classMatch = classMatches.find((m) => !TASK_VERB_SKIP.has(m[1] ?? ""))
+  if (!classMatch?.[1]) return undefined
+
+  // Convert PascalCase → kebab-case (e.g. "CostTracker" → "cost-tracker")
+  const kebab = classMatch[1].replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase()
+
+  // Search common source locations in workspace packages
+  const candidates = [
+    `packages/engine/src/${kebab}.ts`,
+    `packages/cli/src/${kebab}.ts`,
+    `packages/verify/src/${kebab}.ts`,
+    `packages/agents/src/${kebab}.ts`,
+    `packages/detect/src/${kebab}.ts`,
+    `packages/llm/src/${kebab}.ts`,
+    `packages/blueprints/src/${kebab}.ts`,
+    `packages/observe/src/${kebab}.ts`,
+    `packages/mcp/src/${kebab}.ts`,
+  ]
+
+  for (const rel of candidates) {
+    const abs = resolve(workDir, rel)
+    if (fileExists(abs)) return abs
+  }
+  return undefined
+}
+
 export function injectUnitTestIfMissing(
   filtered: string[],
   modifyFiles: string[],
@@ -89,14 +158,16 @@ export function injectUnitTestIfMissing(
   )
   if (hasNewUnitTestFile) return filtered
 
-  // Look for a source file first in modifyFiles, then createFiles (verification-only runs
-  // may have modify: [] but still name a source file in create for Rule 11 compliance).
+  // Look for a source file: modifyFiles first, then createFiles, then task-string inference.
+  // The task-string fallback handles degenerate verification-only runs where the planner
+  // emits modify: [] and create: [] because the method already exists.
   const candidateFiles = modifyFiles.length > 0 ? modifyFiles : createFiles
-  if (candidateFiles.length === 0) return filtered
+  const firstSrc =
+    candidateFiles
+      .map((f) => resolve(workDir, f))
+      .find((p) => /\.ts$/.test(p) && !/\.test\./.test(p)) ??
+    deriveSourceFileFromTask(taskStr, workDir, fileExists)
 
-  const firstSrc = candidateFiles
-    .map((f) => resolve(workDir, f))
-    .find((p) => /\.ts$/.test(p) && !/\.test\./.test(p))
   if (!firstSrc) return filtered
 
   const injected = deriveUnitTestPath(firstSrc, taskStr)
@@ -607,7 +678,14 @@ export async function createAgenticHandler(
           const isTestFile = /\.test\.[jt]s$/.test(p)
           return !(isTestFile && existsSync(p))
         })
-        const augmented = injectUnitTestIfMissing(filtered, modifyFiles, ctx.task, workDir, existsSync, createFiles)
+        const augmented = injectUnitTestIfMissing(
+          filtered,
+          modifyFiles,
+          ctx.task,
+          workDir,
+          existsSync,
+          createFiles,
+        )
         if (augmented.length > filtered.length) {
           ctx.log.debug("phase17: injected unit test path", {
             injected: augmented.at(-1),
