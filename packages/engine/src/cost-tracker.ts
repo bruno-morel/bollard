@@ -243,6 +243,28 @@ export class CostTracker {
     // Format the total using toFixed and prepend dollar sign
     return `$${this._total.toFixed(places)}`
   }
+
+  floor(decimalPlaces?: number): CostTracker {
+    // Validate decimalPlaces parameter if provided - identical to formatCost()
+    if (decimalPlaces !== undefined) {
+      if (!Number.isInteger(decimalPlaces) || decimalPlaces < 0) {
+        throw new BollardError({
+          code: "CONTRACT_VIOLATION",
+          message: `decimalPlaces must be a non-negative integer, got: ${decimalPlaces}`,
+          context: { decimalPlaces },
+        })
+      }
+    }
+
+    // Use default of 2 decimal places if not specified
+    const places = decimalPlaces ?? 2
+
+    // Apply Math.floor semantics: multiply by 10^places, floor, divide by 10^places
+    const multiplier = 10 ** places
+    this._total = Math.floor(this._total * multiplier) / multiplier
+
+    return this
+  }
   percentUsed(): number {
     // Handle percentage calculation with edge case for zero limit
     let percentage: number

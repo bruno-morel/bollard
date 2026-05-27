@@ -281,11 +281,11 @@ git push origin main
 
 | Item | Value |
 |------|-------|
-| Git SHA | — |
-| Test count | — |
+| Git SHA | `e71afc001839fc15566950c95993fa0f35aff170` |
+| Test count | 1299 passed / 1 failed / 6 skipped |
 | Cost baseline tag | `stage5a-validated` ($1.633, $1.96 ceiling) |
-| Last run ID | — |
-| Last run cost | — |
+| Last run ID | `20260527-0207-run-446ba7` |
+| Last run cost | $3.41 |
 
 ---
 
@@ -295,9 +295,9 @@ git push origin main
 
 | Gate | Result | Notes |
 |------|--------|-------|
-| Coder turns | — | target < 15 |
-| Write-once guard | — | fired / not needed |
-| Stryker totalMutants | — | target > 0 |
-| Stryker score | — | target ≥ 80% |
-| Cost baseline diff | — | target pass |
-| Baseline retagged? | — | yes/no — new tag if yes |
+| Coder turns | 23 | target < 15 — fail |
+| Write-once guard | not needed | no edit_file on test after write |
+| Stryker totalMutants | 294 (manual) | target > 0 — pass |
+| Stryker score | 86.73% (manual) | target ≥ 80% — pass |
+| Cost baseline diff | fail (+57.66% repo avg) | single run $1.18 pass |
+| Baseline retagged? | no | diff fail |
