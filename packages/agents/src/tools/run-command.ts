@@ -173,6 +173,14 @@ export const runCommandTool: AgentTool = {
       }
     }
 
+    if (executable === "cd") {
+      return [
+        `Error: "cd" is a shell builtin and cannot be run as a command.`,
+        `To run a command in a subdirectory, use the "cwd" parameter instead:`,
+        `{ "command": "...", "cwd": "packages/engine" }`,
+      ].join(" ")
+    }
+
     const allowed = ctx.allowedCommands ?? DEFAULT_ALLOWED_COMMANDS
 
     if (!executable || !allowed.includes(executable)) {

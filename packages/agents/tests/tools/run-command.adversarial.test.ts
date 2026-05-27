@@ -103,6 +103,20 @@ describe("runCommandTool", () => {
   })
 })
 
+describe("runCommandTool cd intercept", () => {
+  it("returns helpful redirect for cd command", async () => {
+    const out = await runCommandTool.execute({ command: "cd packages/engine" }, ctx)
+    expect(out).toContain("shell builtin")
+    expect(out).toContain("cwd")
+  })
+
+  it("cd with path also returns redirect not allowlist error", async () => {
+    const out = await runCommandTool.execute({ command: "cd /some/path && pnpm test" }, ctx)
+    expect(out).toContain("shell builtin")
+    expect(typeof out).toBe("string")
+  })
+})
+
 describe("runCommandTool property tests", () => {
   it("allowlisted node one-liners return string output", async () => {
     await fc.assert(
