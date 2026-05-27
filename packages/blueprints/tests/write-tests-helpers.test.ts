@@ -43,6 +43,7 @@ function makeInferCtx(input: {
   profile?: ToolchainProfile
 }): PipelineContext {
   return {
+    task: "",
     plan: input.plan,
     results: input.results ?? {},
     toolchainProfile: input.profile ?? makeProfile("typescript"),

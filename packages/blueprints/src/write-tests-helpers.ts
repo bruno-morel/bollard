@@ -113,7 +113,7 @@ export async function inferSourceFileFromClaims(
       "When",
       "Return",
     ])
-    const classMatches = [...(ctx.task ?? "").matchAll(/\b([A-Z][a-z][a-zA-Z0-9]*)\b/g)]
+    const classMatches = [...ctx.task.matchAll(/\b([A-Z][a-z][a-zA-Z0-9]*)\b/g)]
     const classMatch = classMatches.find((m) => !TASK_VERB_SKIP.has(m[1] ?? ""))
     resolvedModuleName = classMatch?.[1]
   }
