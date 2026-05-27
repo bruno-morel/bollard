@@ -166,6 +166,34 @@ export class CostTracker {
     return this
   }
 
+  scale(factor: number, clampMax?: number): CostTracker {
+    if (!Number.isFinite(factor) || factor <= 0) {
+      throw new BollardError({
+        code: "CONTRACT_VIOLATION",
+        message: `Factor must be a positive finite number, got: ${factor}`,
+        context: { factor },
+      })
+    }
+
+    if (clampMax !== undefined) {
+      if (!Number.isFinite(clampMax) || clampMax < 0) {
+        throw new BollardError({
+          code: "CONTRACT_VIOLATION",
+          message: `clampMax must be a non-negative finite number, got: ${clampMax}`,
+          context: { clampMax },
+        })
+      }
+    }
+
+    this._total = this._total * factor
+
+    if (clampMax !== undefined && this._total > clampMax) {
+      this._total = clampMax
+    }
+
+    return this
+  }
+
   merge(other: CostTracker): CostTracker {
     if (other == null || !(other instanceof CostTracker)) {
       throw new BollardError({
