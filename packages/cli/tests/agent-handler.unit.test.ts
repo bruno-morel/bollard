@@ -48,9 +48,30 @@ describe("injectUnitTestIfMissing", () => {
     expect(result).toEqual(filtered)
   })
 
-  it("does not inject when modifyFiles is empty", () => {
+  it("does not inject when modifyFiles and createFiles are both empty", () => {
     const filtered = [srcAbs]
-    const result = injectUnitTestIfMissing(filtered, [], task, workDir, () => false)
+    const result = injectUnitTestIfMissing(filtered, [], task, workDir, () => false, [])
+    expect(result).toEqual(filtered)
+  })
+
+  it("injects from createFiles when modifyFiles is empty (verification-only run)", () => {
+    const filtered = [srcAbs]
+    const result = injectUnitTestIfMissing(filtered, [], task, workDir, () => false, [srcRel])
+    expect(result).toHaveLength(2)
+    expect(result[1]).toBe(resolve(workDir, "packages/engine/tests/cost-tracker-cap.test.ts"))
+  })
+
+  it("does not inject from createFiles when synthesized path already exists on disk", () => {
+    const filtered = [srcAbs]
+    const injectedPath = deriveUnitTestPath(srcAbs, task)
+    const result = injectUnitTestIfMissing(
+      filtered,
+      [],
+      task,
+      workDir,
+      (p) => p === injectedPath,
+      [srcRel],
+    )
     expect(result).toEqual(filtered)
   })
 

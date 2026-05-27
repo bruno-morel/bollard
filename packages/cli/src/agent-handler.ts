@@ -82,13 +82,19 @@ export function injectUnitTestIfMissing(
   taskStr: string,
   workDir: string,
   fileExists: (p: string) => boolean = existsSync,
+  createFiles: string[] = [],
 ): string[] {
   const hasNewUnitTestFile = filtered.some(
     (p) => /\.test\.[jt]s$/.test(p) && !p.includes(".adversarial."),
   )
-  if (hasNewUnitTestFile || modifyFiles.length === 0) return filtered
+  if (hasNewUnitTestFile) return filtered
 
-  const firstSrc = modifyFiles
+  // Look for a source file first in modifyFiles, then createFiles (verification-only runs
+  // may have modify: [] but still name a source file in create for Rule 11 compliance).
+  const candidateFiles = modifyFiles.length > 0 ? modifyFiles : createFiles
+  if (candidateFiles.length === 0) return filtered
+
+  const firstSrc = candidateFiles
     .map((f) => resolve(workDir, f))
     .find((p) => /\.ts$/.test(p) && !/\.test\./.test(p))
   if (!firstSrc) return filtered
@@ -601,7 +607,7 @@ export async function createAgenticHandler(
           const isTestFile = /\.test\.[jt]s$/.test(p)
           return !(isTestFile && existsSync(p))
         })
-        const augmented = injectUnitTestIfMissing(filtered, modifyFiles, ctx.task, workDir)
+        const augmented = injectUnitTestIfMissing(filtered, modifyFiles, ctx.task, workDir, existsSync, createFiles)
         if (augmented.length > filtered.length) {
           ctx.log.debug("phase17: injected unit test path", {
             injected: augmented.at(-1),
