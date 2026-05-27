@@ -72,6 +72,7 @@ Specific prohibitions (these caused a $16 cost explosion in a previous run):
 - **Do NOT retrofit patterns to adjacent methods.** If the plan says "add method `divide()`", implement `divide()` only. Do not also retrofit chaining to `add()`, `subtract()`, or any other existing method unless the plan explicitly lists them.
 - **Do NOT rewrite existing test files.** You may add new test cases to an existing test file (append only). You must never rewrite, restructure, or remove existing test cases. If an existing test breaks due to your implementation change, fix the implementation — not the test.
 - **Do NOT touch files not in `affected_files.modify` or `affected_files.create`** unless a typecheck or lint failure in a pre-loaded file is directly caused by your changes to a listed file.
+- **If `affected_files.create` includes a `*.test.ts` file:** Write it once with simple, direct `expect(...)` assertions — no fast-check property tests. Property-based testing is handled by the adversarial test agent that runs after you. After writing the file, do NOT run it, edit it, or iterate on it. Write it and move on to declaring completion.
 
 When in doubt: do less. A minimal implementation that passes tests is always better than a comprehensive one that exceeds scope and runs out of turns.
 

@@ -33,6 +33,17 @@ export const writeFileTool: AgentTool = {
     const content = String(input["content"] ?? "")
     await mkdir(dirname(filePath), { recursive: true })
     await writeFile(filePath, content, "utf-8")
+
+    // Write-once guard for new test files (Phase 18): after the coder writes a *.test.ts
+    // file that was in allowedWritePaths, remove it so subsequent edit_file calls are
+    // blocked. This prevents the fast-check iteration loop seen in the scale() self-test.
+    if (ctx.allowedWritePaths !== undefined && /\.test\.[jt]s$/.test(filePath)) {
+      const idx = ctx.allowedWritePaths.indexOf(filePath)
+      if (idx !== -1) {
+        ctx.allowedWritePaths.splice(idx, 1)
+      }
+    }
+
     return `Written ${content.length} bytes to ${String(input["path"])}`
   },
 }

@@ -159,6 +159,42 @@ describe("write_file", () => {
     expect(result).toContain("bytes")
     expect(result).not.toContain("Error:")
   })
+
+  it("removes test file from allowedWritePaths after first write (write-once guard)", async () => {
+    const testFile = join(tempDir, "tests/cost-tracker-scale.test.ts")
+    const srcFile = join(tempDir, "src/cost-tracker.ts")
+    const allowedWritePaths = [srcFile, testFile]
+    const ctxWithScope = { ...ctx, allowedWritePaths }
+
+    // First write succeeds and removes the test path from allowedWritePaths
+    const result = await writeFileTool.execute(
+      { path: "tests/cost-tracker-scale.test.ts", content: "import { describe } from 'vitest'" },
+      ctxWithScope,
+    )
+    expect(result).toContain("bytes")
+    expect(result).not.toContain("Error:")
+    expect(ctxWithScope.allowedWritePaths).not.toContain(testFile)
+    expect(ctxWithScope.allowedWritePaths).toContain(srcFile)
+  })
+
+  it("write-once guard does not affect non-test files", async () => {
+    const srcFile = join(tempDir, "src/cost-tracker.ts")
+    const allowedWritePaths = [srcFile]
+    const ctxWithScope = { ...ctx, allowedWritePaths }
+
+    await writeFileTool.execute({ path: "src/cost-tracker.ts", content: "export const x = 1" }, ctxWithScope)
+    // src file stays in allowedWritePaths after write
+    expect(ctxWithScope.allowedWritePaths).toContain(srcFile)
+  })
+
+  it("write-once guard does nothing when allowedWritePaths is not set", async () => {
+    // Should not throw or mutate anything
+    const result = await writeFileTool.execute(
+      { path: "tests/something.test.ts", content: "// test" },
+      ctx,
+    )
+    expect(result).toContain("bytes")
+  })
 })
 
 describe("list_dir", () => {
