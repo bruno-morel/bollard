@@ -104,6 +104,7 @@ describe("write_file", () => {
     ).rejects.toThrow("Path traversal")
   })
 
+  // Phase 17 injection tests: packages/cli/tests/agent-handler.unit.test.ts
   it("strips pre-existing test files from allowedWritePaths (Layer 1 guard)", () => {
     const isTestFile = (p: string) => /\.test\.[jt]s$/.test(p)
     const mockExists = (p: string) => p.includes("cost-tracker.test.ts")

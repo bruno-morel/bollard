@@ -73,4 +73,10 @@ describe("createPlannerAgent", () => {
     const agent = await createPlannerAgent()
     expect(agent.systemPrompt).toContain("10. Always include `non_goals`")
   })
+
+  it("planner prompt rule 11 covers unit test file for new methods", async () => {
+    const agent = await createPlannerAgent()
+    expect(agent.systemPrompt).toContain("11. When the task adds")
+    expect(agent.systemPrompt).toContain("cost-tracker-cap.test.ts")
+  })
 })

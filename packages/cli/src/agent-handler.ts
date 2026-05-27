@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { readFile, readdir } from "node:fs/promises"
-import { resolve } from "node:path"
+import { basename, dirname, resolve } from "node:path"
 import { promisify } from "node:util"
 import { createBehavioralTesterAgent } from "@bollard/agents/src/behavioral-tester.js"
 import { createBoundaryTesterAgent } from "@bollard/agents/src/boundary-tester.js"
@@ -42,6 +42,62 @@ import type {
 import { createAgentSpinner } from "./spinner.js"
 
 const execFileAsync = promisify(execFile)
+
+const METHOD_SLUG_SKIP_WORDS = new Set([
+  "add",
+  "run",
+  "create",
+  "build",
+  "get",
+  "set",
+  "use",
+  "make",
+])
+
+/**
+ * Derives a deterministic unit test file path for a new method being added to a source file.
+ * Convention: packages/engine/src/cost-tracker.ts + task "Add cap(...)" →
+ *             packages/engine/tests/cost-tracker-cap.test.ts
+ */
+export function deriveUnitTestPath(sourceFilePath: string, taskStr: string): string {
+  const srcBase = basename(sourceFilePath, ".ts")
+  const srcDir = dirname(sourceFilePath)
+
+  const candidates = [...taskStr.matchAll(/\b([a-z][a-zA-Z0-9]*)(?=\s*\()/g)]
+  let slug = "new"
+  for (const m of candidates) {
+    const word = m[1] ?? ""
+    if (!METHOD_SLUG_SKIP_WORDS.has(word)) {
+      slug = word
+      break
+    }
+  }
+
+  return resolve(dirname(srcDir), "tests", `${srcBase}-${slug}.test.ts`)
+}
+
+export function injectUnitTestIfMissing(
+  filtered: string[],
+  modifyFiles: string[],
+  taskStr: string,
+  workDir: string,
+  fileExists: (p: string) => boolean = existsSync,
+): string[] {
+  const hasNewUnitTestFile = filtered.some(
+    (p) => /\.test\.[jt]s$/.test(p) && !p.includes(".adversarial."),
+  )
+  if (hasNewUnitTestFile || modifyFiles.length === 0) return filtered
+
+  const firstSrc = modifyFiles
+    .map((f) => resolve(workDir, f))
+    .find((p) => /\.ts$/.test(p) && !/\.test\./.test(p))
+  if (!firstSrc) return filtered
+
+  const injected = deriveUnitTestPath(firstSrc, taskStr)
+  if (fileExists(injected)) return filtered
+
+  return [...filtered, injected]
+}
 
 function buildFileFilter(profile?: ToolchainProfile): (entry: string) => boolean {
   if (profile) {
@@ -533,18 +589,25 @@ export async function createAgenticHandler(
       const plan = ctx.plan as {
         affected_files?: { modify?: string[]; create?: string[] }
       }
-      const affectedFiles = [
-        ...(plan.affected_files?.modify ?? []),
-        ...(plan.affected_files?.create ?? []),
-      ]
+      const modifyFiles = plan.affected_files?.modify ?? []
+      const createFiles = plan.affected_files?.create ?? []
+      const affectedFiles = [...modifyFiles, ...createFiles]
+
       if (affectedFiles.length > 0) {
         const resolved = affectedFiles.map((f) => resolve(workDir, f))
         // Strip pre-existing test files — the coder must write a new test file,
-        // never edit an existing test suite. Prevents test-surgery loops.
-        agentCtx.allowedWritePaths = resolved.filter((p) => {
+        // never edit an existing test suite. Prevents test-surgery loops (Phase 16).
+        const filtered = resolved.filter((p) => {
           const isTestFile = /\.test\.[jt]s$/.test(p)
           return !(isTestFile && existsSync(p))
         })
+        const augmented = injectUnitTestIfMissing(filtered, modifyFiles, ctx.task, workDir)
+        if (augmented.length > filtered.length) {
+          ctx.log.debug("phase17: injected unit test path", {
+            injected: augmented.at(-1),
+          })
+        }
+        agentCtx.allowedWritePaths = augmented
       }
     }
 
