@@ -392,7 +392,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** 9 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`, `behavioral-tester.md`
-- **Latest count (authoritative, 2026-05-27, post Phase 18):** `1300` passed, `6` skipped (main `vitest run`; 1306 total) — +3 from Phase 18 write-once guard tests in `tools.test.ts`. Skips: 6 LLM/local smoke tests (no key / opt-in). Adversarial suite `337` passed.
+- **Latest count (authoritative, 2026-05-27, post Phase 18 + history turns fix):** `1300` passed, `6` skipped (main `vitest run`; 1306 total) — +3 from Phase 18 write-once guard tests in `tools.test.ts`. Skips: 6 LLM/local smoke tests (no key / opt-in). Adversarial suite `337` passed.
 - **Adversarial suite** (`vitest.adversarial.config.ts`): `337` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c). +4 from Phase 16 test-surgery-loop guard (`run-command.adversarial.test.ts`).
 - **Vitest + Vite 8:** you may see `esbuild` option deprecated in favor of `oxc` — harmless until Vitest defaults align; pin Vite 7.x if you need a silent log.
 
