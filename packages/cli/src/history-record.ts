@@ -141,6 +141,7 @@ export function extractNodeSummaries(
     }
     if (nr?.cost_usd !== undefined) base.costUsd = nr.cost_usd
     if (nr?.duration_ms !== undefined) base.durationMs = nr.duration_ms
+    if (nr?.turns !== undefined) base.turns = nr.turns
     if (nr?.error !== undefined) base.error = nr.error
     return base
   })

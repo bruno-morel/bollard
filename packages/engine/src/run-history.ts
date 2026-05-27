@@ -15,6 +15,7 @@ export interface NodeSummary {
   status: "ok" | "fail" | "block"
   costUsd?: number
   durationMs?: number
+  turns?: number
   error?: { code: string; message: string }
 }
 

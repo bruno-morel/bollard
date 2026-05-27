@@ -704,6 +704,7 @@ export async function createAgenticHandler(
       data: result.response,
       cost_usd: result.totalCostUsd,
       duration_ms: Date.now() - startMs,
+      turns: result.turns,
     }
   }
 
