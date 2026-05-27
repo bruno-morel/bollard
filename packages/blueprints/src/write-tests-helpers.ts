@@ -83,14 +83,49 @@ export async function inferSourceFileFromClaims(
     if (expandedSource) return expandedSource
   }
 
-  if (!moduleName) return undefined
+  // Last-resort: extract PascalCase class name from task string when claim IDs are short (c1, c2…)
+  let resolvedModuleName = moduleName
+  if (!resolvedModuleName) {
+    const TASK_VERB_SKIP = new Set([
+      "Add",
+      "The",
+      "For",
+      "Get",
+      "Set",
+      "Run",
+      "Use",
+      "Fix",
+      "Update",
+      "Create",
+      "Build",
+      "Make",
+      "Remove",
+      "Delete",
+      "Write",
+      "Read",
+      "Implement",
+      "Refactor",
+      "Extract",
+      "This",
+      "With",
+      "From",
+      "Into",
+      "When",
+      "Return",
+    ])
+    const classMatches = [...ctx.task.matchAll(/\b([A-Z][a-z][a-zA-Z0-9]*)\b/g)]
+    const classMatch = classMatches.find((m) => !TASK_VERB_SKIP.has(m[1] ?? ""))
+    resolvedModuleName = classMatch?.[1]
+  }
+
+  if (!resolvedModuleName) return undefined
 
   const srcExts = profile
     ? profile.sourcePatterns.filter((p) => p.startsWith("**/*.")).map((p) => p.replace("**/*", ""))
     : [".ts"]
 
-  const kebab = moduleNameToKebab(moduleName)
-  const candidates = [moduleName.toLowerCase(), kebab]
+  const kebab = moduleNameToKebab(resolvedModuleName)
+  const candidates = [resolvedModuleName.toLowerCase(), kebab]
 
   for (const ext of srcExts) {
     for (const candidate of candidates) {
