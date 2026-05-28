@@ -75,11 +75,9 @@ export class CostTracker {
     return Math.max(0, this._limit - this._total)
   }
 
-  reset(): number {
-    const previousTotal = this._total
+  reset(): void {
     this._total = 0
     this._runCount = 0
-    return previousTotal
   }
 
   runCount(): number {

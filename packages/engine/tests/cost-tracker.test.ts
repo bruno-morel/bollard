@@ -162,23 +162,21 @@ describe("CostTracker", () => {
   })
 
   describe("reset()", () => {
-    it("returns previous total and zeros the accumulated cost", () => {
+    it("zeros the accumulated cost", () => {
       const tracker = new CostTracker(10)
       tracker.add(3.5)
       tracker.add(1.5)
 
-      const previousTotal = tracker.reset()
+      tracker.reset()
 
-      expect(previousTotal).toBe(5)
       expect(tracker.total()).toBe(0)
     })
 
-    it("returns 0 when resetting unused tracker", () => {
+    it("can be called on unused tracker (total stays 0)", () => {
       const tracker = new CostTracker(10)
 
-      const previousTotal = tracker.reset()
+      tracker.reset()
 
-      expect(previousTotal).toBe(0)
       expect(tracker.total()).toBe(0)
     })
 
@@ -207,9 +205,8 @@ describe("CostTracker", () => {
       tracker.add(1)
       expect(tracker.exceeded()).toBe(true)
 
-      const previousTotal = tracker.reset()
+      tracker.reset()
 
-      expect(previousTotal).toBe(1)
       expect(tracker.total()).toBe(0)
       expect(tracker.remaining()).toBe(0)
       expect(tracker.exceeded()).toBe(false)
@@ -219,13 +216,10 @@ describe("CostTracker", () => {
       const tracker = new CostTracker(10)
       tracker.add(5)
 
-      const firstReset = tracker.reset()
-      const secondReset = tracker.reset()
-      const thirdReset = tracker.reset()
+      tracker.reset()
+      tracker.reset()
+      tracker.reset()
 
-      expect(firstReset).toBe(5)
-      expect(secondReset).toBe(0)
-      expect(thirdReset).toBe(0)
       expect(tracker.total()).toBe(0)
     })
 
@@ -241,8 +235,7 @@ describe("CostTracker", () => {
       expect(tracker.remaining()).toBe(7)
       expect(tracker.exceeded()).toBe(false)
 
-      const secondReset = tracker.reset()
-      expect(secondReset).toBe(3)
+      tracker.reset()
     })
 
     it("preserves limit when resetting exceeded tracker", () => {
@@ -251,9 +244,8 @@ describe("CostTracker", () => {
       expect(tracker.exceeded()).toBe(true)
       expect(tracker.remaining()).toBe(0)
 
-      const previousTotal = tracker.reset()
+      tracker.reset()
 
-      expect(previousTotal).toBe(5)
       expect(tracker.total()).toBe(0)
       expect(tracker.remaining()).toBe(2)
       expect(tracker.exceeded()).toBe(false)
@@ -264,9 +256,8 @@ describe("CostTracker", () => {
       tracker.add(1.25)
       tracker.add(2.75)
 
-      const previousTotal = tracker.reset()
+      tracker.reset()
 
-      expect(previousTotal).toBe(4)
       expect(tracker.total()).toBe(0)
     })
   })
