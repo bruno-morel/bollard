@@ -1,4 +1,5 @@
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
+import { flattenBlueprintNodes } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { CostTracker } from "@bollard/engine/src/cost-tracker.js"
 import { describe, expect, it, vi } from "vitest"
@@ -84,7 +85,7 @@ function makeContext(overrides?: {
 
 function getGroundingNode() {
   const bp = createImplementFeatureBlueprint("/tmp/test")
-  const node = bp.nodes.find((n) => n.id === "verify-claim-grounding")
+  const node = flattenBlueprintNodes(bp.nodes).find((n) => n.id === "verify-claim-grounding")
   if (!node?.execute) {
     throw new Error("verify-claim-grounding node not found or has no execute")
   }

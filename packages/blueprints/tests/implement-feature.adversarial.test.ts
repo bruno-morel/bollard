@@ -3,6 +3,7 @@ import * as fc from "fast-check"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { flattenBlueprintNodes, isParallelGroup } from "@bollard/engine/src/blueprint.js"
 import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
 
 describe("Feature: createImplementFeatureBlueprint function exists and returns Blueprint", () => {
@@ -29,7 +30,7 @@ describe("Feature: createImplementFeatureBlueprint function exists and returns B
   it("should create blueprint with valid node structure", () => {
     const blueprint = createImplementFeatureBlueprint(tempDir)
 
-    blueprint.nodes.forEach((node) => {
+    flattenBlueprintNodes(blueprint.nodes).forEach((node) => {
       expect(typeof node.id).toBe("string")
       expect(node.id.length).toBeGreaterThan(0)
       expect(typeof node.name).toBe("string")
@@ -41,6 +42,7 @@ describe("Feature: createImplementFeatureBlueprint function exists and returns B
         expect(typeof node.agent).toBe("string")
       }
     })
+    expect(blueprint.nodes.some((e) => isParallelGroup(e))).toBe(true)
   })
 
   it("should use the provided workDir in blueprint configuration", () => {
@@ -84,7 +86,7 @@ describe("Feature: Property-based tests for workDir parameter", () => {
       (workDir) => {
         const blueprint = createImplementFeatureBlueprint(workDir)
         expect(blueprint.nodes.length).toBeGreaterThan(0)
-        blueprint.nodes.forEach(node => {
+        flattenBlueprintNodes(blueprint.nodes).forEach((node) => {
           expect(typeof node.id).toBe("string")
           expect(node.id.length).toBeGreaterThan(0)
         })
@@ -145,7 +147,9 @@ describe("Feature: Blueprint nodes have executable behavior", () => {
   it("should include deterministic nodes with execute functions", () => {
     const blueprint = createImplementFeatureBlueprint(tempDir)
     expect(blueprint.nodes.length).toBeGreaterThan(0)
-    const deterministic = blueprint.nodes.filter((n) => n.type === "deterministic")
+    const deterministic = flattenBlueprintNodes(blueprint.nodes).filter(
+      (n) => n.type === "deterministic",
+    )
     expect(deterministic.length).toBeGreaterThan(0)
     for (const node of deterministic) {
       expect(typeof node.execute).toBe("function")
@@ -159,7 +163,7 @@ describe("Feature: Blueprint nodes have executable behavior", () => {
     expect(blueprint.nodes.length).toBeGreaterThanOrEqual(2)
     
     // Each node should have a meaningful identifier
-    const nodeIds = blueprint.nodes.map(n => n.id)
+    const nodeIds = flattenBlueprintNodes(blueprint.nodes).map((n) => n.id)
     expect(new Set(nodeIds).size).toBe(nodeIds.length) // All IDs unique
     
     nodeIds.forEach(id => {
@@ -177,8 +181,17 @@ describe("Feature: Blueprint consistency across calls", () => {
     expect(blueprint1.nodes.length).toBe(blueprint2.nodes.length)
     
     for (let i = 0; i < blueprint1.nodes.length; i++) {
-      expect(blueprint1.nodes[i].id).toBe(blueprint2.nodes[i].id)
-      expect(blueprint1.nodes[i].type).toBe(blueprint2.nodes[i].type)
+      const e1 = blueprint1.nodes[i]
+      const e2 = blueprint2.nodes[i]
+      if (isParallelGroup(e1) && isParallelGroup(e2)) {
+        expect(e1.id).toBe(e2.id)
+        expect(e1.kind).toBe(e2.kind)
+      } else if (!isParallelGroup(e1) && !isParallelGroup(e2)) {
+        expect(e1.id).toBe(e2.id)
+        expect(e1.type).toBe(e2.type)
+      } else {
+        expect.fail("entry kind mismatch")
+      }
     }
   })
 

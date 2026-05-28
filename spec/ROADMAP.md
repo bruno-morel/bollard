@@ -62,7 +62,7 @@ Bollard runs its own `implement-feature` pipeline on Bollard changes. Every PR t
 ### 5c: Agent Intelligence Upgrades
 
 - **MCP client for agents:** Bollard's planner/coder agents consume external MCP tools (GitHub, Slack, Jira). Agent tool list = built-in tools + available MCP servers, with allowlist/denylist in `.bollard.yml`.
-- **Parallel scope execution:** Boundary, contract, and behavioral agents run concurrently after context extraction (they see different context and produce different outputs). Blueprint engine needs parallel node support.
+- ~~**Parallel scope execution:**~~ **DONE (2026-05-27).** Boundary, contract, and behavioral scope extraction and chains run concurrently via `BlueprintNodeGroup` + `executeParallelGroup`; `implement-feature` has **17** top-level steps (**31** leaf nodes). **+11** unit tests. Live pipeline self-test (`CostTracker.reset()`) optional follow-up — see [stage5c-parallel-scopes-validation.md](./stage5c-parallel-scopes-validation.md).
 - **Agent memory across runs:** Agents learn from previous runs on the same project — which probes found real bugs, which test patterns were most effective, which concerns had the highest yield.
 
 ### 5d: Token Economy — Determinism + Local Models

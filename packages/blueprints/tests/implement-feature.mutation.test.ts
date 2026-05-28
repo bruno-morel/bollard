@@ -1,4 +1,5 @@
 import type { MutationConfig, ToolchainProfile } from "@bollard/detect/src/types.js"
+import { flattenBlueprintNodes } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { CostTracker } from "@bollard/engine/src/cost-tracker.js"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -68,7 +69,7 @@ function makeCtx(profile: ToolchainProfile): PipelineContext {
 
 function getMutationNode() {
   const bp = createImplementFeatureBlueprint("/tmp/test")
-  const node = bp.nodes.find((n) => n.id === "run-mutation-testing")
+  const node = flattenBlueprintNodes(bp.nodes).find((n) => n.id === "run-mutation-testing")
   if (!node?.execute) {
     throw new Error("run-mutation-testing node not found or has no execute")
   }

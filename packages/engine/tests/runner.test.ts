@@ -1,24 +1,50 @@
 import { defaultAdversarialConfig } from "@bollard/detect/src/concerns.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { Blueprint, BlueprintNode, NodeResult } from "../src/blueprint.js"
+import {
+  type Blueprint,
+  type BlueprintEntry,
+  type BlueprintNode,
+  type BlueprintNodeGroup,
+  type NodeResult,
+  countBlueprintSteps,
+  flattenBlueprintNodes,
+} from "../src/blueprint.js"
 import type { BollardConfig } from "../src/context.js"
 import { BollardError } from "../src/errors.js"
-import { type RunBlueprintCompleteCallback, runBlueprint } from "../src/runner.js"
+import {
+  type ProgressCallback,
+  type RunBlueprintCompleteCallback,
+  runBlueprint,
+} from "../src/runner.js"
 
 const TEST_CONFIG: BollardConfig = {
   llm: { default: { provider: "mock", model: "test" } },
   agent: { max_cost_usd: 10, max_duration_minutes: 30 },
 }
 
-function makeBlueprint(nodes: BlueprintNode[], overrides?: Partial<Blueprint>): Blueprint {
+function makeBlueprint(entries: BlueprintEntry[], overrides?: Partial<Blueprint>): Blueprint {
   return {
     id: "test-bp",
     name: "Test Blueprint",
-    nodes,
+    nodes: entries,
     maxCostUsd: 10,
     maxDurationMinutes: 30,
     ...overrides,
+  }
+}
+
+function parallelGroup(
+  id: string,
+  branches: BlueprintNodeGroup["branches"],
+  onBranchFailure?: BlueprintNodeGroup["onBranchFailure"],
+): BlueprintNodeGroup {
+  return {
+    kind: "parallel",
+    id,
+    name: id,
+    branches,
+    ...(onBranchFailure !== undefined ? { onBranchFailure } : {}),
   }
 }
 
@@ -394,5 +420,204 @@ describe("deterministic nodes consume zero tokens", () => {
     ])
     await runBlueprint(bp, "task", TEST_CONFIG, undefined, undefined, undefined, profile)
     expect(seen).toBe(profile)
+  })
+})
+
+describe("blueprint helpers", () => {
+  it("flattenBlueprintNodes expands parallel groups in branch order", () => {
+    const entries: BlueprintEntry[] = [
+      okNode("seq"),
+      parallelGroup("g", [
+        { id: "b1", name: "B1", nodes: [okNode("a"), okNode("b")] },
+        { id: "b2", name: "B2", nodes: [okNode("c")] },
+      ]),
+    ]
+    expect(flattenBlueprintNodes(entries).map((n) => n.id)).toEqual(["seq", "a", "b", "c"])
+    expect(countBlueprintSteps(entries)).toBe(2)
+  })
+})
+
+describe("parallel group execution", () => {
+  it("executes all branches and merges results into ctx.results", async () => {
+    const bp = makeBlueprint([
+      parallelGroup("g1", [
+        { id: "branch-a", name: "A", nodes: [okNode("node-a")] },
+        { id: "branch-b", name: "B", nodes: [okNode("node-b")] },
+      ]),
+    ])
+    const result = await runBlueprint(bp, "task", TEST_CONFIG)
+    expect(result.status).toBe("success")
+    expect(result.nodeResults["node-a"]?.status).toBe("ok")
+    expect(result.nodeResults["node-b"]?.status).toBe("ok")
+  })
+
+  it("continues pipeline with a sequential node after the group", async () => {
+    const bp = makeBlueprint([
+      parallelGroup("g1", [
+        { id: "branch-a", name: "A", nodes: [okNode("node-a")] },
+        { id: "branch-b", name: "B", nodes: [okNode("node-b")] },
+      ]),
+      okNode("after"),
+    ])
+    const result = await runBlueprint(bp, "task", TEST_CONFIG)
+    expect(result.status).toBe("success")
+    expect(result.nodeResults["after"]?.status).toBe("ok")
+  })
+
+  it("onBranchFailure skip does not halt the pipeline", async () => {
+    const bp = makeBlueprint([
+      parallelGroup(
+        "g1",
+        [
+          { id: "ok-branch", name: "OK", nodes: [okNode("ok-node")] },
+          { id: "fail-branch", name: "Fail", nodes: [failNode("fail-node")] },
+        ],
+        "skip",
+      ),
+      okNode("after"),
+    ])
+    const result = await runBlueprint(bp, "task", TEST_CONFIG)
+    expect(result.status).toBe("success")
+    expect(result.nodeResults["fail-node"]?.status).toBe("fail")
+    expect(result.nodeResults["after"]?.status).toBe("ok")
+  })
+
+  it("onBranchFailure stop halts the pipeline on branch failure", async () => {
+    const bp = makeBlueprint([
+      parallelGroup(
+        "g1",
+        [{ id: "fail-branch", name: "Fail", nodes: [failNode("fail-node")] }],
+        "stop",
+      ),
+      okNode("after"),
+    ])
+    const result = await runBlueprint(bp, "task", TEST_CONFIG)
+    expect(result.status).toBe("failure")
+    expect(result.nodeResults["after"]).toBeUndefined()
+  })
+
+  it("duplicate node ID across branches fails before execution", async () => {
+    const bp = makeBlueprint([
+      parallelGroup("g1", [
+        { id: "branch-a", name: "A", nodes: [okNode("dup")] },
+        { id: "branch-b", name: "B", nodes: [okNode("dup")] },
+      ]),
+    ])
+    const result = await runBlueprint(bp, "task", TEST_CONFIG)
+    expect(result.status).toBe("failure")
+    expect(result.error?.code).toBe("NODE_EXECUTION_FAILED")
+    expect(Object.keys(result.nodeResults)).toHaveLength(0)
+  })
+
+  it("emits group_start and group_complete progress events", async () => {
+    const events: Parameters<ProgressCallback>[0][] = []
+    const onProgress: ProgressCallback = (ev) => events.push(ev)
+    const bp = makeBlueprint([
+      parallelGroup("scope-test", [{ id: "b1", name: "B1", nodes: [okNode("n1")] }]),
+    ])
+    await runBlueprint(bp, "task", TEST_CONFIG, undefined, undefined, onProgress)
+    expect(events.some((e) => e.type === "group_start" && e.groupId === "scope-test")).toBe(true)
+    expect(events.some((e) => e.type === "group_complete" && e.groupId === "scope-test")).toBe(true)
+  })
+
+  it("accumulates cost from parallel branches", async () => {
+    const costly: BlueprintNode = {
+      id: "costly",
+      name: "costly",
+      type: "deterministic",
+      execute: async () => ({ status: "ok", cost_usd: 0.5 }),
+    }
+    const bp = makeBlueprint([
+      parallelGroup("g1", [
+        { id: "a", name: "A", nodes: [costly] },
+        { id: "b", name: "B", nodes: [{ ...costly, id: "costly-b" }] },
+      ]),
+    ])
+    const result = await runBlueprint(bp, "task", TEST_CONFIG)
+    expect(result.totalCostUsd).toBeCloseTo(1.0)
+  })
+
+  it("executes branches concurrently", async () => {
+    const slowNode = (id: string): BlueprintNode => ({
+      id,
+      name: id,
+      type: "deterministic",
+      execute: async () => {
+        await new Promise((r) => setTimeout(r, 80))
+        return { status: "ok", data: id }
+      },
+    })
+    const bp = makeBlueprint([
+      parallelGroup("g1", [
+        { id: "a", name: "A", nodes: [slowNode("slow-a")] },
+        { id: "b", name: "B", nodes: [slowNode("slow-b")] },
+      ]),
+    ])
+    const start = Date.now()
+    const result = await runBlueprint(bp, "task", TEST_CONFIG)
+    const elapsed = Date.now() - start
+    expect(result.status).toBe("success")
+    expect(elapsed).toBeLessThan(140)
+  })
+
+  it("runs all branches to completion when one branch throws (Promise.allSettled)", async () => {
+    const order: string[] = []
+    const throwingNode: BlueprintNode = {
+      id: "throws",
+      name: "throws",
+      type: "deterministic",
+      execute: async () => {
+        order.push("throws-start")
+        await new Promise((r) => setTimeout(r, 30))
+        throw new BollardError({
+          code: "NODE_EXECUTION_FAILED",
+          message: "branch throw",
+          context: {},
+        })
+      },
+    }
+    const slowOk: BlueprintNode = {
+      id: "slow-ok",
+      name: "slow-ok",
+      type: "deterministic",
+      execute: async () => {
+        order.push("slow-ok-start")
+        await new Promise((r) => setTimeout(r, 60))
+        order.push("slow-ok-done")
+        return { status: "ok", data: "ok" }
+      },
+    }
+    const bp = makeBlueprint([
+      parallelGroup(
+        "g1",
+        [
+          { id: "fail-branch", name: "Fail", nodes: [throwingNode] },
+          { id: "ok-branch", name: "OK", nodes: [slowOk] },
+        ],
+        "skip",
+      ),
+      okNode("after"),
+    ])
+    const result = await runBlueprint(bp, "task", TEST_CONFIG)
+    expect(result.status).toBe("success")
+    expect(result.nodeResults["slow-ok"]?.status).toBe("ok")
+    expect(order).toContain("slow-ok-done")
+    expect(result.nodeResults["after"]?.status).toBe("ok")
+  })
+
+  it("honors per-node onFailure skip inside a branch", async () => {
+    const bp = makeBlueprint([
+      parallelGroup("g1", [
+        {
+          id: "branch",
+          name: "Branch",
+          nodes: [failNode("skipped", { onFailure: "skip" }), okNode("after-skip")],
+        },
+      ]),
+    ])
+    const result = await runBlueprint(bp, "task", TEST_CONFIG)
+    expect(result.status).toBe("success")
+    expect(result.nodeResults["skipped"]?.status).toBe("fail")
+    expect(result.nodeResults["after-skip"]?.status).toBe("ok")
   })
 })

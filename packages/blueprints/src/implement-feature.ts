@@ -3,7 +3,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { basename, dirname, resolve } from "node:path"
 import { promisify } from "node:util"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
-import type { Blueprint, NodeResult } from "@bollard/engine/src/blueprint.js"
+import type {
+  Blueprint,
+  BlueprintNode,
+  BlueprintNodeGroup,
+  NodeResult,
+} from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import type { LLMProvider } from "@bollard/llm/src/types.js"
@@ -286,6 +291,1020 @@ export function createImplementFeatureBlueprint(
   workDir: string,
   llmConfig?: BlueprintLlmConfig,
 ): Blueprint {
+  const extractSignaturesNode: BlueprintNode = {
+    id: "extract-signatures",
+    name: "Extract Type Signatures",
+    type: "deterministic",
+    execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+      const profile = ctx.toolchainProfile
+      const lang = profile?.language ?? "typescript"
+
+      let files = getAffectedSourceFiles(ctx)
+      let extractionSource: "affected-files" | "plan-steps-fallback" = "affected-files"
+
+      if (files.length === 0) {
+        const plan = ctx.plan as { steps?: Array<{ files?: string[] }> } | undefined
+        const stepFiles = (plan?.steps ?? []).flatMap((s) => s.files ?? [])
+        if (stepFiles.length > 0) {
+          files = getAffectedSourceFiles({
+            ...ctx,
+            plan: { affected_files: { modify: stepFiles, create: [] } },
+          } as PipelineContext)
+          if (files.length > 0) extractionSource = "plan-steps-fallback"
+        }
+      }
+
+      if (files.length === 0) {
+        return { status: "ok", data: { filesExtracted: 0, signatures: [], types: [] } }
+      }
+
+      ctx.log.info("extract-signatures: extracting from files", {
+        files,
+        source: extractionSource,
+      })
+
+      const fullPaths = files.map((f) => resolve(workDir, f))
+      const extractor = getExtractor(lang, llmConfig?.provider, llmConfig?.model, ctx.log.warn)
+      const result = await extractor.extract(fullPaths, profile, workDir)
+
+      return {
+        status: "ok",
+        data: {
+          filesExtracted: files.length,
+          signatures: result.signatures,
+          types: result.types,
+        },
+      }
+    },
+  }
+
+  const generateTestsNode: BlueprintNode = {
+    id: "generate-tests",
+    name: "Generate Adversarial Tests",
+    type: "agentic",
+    agent: "boundary-tester",
+  }
+
+  const verifyBoundaryGroundingNode: BlueprintNode = {
+    id: "verify-boundary-grounding",
+    name: "Verify Boundary Claim Grounding",
+    type: "deterministic",
+    onFailure: "skip",
+    execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+      const profile = ctx.toolchainProfile
+      const language = profile?.language ?? "unknown"
+
+      const logGrounding = (params: {
+        proposed: number
+        grounded: number
+        dropped: number
+        dropRate: number
+        droppedSymbols: string[]
+      }) => {
+        ctx.log.info("boundary_grounding_result", {
+          event: "boundary_grounding_result",
+          runId: ctx.runId,
+          language,
+          ...params,
+        })
+      }
+
+      if (!profile) {
+        logGrounding({
+          proposed: 0,
+          grounded: 0,
+          dropped: 0,
+          dropRate: 0,
+          droppedSymbols: [],
+        })
+        return { status: "ok", data: { skipped: true, reason: "no toolchain profile" } }
+      }
+
+      const gen = ctx.results["generate-tests"]
+      const raw = typeof gen?.data === "string" ? gen.data : ""
+      if (!raw.trim()) {
+        logGrounding({
+          proposed: 0,
+          grounded: 0,
+          dropped: 0,
+          dropRate: 0,
+          droppedSymbols: [],
+        })
+        return { status: "ok", data: { skipped: true, reason: "no boundary test output" } }
+      }
+
+      const corpus = buildBoundaryCorpus(ctx)
+      const concerns = profile.adversarial.boundary.concerns
+      const enabled: EnabledConcerns = {
+        correctness: concerns.correctness !== "off",
+        security: concerns.security !== "off",
+        performance: concerns.performance !== "off",
+        resilience: concerns.resilience !== "off",
+      }
+
+      try {
+        const doc = parseClaimDocument(raw, { invalidCode: "BOUNDARY_TESTER_OUTPUT_INVALID" })
+        const result = verifyClaimGrounding(doc, corpus, enabled, {
+          noGroundedClaimsCode: "BOUNDARY_TESTER_NO_GROUNDED_CLAIMS",
+        })
+
+        const proposed = doc.claims.length
+        const grounded = result.kept.length
+        const droppedCount = result.dropped.length
+        const dropRate = proposed === 0 ? 0 : Math.round((droppedCount / proposed) * 1000) / 1000
+        const droppedSymbols = [...new Set(result.dropped.map((d) => d.id))].sort()
+
+        logGrounding({
+          proposed,
+          grounded,
+          dropped: droppedCount,
+          dropRate,
+          droppedSymbols,
+        })
+
+        return {
+          status: "ok",
+          data: { claims: result.kept, dropped: result.dropped },
+        }
+      } catch (err: unknown) {
+        const message = BollardError.is(err) ? err.message : String(err)
+        const code = BollardError.is(err) ? err.code : "NODE_EXECUTION_FAILED"
+        ctx.log.warn("verify-boundary-grounding: skipping downstream boundary write", {
+          code,
+          message,
+        })
+        logGrounding({
+          proposed: 0,
+          grounded: 0,
+          dropped: 0,
+          dropRate: 0,
+          droppedSymbols: [],
+        })
+        return {
+          status: "ok",
+          data: { skipped: true, reason: message },
+        }
+      }
+    },
+  }
+
+  const writeTestsNode: BlueprintNode = {
+    id: "write-tests",
+    name: "Write Adversarial Test Files",
+    type: "deterministic",
+    execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+      const profile = ctx.toolchainProfile
+      if (!profile) {
+        return { status: "ok", data: { skipped: true, reason: "no toolchain profile" } }
+      }
+
+      const verifyRes = ctx.results["verify-boundary-grounding"]?.data as
+        | { skipped?: boolean; reason?: string; claims?: ClaimRecord[] }
+        | undefined
+      if (verifyRes?.skipped || !verifyRes?.claims || verifyRes.claims.length === 0) {
+        const reason =
+          verifyRes?.skipped && typeof verifyRes.reason === "string"
+            ? verifyRes.reason
+            : "no grounded boundary claims"
+        return {
+          status: "ok",
+          data: { skipped: true, reason },
+        }
+      }
+
+      let files = getAffectedSourceFiles(ctx)
+      const claims = verifyRes.claims
+      if (files.length === 0) {
+        const inferred = await inferSourceFileFromClaims(ctx, workDir, claims)
+        if (inferred) {
+          ctx.log.info("write-tests: inferred source file from claims (verification-only run)", {
+            inferredFile: inferred,
+            firstClaimId: claims[0]?.id,
+          })
+          files = [inferred]
+        } else {
+          return {
+            status: "ok",
+            data: {
+              skipped: true,
+              reason: "No affected files — could not infer source file from claim IDs",
+            },
+          }
+        }
+      }
+      const firstFile = files[0]
+      if (!firstFile) {
+        return {
+          status: "ok",
+          data: {
+            skipped: true,
+            reason: "No affected files — could not infer source file from claim IDs",
+          },
+        }
+      }
+
+      const assembled = assembleTestFile({
+        claims,
+        profile,
+        sourceFile: firstFile,
+        scope: "boundary",
+        runId: ctx.runId,
+        task: ctx.task,
+      })
+
+      let toWrite = assembled.fileContent
+      const testPath = assembled.testPath
+      const lang = profile.language
+      if (lang === "java" || lang === "kotlin") {
+        const ext = lang === "java" ? ".java" : ".kt"
+        const expectedClass = basename(testPath, ext)
+        toWrite = normalizeJvmWrittenTestClassName(toWrite, expectedClass, lang)
+        if (lang === "java") {
+          toWrite = sanitizeJavaPrimitiveInstanceofMisuse(toWrite)
+        }
+      }
+
+      const leakedTokens: string[] = []
+      const toWriteCode = stripStringLiteralsAndComments(toWrite)
+      for (const filePath of files) {
+        try {
+          const source = await readFile(resolve(workDir, filePath), "utf-8")
+          const privateIds = extractPrivateIdentifiers(filePath, source)
+          for (const id of privateIds) {
+            if (toWriteCode.includes(id)) {
+              leakedTokens.push(id)
+            }
+          }
+        } catch {
+          // File might not exist yet (newly created) — skip
+        }
+      }
+
+      if (leakedTokens.length > 0) {
+        const unique = [...new Set(leakedTokens)]
+        throw new BollardError({
+          code: "POSTCONDITION_FAILED",
+          message: `Information leak detected in adversarial tests: [${unique.join(", ")}]`,
+          context: { leakedTokens: unique, sourceFiles: files },
+        })
+      }
+
+      const fullPath = resolve(workDir, testPath)
+      await mkdir(dirname(fullPath), { recursive: true })
+      await writeFile(fullPath, toWrite, "utf-8")
+      await formatGeneratedAdversarialTestFile(ctx, workDir, fullPath)
+
+      return {
+        status: "ok",
+        data: { testFile: testPath, bytesWritten: toWrite.length },
+      }
+    },
+  }
+
+  const runTestsNode: BlueprintNode = {
+    id: "run-tests",
+    name: "Run Tests",
+    type: "deterministic",
+    onFailure: "skip",
+    execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+      const writeResult = ctx.results["write-tests"]
+      const boundaryTestFile =
+        writeResult?.status === "ok"
+          ? (writeResult.data as { testFile?: string } | undefined)?.testFile
+          : undefined
+      const testFiles = boundaryTestFile !== undefined ? [boundaryTestFile] : undefined
+      const result = await runTests(workDir, testFiles, ctx.toolchainProfile)
+      if (result.failed > 0) {
+        return {
+          status: "fail",
+          data: result,
+          error: {
+            code: "TEST_FAILED",
+            message: `${result.failed}/${result.total} tests failed: ${result.failedTests.join(", ")}`,
+          },
+        }
+      }
+      return { status: "ok", data: result }
+    },
+  }
+
+  const assessContractRiskNode: BlueprintNode = {
+    id: "assess-contract-risk",
+    name: "Assess Contract Risk",
+    type: "deterministic",
+    execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+      const profile = ctx.toolchainProfile
+
+      if (profile?.adversarial.contract.enabled !== true) {
+        ctx.log.info("contract_scope_decision", {
+          event: "contract_scope_decision",
+          runId: ctx.runId,
+          decision: "skipped-by-profile",
+          riskLevel: "n/a",
+          touchesExportedSymbols: false,
+          skipContract: true,
+        })
+        return {
+          status: "ok",
+          data: { skipContract: true, reason: "contract scope disabled in profile" },
+        }
+      }
+
+      const plan = ctx.plan as
+        | {
+            risk_assessment?: {
+              level?: unknown
+              blast_radius?: unknown
+              reversibility?: unknown
+              dollars_at_risk?: unknown
+              security_sensitivity?: unknown
+              novelty?: unknown
+            }
+          }
+        | undefined
+      const ra = plan?.risk_assessment
+      const riskLevel = deriveRiskLevel(ra)
+      const touchesExportedSymbols = await hasExportedSymbolChanges(workDir, profile, ctx.log.warn)
+      const skipContract = riskLevel === "low" && !touchesExportedSymbols
+
+      const decision = skipContract ? "skipped-by-risk-gate" : "run"
+      ctx.log.info("contract_scope_decision", {
+        event: "contract_scope_decision",
+        runId: ctx.runId,
+        decision,
+        riskLevel,
+        touchesExportedSymbols,
+        skipContract,
+      })
+
+      return {
+        status: "ok",
+        data: { skipContract, riskLevel, touchesExportedSymbols },
+      }
+    },
+  }
+
+  const extractContractsNode: BlueprintNode = {
+    id: "extract-contracts",
+    name: "Extract Contract Graph",
+    type: "deterministic",
+    execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+      const profile = ctx.toolchainProfile
+      if (!profile?.adversarial.contract.enabled) {
+        return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
+      }
+      const riskGate = ctx.results["assess-contract-risk"]?.data as
+        | { skipContract?: boolean }
+        | undefined
+      if (riskGate?.skipContract) {
+        return { status: "ok", data: { skipped: true, reason: "risk-gate" } }
+      }
+      const affected = getAffectedSourceFiles(ctx)
+      const contract = await buildContractContext(affected, profile, workDir, ctx.log.warn)
+      return { status: "ok", data: { contract } }
+    },
+  }
+
+  const generateContractTestsNode: BlueprintNode = {
+    id: "generate-contract-tests",
+    name: "Generate Contract Tests",
+    type: "agentic",
+    agent: "contract-tester",
+  }
+
+  const verifyClaimGroundingNode: BlueprintNode = {
+    id: "verify-claim-grounding",
+    name: "Verify Claim Grounding",
+    type: "deterministic",
+    execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+      const profile = ctx.toolchainProfile
+      if (!profile?.adversarial.contract.enabled) {
+        ctx.log.info("contract_grounding_result", {
+          event: "contract_grounding_result",
+          runId: ctx.runId,
+          language: ctx.toolchainProfile?.language ?? "unknown",
+          proposed: 0,
+          grounded: 0,
+          dropped: 0,
+          dropRate: 0,
+          droppedSymbols: [],
+        })
+        return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
+      }
+      const riskGate = ctx.results["assess-contract-risk"]?.data as
+        | { skipContract?: boolean }
+        | undefined
+      if (riskGate?.skipContract) {
+        ctx.log.info("contract_grounding_result", {
+          event: "contract_grounding_result",
+          runId: ctx.runId,
+          language: ctx.toolchainProfile?.language ?? "unknown",
+          proposed: 0,
+          grounded: 0,
+          dropped: 0,
+          dropRate: 0,
+          droppedSymbols: [],
+        })
+        return { status: "ok", data: { skipped: true, reason: "risk-gate" } }
+      }
+
+      const gen = ctx.results["generate-contract-tests"]
+      const raw = typeof gen?.data === "string" ? gen.data : ""
+      if (!raw.trim()) {
+        ctx.log.info("contract_grounding_result", {
+          event: "contract_grounding_result",
+          runId: ctx.runId,
+          language: ctx.toolchainProfile?.language ?? "unknown",
+          proposed: 0,
+          grounded: 0,
+          dropped: 0,
+          dropRate: 0,
+          droppedSymbols: [],
+        })
+        return { status: "ok", data: { skipped: true, reason: "no contract test output" } }
+      }
+
+      // Contract context is stashed on the extract-contracts node result — no new PipelineContext fields needed
+      const extractRes = ctx.results["extract-contracts"]?.data as
+        | { contract?: ContractContext }
+        | undefined
+      const contract = extractRes?.contract ?? {
+        modules: [],
+        edges: [],
+        affectedEdges: [],
+      }
+
+      const plan = ctx.plan as Record<string, unknown> | undefined
+      const planSummary =
+        typeof plan?.["summary"] === "string" ? (plan["summary"] as string) : undefined
+      const taskStr = ctx.task
+      const acceptanceCriteria = Array.isArray(plan?.["acceptance_criteria"])
+        ? (plan["acceptance_criteria"] as unknown[]).map((c) => String(c))
+        : []
+      const corpus = contractContextToCorpus(contract, planSummary, taskStr, acceptanceCriteria)
+
+      const concerns = profile.adversarial.contract.concerns
+      const enabled: EnabledConcerns = {
+        correctness: concerns.correctness !== "off",
+        security: concerns.security !== "off",
+        performance: concerns.performance !== "off",
+        resilience: concerns.resilience !== "off",
+      }
+
+      try {
+        const doc = parseClaimDocument(raw)
+        const result = verifyClaimGrounding(doc, corpus, enabled)
+
+        const proposed = doc.claims.length
+        const grounded = result.kept.length
+        const droppedCount = result.dropped.length
+        const dropRate = proposed === 0 ? 0 : Math.round((droppedCount / proposed) * 1000) / 1000
+        const droppedSymbols = [...new Set(result.dropped.map((d) => d.id))].sort()
+
+        ctx.log.info("contract_grounding_result", {
+          event: "contract_grounding_result",
+          runId: ctx.runId,
+          language: ctx.toolchainProfile?.language ?? "unknown",
+          proposed,
+          grounded,
+          dropped: droppedCount,
+          dropRate,
+          droppedSymbols,
+        })
+
+        return {
+          status: "ok",
+          data: { claims: result.kept, dropped: result.dropped },
+        }
+      } catch (err: unknown) {
+        if (BollardError.is(err)) {
+          return {
+            status: "fail",
+            error: { code: err.code, message: err.message },
+          }
+        }
+        return {
+          status: "fail",
+          error: {
+            code: "NODE_EXECUTION_FAILED",
+            message: err instanceof Error ? err.message : String(err),
+          },
+        }
+      }
+    },
+  }
+
+  const writeContractTestsNode: BlueprintNode = {
+    id: "write-contract-tests",
+    name: "Write Contract Test Files",
+    type: "deterministic",
+    execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+      const profile = ctx.toolchainProfile
+      if (!profile?.adversarial.contract.enabled) {
+        return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
+      }
+      const riskGate = ctx.results["assess-contract-risk"]?.data as
+        | { skipContract?: boolean }
+        | undefined
+      if (riskGate?.skipContract) {
+        return { status: "ok", data: { skipped: true, reason: "risk-gate" } }
+      }
+
+      const verifyRes = ctx.results["verify-claim-grounding"]?.data as
+        | { skipped?: boolean; claims?: ClaimRecord[] }
+        | undefined
+      if (verifyRes?.skipped || !verifyRes?.claims || verifyRes.claims.length === 0) {
+        return {
+          status: "ok",
+          data: { skipped: true, reason: "no grounded claims" },
+        }
+      }
+
+      const claims = verifyRes.claims
+      let files = getAffectedSourceFiles(ctx)
+      if (files.length === 0) {
+        const inferred = await inferSourceFileFromClaims(ctx, workDir, claims, "ctr")
+        if (inferred) {
+          ctx.log.info(
+            "write-contract-tests: inferred source file from claims (verification-only run)",
+            {
+              inferredFile: inferred,
+              firstClaimId: claims[0]?.id,
+            },
+          )
+          files = [inferred]
+        } else {
+          return {
+            status: "ok",
+            data: {
+              skipped: true,
+              reason: "No affected files — could not infer source file from contract claim IDs",
+            },
+          }
+        }
+      }
+      const firstFile = files[0]
+      if (!firstFile) {
+        return {
+          status: "ok",
+          data: {
+            skipped: true,
+            reason: "No affected files — could not infer source file from contract claim IDs",
+          },
+        }
+      }
+
+      const contractExtract = ctx.results["extract-contracts"]?.data as
+        | { contract?: ContractContext }
+        | undefined
+
+      const assembled = assembleTestFile({
+        claims,
+        profile,
+        sourceFile: firstFile,
+        scope: "contract",
+        ...(contractExtract?.contract !== undefined
+          ? { contractContext: contractExtract.contract }
+          : {}),
+        runId: ctx.runId,
+        task: ctx.task,
+      })
+      const { fileContent, testPath } = assembled
+
+      const leakedTokens: string[] = []
+      const fileContentCode = stripStringLiteralsAndComments(fileContent)
+      for (const filePath of files) {
+        try {
+          const source = await readFile(resolve(workDir, filePath), "utf-8")
+          if (!filePath.endsWith(".ts") && !filePath.endsWith(".tsx")) continue
+          const privateIds = extractPrivateIdentifiers(filePath, source)
+          for (const id of privateIds) {
+            if (fileContentCode.includes(id)) leakedTokens.push(id)
+          }
+        } catch {
+          /* skip */
+        }
+      }
+      if (leakedTokens.length > 0) {
+        const unique = [...new Set(leakedTokens)]
+        throw new BollardError({
+          code: "POSTCONDITION_FAILED",
+          message: `Information leak in contract tests: [${unique.join(", ")}]`,
+          context: { leakedTokens: unique },
+        })
+      }
+
+      const fullPath = resolve(workDir, testPath)
+      await mkdir(dirname(fullPath), { recursive: true })
+      await writeFile(fullPath, fileContent, "utf-8")
+      await formatGeneratedAdversarialTestFile(ctx, workDir, fullPath)
+
+      return {
+        status: "ok",
+        data: {
+          testFile: testPath,
+          bytesWritten: fileContent.length,
+          claimCount: claims.length,
+        },
+      }
+    },
+  }
+
+  const runContractTestsNode: BlueprintNode = {
+    id: "run-contract-tests",
+    name: "Run Contract Tests",
+    type: "deterministic",
+    execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+      const profile = ctx.toolchainProfile
+      if (!profile?.adversarial.contract.enabled) {
+        return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
+      }
+      const riskGate = ctx.results["assess-contract-risk"]?.data as
+        | { skipContract?: boolean }
+        | undefined
+      if (riskGate?.skipContract) {
+        return { status: "ok", data: { skipped: true, reason: "risk-gate" } }
+      }
+
+      const writeRes = ctx.results["write-contract-tests"]?.data as
+        | { skipped?: boolean; testFile?: string }
+        | undefined
+      if (writeRes?.skipped || !writeRes?.testFile) {
+        return { status: "ok", data: { skipped: true, reason: "no contract tests written" } }
+      }
+
+      const result = await runTests(workDir, [writeRes.testFile], profile)
+      if (result.failed > 0) {
+        return {
+          status: "fail",
+          data: result,
+          error: {
+            code: "TEST_FAILED",
+            message: `Contract tests failed: ${result.failedTests.join(", ") || "see output"}`,
+          },
+        }
+      }
+      return { status: "ok", data: result }
+    },
+  }
+
+  const extractBehavioralContextNode: BlueprintNode = {
+    id: "extract-behavioral-context",
+    name: "Extract Behavioral Context",
+    type: "deterministic",
+    execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+      const profile = ctx.toolchainProfile
+      if (!profile?.adversarial.behavioral.enabled) {
+        return { status: "ok", data: { skipped: true, reason: "behavioral scope disabled" } }
+      }
+      const behavioral = await buildBehavioralContext(profile, workDir, (m) =>
+        ctx.log.warn(m, { nodeId: "extract-behavioral-context" }),
+      )
+      const empty = behavioral.endpoints.length === 0 && behavioral.dependencies.length === 0
+      ctx.log.info("behavioral_context_result", {
+        event: "behavioral_context_result",
+        runId: ctx.runId,
+        endpointCount: behavioral.endpoints.length,
+        dependencyCount: behavioral.dependencies.length,
+        empty,
+      })
+      if (empty) {
+        return {
+          status: "ok",
+          data: {
+            context: behavioral,
+            skipBehavioral: true,
+            reason: "BEHAVIORAL_CONTEXT_EMPTY",
+          },
+        }
+      }
+      return { status: "ok", data: { context: behavioral, skipBehavioral: false } }
+    },
+  }
+
+  const generateBehavioralTestsNode: BlueprintNode = {
+    id: "generate-behavioral-tests",
+    name: "Generate Behavioral Tests",
+    type: "agentic",
+    agent: "behavioral-tester",
+  }
+
+  const verifyBehavioralGroundingNode: BlueprintNode = {
+    id: "verify-behavioral-grounding",
+    name: "Verify Behavioral Grounding",
+    type: "deterministic",
+    execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+      const profile = ctx.toolchainProfile
+      if (!profile?.adversarial.behavioral.enabled) {
+        return { status: "ok", data: { skipped: true, reason: "behavioral scope disabled" } }
+      }
+      const behRes = ctx.results["extract-behavioral-context"]?.data as
+        | {
+            skipped?: boolean
+            skipBehavioral?: boolean
+            context?: BehavioralContext
+            reason?: string
+          }
+        | undefined
+      if (behRes?.skipped || behRes?.skipBehavioral) {
+        return {
+          status: "ok",
+          data: { skipped: true, reason: behRes?.reason ?? "behavioral skip" },
+        }
+      }
+
+      const gen = ctx.results["generate-behavioral-tests"]
+      const raw = typeof gen?.data === "string" ? gen.data : ""
+      if (!raw.trim()) {
+        return { status: "ok", data: { skipped: true, reason: "no behavioral test output" } }
+      }
+
+      const behavioralCtx = behRes?.context ?? {
+        endpoints: [],
+        config: [],
+        dependencies: [],
+        failureModes: [],
+      }
+      const corpus = behavioralContextToCorpus(behavioralCtx)
+      const concerns = profile.adversarial.behavioral.concerns
+      const enabled: EnabledConcerns = {
+        correctness: concerns.correctness !== "off",
+        security: concerns.security !== "off",
+        performance: concerns.performance !== "off",
+        resilience: concerns.resilience !== "off",
+      }
+
+      try {
+        const doc = parseClaimDocument(raw, { invalidCode: "BEHAVIORAL_TESTER_OUTPUT_INVALID" })
+        const result = verifyClaimGrounding(doc, corpus, enabled, {
+          noGroundedClaimsCode: "BEHAVIORAL_NO_GROUNDED_CLAIMS",
+        })
+        return {
+          status: "ok",
+          data: { claims: result.kept, dropped: result.dropped },
+        }
+      } catch (err: unknown) {
+        if (BollardError.is(err)) {
+          return {
+            status: "fail",
+            error: { code: err.code, message: err.message },
+          }
+        }
+        return {
+          status: "fail",
+          error: {
+            code: "NODE_EXECUTION_FAILED",
+            message: err instanceof Error ? err.message : String(err),
+          },
+        }
+      }
+    },
+  }
+
+  const writeBehavioralTestsNode: BlueprintNode = {
+    id: "write-behavioral-tests",
+    name: "Write Behavioral Test Files",
+    type: "deterministic",
+    execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+      const profile = ctx.toolchainProfile
+      if (!profile?.adversarial.behavioral.enabled) {
+        return { status: "ok", data: { skipped: true, reason: "behavioral scope disabled" } }
+      }
+      const behRes = ctx.results["extract-behavioral-context"]?.data as
+        | { skipBehavioral?: boolean; skipped?: boolean }
+        | undefined
+      if (behRes?.skipped || behRes?.skipBehavioral) {
+        return { status: "ok", data: { skipped: true, reason: "behavioral skip" } }
+      }
+
+      const verifyRes = ctx.results["verify-behavioral-grounding"]?.data as
+        | { skipped?: boolean; claims?: ClaimRecord[] }
+        | undefined
+      if (verifyRes?.skipped || !verifyRes?.claims || verifyRes.claims.length === 0) {
+        return {
+          status: "ok",
+          data: { skipped: true, reason: "no grounded behavioral claims" },
+        }
+      }
+
+      const claims = verifyRes.claims
+
+      const files = getAffectedSourceFiles(ctx)
+      const firstFile = files[0]
+      if (!firstFile) {
+        return {
+          status: "fail",
+          error: {
+            code: "NODE_EXECUTION_FAILED",
+            message: "No affected files for behavioral tests",
+          },
+        }
+      }
+
+      const assembled = assembleTestFile({
+        claims,
+        profile,
+        sourceFile: firstFile,
+        scope: "behavioral",
+        runId: ctx.runId,
+        task: ctx.task,
+      })
+      const { fileContent, testPath } = assembled
+
+      const leakedTokens: string[] = []
+      const fileContentCode = stripStringLiteralsAndComments(fileContent)
+      for (const filePath of files) {
+        try {
+          const source = await readFile(resolve(workDir, filePath), "utf-8")
+          if (!filePath.endsWith(".ts") && !filePath.endsWith(".tsx")) continue
+          const privateIds = extractPrivateIdentifiers(filePath, source)
+          for (const id of privateIds) {
+            if (fileContentCode.includes(id)) leakedTokens.push(id)
+          }
+        } catch {
+          /* skip */
+        }
+      }
+      if (leakedTokens.length > 0) {
+        const unique = [...new Set(leakedTokens)]
+        throw new BollardError({
+          code: "POSTCONDITION_FAILED",
+          message: `Information leak in behavioral tests: [${unique.join(", ")}]`,
+          context: { leakedTokens: unique },
+        })
+      }
+
+      const fullPath = resolve(workDir, testPath)
+      await mkdir(dirname(fullPath), { recursive: true })
+      await writeFile(fullPath, fileContent, "utf-8")
+      await formatGeneratedAdversarialTestFile(ctx, workDir, fullPath)
+
+      return {
+        status: "ok",
+        data: {
+          testFile: testPath,
+          bytesWritten: fileContent.length,
+          claimCount: claims.length,
+        },
+      }
+    },
+  }
+
+  const runBehavioralTestsNode: BlueprintNode = {
+    id: "run-behavioral-tests",
+    name: "Run Behavioral Tests",
+    type: "deterministic",
+    execute: async (ctx: PipelineContext): Promise<NodeResult> => {
+      const profile = ctx.toolchainProfile
+      if (!profile?.adversarial.behavioral.enabled) {
+        return { status: "ok", data: { skipped: true, reason: "behavioral scope disabled" } }
+      }
+      const behRes = ctx.results["extract-behavioral-context"]?.data as
+        | { skipBehavioral?: boolean; skipped?: boolean; context?: BehavioralContext }
+        | undefined
+      if (behRes?.skipped || behRes?.skipBehavioral) {
+        return { status: "ok", data: { skipped: true, reason: "behavioral skip" } }
+      }
+
+      const writeRes = ctx.results["write-behavioral-tests"]?.data as
+        | { skipped?: boolean; testFile?: string }
+        | undefined
+      if (writeRes?.skipped || !writeRes?.testFile) {
+        return { status: "ok", data: { skipped: true, reason: "no behavioral tests written" } }
+      }
+
+      const behavioralCtx = behRes?.context ?? {
+        endpoints: [],
+        config: [],
+        dependencies: [],
+        failureModes: [],
+      }
+      const composePath = resolve(workDir, ".bollard", "compose.behavioral.yml")
+      try {
+        const compose = await generateBehavioralCompose({
+          workDir,
+          profile,
+          behavioralContext: behavioralCtx,
+          behavioralTestRelPath: writeRes.testFile,
+        })
+        await mkdir(dirname(composePath), { recursive: true })
+        await writeFile(composePath, compose.yaml, "utf-8")
+      } catch (err: unknown) {
+        ctx.log.warn("behavioral_compose_write_failed", {
+          message: err instanceof Error ? err.message : String(err),
+        })
+      }
+
+      const result = await runTests(workDir, [writeRes.testFile], profile)
+      if (result.failed > 0) {
+        return {
+          status: "fail",
+          data: result,
+          error: {
+            code: "TEST_FAILED",
+            message: `Behavioral tests failed: ${result.failedTests.join(", ") || "see output"}`,
+          },
+        }
+      }
+
+      let loadTestReport: unknown
+      try {
+        const loadConfig = profile.metrics?.loadTest
+        const shouldRunLoadTest =
+          loadConfig?.enabled === true &&
+          behavioralCtx.endpoints.length > 0 &&
+          (await commandOnPath("k6", workDir))
+        if (shouldRunLoadTest) {
+          const report = await runK6LoadTest(workDir, behavioralCtx.endpoints, {
+            vus: loadConfig.vus,
+            durationSec: loadConfig.durationSec,
+            baseUrl: "http://localhost:3000",
+          })
+          loadTestReport = report
+          ctx.log.info("load_test_result", {
+            event: "load_test_result",
+            runId: ctx.runId,
+            source: report.source,
+            probeCount: report.probes.length,
+          })
+        }
+      } catch (err: unknown) {
+        ctx.log.warn("load_test_skipped", {
+          message: err instanceof Error ? err.message : String(err),
+        })
+      }
+
+      return {
+        status: "ok",
+        data:
+          loadTestReport === undefined
+            ? result
+            : {
+                result,
+                loadTest: loadTestReport,
+              },
+      }
+    },
+  }
+
+  const scopeExtractionGroup: BlueprintNodeGroup = {
+    kind: "parallel",
+    id: "scope-extraction",
+    name: "Extract Scope Contexts",
+    onBranchFailure: "skip",
+    branches: [
+      {
+        id: "boundary-extraction",
+        name: "Boundary Extraction",
+        nodes: [extractSignaturesNode],
+      },
+      {
+        id: "contract-extraction",
+        name: "Contract Extraction",
+        nodes: [assessContractRiskNode, extractContractsNode],
+      },
+      {
+        id: "behavioral-extraction",
+        name: "Behavioral Extraction",
+        nodes: [extractBehavioralContextNode],
+      },
+    ],
+  }
+
+  const scopeChainsGroup: BlueprintNodeGroup = {
+    kind: "parallel",
+    id: "scope-chains",
+    name: "Adversarial Scope Chains",
+    onBranchFailure: "skip",
+    branches: [
+      {
+        id: "boundary-chain",
+        name: "Boundary Scope",
+        nodes: [generateTestsNode, verifyBoundaryGroundingNode, writeTestsNode, runTestsNode],
+      },
+      {
+        id: "contract-chain",
+        name: "Contract Scope",
+        nodes: [
+          generateContractTestsNode,
+          verifyClaimGroundingNode,
+          writeContractTestsNode,
+          runContractTestsNode,
+        ],
+      },
+      {
+        id: "behavioral-chain",
+        name: "Behavioral Scope",
+        nodes: [
+          generateBehavioralTestsNode,
+          verifyBehavioralGroundingNode,
+          writeBehavioralTestsNode,
+          runBehavioralTestsNode,
+        ],
+      },
+    ],
+  }
+
   return {
     id: "implement-feature",
     name: "Implement Feature",
@@ -412,972 +1431,8 @@ export function createImplementFeatureBlueprint(
           return { status: "ok", data: results }
         },
       },
-
-      {
-        id: "extract-signatures",
-        name: "Extract Type Signatures",
-        type: "deterministic",
-        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const profile = ctx.toolchainProfile
-          const lang = profile?.language ?? "typescript"
-
-          let files = getAffectedSourceFiles(ctx)
-          let extractionSource: "affected-files" | "plan-steps-fallback" = "affected-files"
-
-          if (files.length === 0) {
-            const plan = ctx.plan as { steps?: Array<{ files?: string[] }> } | undefined
-            const stepFiles = (plan?.steps ?? []).flatMap((s) => s.files ?? [])
-            if (stepFiles.length > 0) {
-              files = getAffectedSourceFiles({
-                ...ctx,
-                plan: { affected_files: { modify: stepFiles, create: [] } },
-              } as PipelineContext)
-              if (files.length > 0) extractionSource = "plan-steps-fallback"
-            }
-          }
-
-          if (files.length === 0) {
-            return { status: "ok", data: { filesExtracted: 0, signatures: [], types: [] } }
-          }
-
-          ctx.log.info("extract-signatures: extracting from files", {
-            files,
-            source: extractionSource,
-          })
-
-          const fullPaths = files.map((f) => resolve(workDir, f))
-          const extractor = getExtractor(lang, llmConfig?.provider, llmConfig?.model, ctx.log.warn)
-          const result = await extractor.extract(fullPaths, profile, workDir)
-
-          return {
-            status: "ok",
-            data: {
-              filesExtracted: files.length,
-              signatures: result.signatures,
-              types: result.types,
-            },
-          }
-        },
-      },
-
-      {
-        id: "generate-tests",
-        name: "Generate Adversarial Tests",
-        type: "agentic",
-        agent: "boundary-tester",
-      },
-
-      {
-        id: "verify-boundary-grounding",
-        name: "Verify Boundary Claim Grounding",
-        type: "deterministic",
-        onFailure: "skip",
-        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const profile = ctx.toolchainProfile
-          const language = profile?.language ?? "unknown"
-
-          const logGrounding = (params: {
-            proposed: number
-            grounded: number
-            dropped: number
-            dropRate: number
-            droppedSymbols: string[]
-          }) => {
-            ctx.log.info("boundary_grounding_result", {
-              event: "boundary_grounding_result",
-              runId: ctx.runId,
-              language,
-              ...params,
-            })
-          }
-
-          if (!profile) {
-            logGrounding({
-              proposed: 0,
-              grounded: 0,
-              dropped: 0,
-              dropRate: 0,
-              droppedSymbols: [],
-            })
-            return { status: "ok", data: { skipped: true, reason: "no toolchain profile" } }
-          }
-
-          const gen = ctx.results["generate-tests"]
-          const raw = typeof gen?.data === "string" ? gen.data : ""
-          if (!raw.trim()) {
-            logGrounding({
-              proposed: 0,
-              grounded: 0,
-              dropped: 0,
-              dropRate: 0,
-              droppedSymbols: [],
-            })
-            return { status: "ok", data: { skipped: true, reason: "no boundary test output" } }
-          }
-
-          const corpus = buildBoundaryCorpus(ctx)
-          const concerns = profile.adversarial.boundary.concerns
-          const enabled: EnabledConcerns = {
-            correctness: concerns.correctness !== "off",
-            security: concerns.security !== "off",
-            performance: concerns.performance !== "off",
-            resilience: concerns.resilience !== "off",
-          }
-
-          try {
-            const doc = parseClaimDocument(raw, { invalidCode: "BOUNDARY_TESTER_OUTPUT_INVALID" })
-            const result = verifyClaimGrounding(doc, corpus, enabled, {
-              noGroundedClaimsCode: "BOUNDARY_TESTER_NO_GROUNDED_CLAIMS",
-            })
-
-            const proposed = doc.claims.length
-            const grounded = result.kept.length
-            const droppedCount = result.dropped.length
-            const dropRate =
-              proposed === 0 ? 0 : Math.round((droppedCount / proposed) * 1000) / 1000
-            const droppedSymbols = [...new Set(result.dropped.map((d) => d.id))].sort()
-
-            logGrounding({
-              proposed,
-              grounded,
-              dropped: droppedCount,
-              dropRate,
-              droppedSymbols,
-            })
-
-            return {
-              status: "ok",
-              data: { claims: result.kept, dropped: result.dropped },
-            }
-          } catch (err: unknown) {
-            const message = BollardError.is(err) ? err.message : String(err)
-            const code = BollardError.is(err) ? err.code : "NODE_EXECUTION_FAILED"
-            ctx.log.warn("verify-boundary-grounding: skipping downstream boundary write", {
-              code,
-              message,
-            })
-            logGrounding({
-              proposed: 0,
-              grounded: 0,
-              dropped: 0,
-              dropRate: 0,
-              droppedSymbols: [],
-            })
-            return {
-              status: "ok",
-              data: { skipped: true, reason: message },
-            }
-          }
-        },
-      },
-
-      {
-        id: "write-tests",
-        name: "Write Adversarial Test Files",
-        type: "deterministic",
-        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const profile = ctx.toolchainProfile
-          if (!profile) {
-            return { status: "ok", data: { skipped: true, reason: "no toolchain profile" } }
-          }
-
-          const verifyRes = ctx.results["verify-boundary-grounding"]?.data as
-            | { skipped?: boolean; reason?: string; claims?: ClaimRecord[] }
-            | undefined
-          if (verifyRes?.skipped || !verifyRes?.claims || verifyRes.claims.length === 0) {
-            const reason =
-              verifyRes?.skipped && typeof verifyRes.reason === "string"
-                ? verifyRes.reason
-                : "no grounded boundary claims"
-            return {
-              status: "ok",
-              data: { skipped: true, reason },
-            }
-          }
-
-          let files = getAffectedSourceFiles(ctx)
-          const claims = verifyRes.claims
-          if (files.length === 0) {
-            const inferred = await inferSourceFileFromClaims(ctx, workDir, claims)
-            if (inferred) {
-              ctx.log.info(
-                "write-tests: inferred source file from claims (verification-only run)",
-                {
-                  inferredFile: inferred,
-                  firstClaimId: claims[0]?.id,
-                },
-              )
-              files = [inferred]
-            } else {
-              return {
-                status: "ok",
-                data: {
-                  skipped: true,
-                  reason: "No affected files — could not infer source file from claim IDs",
-                },
-              }
-            }
-          }
-          const firstFile = files[0]
-          if (!firstFile) {
-            return {
-              status: "ok",
-              data: {
-                skipped: true,
-                reason: "No affected files — could not infer source file from claim IDs",
-              },
-            }
-          }
-
-          const assembled = assembleTestFile({
-            claims,
-            profile,
-            sourceFile: firstFile,
-            scope: "boundary",
-            runId: ctx.runId,
-            task: ctx.task,
-          })
-
-          let toWrite = assembled.fileContent
-          const testPath = assembled.testPath
-          const lang = profile.language
-          if (lang === "java" || lang === "kotlin") {
-            const ext = lang === "java" ? ".java" : ".kt"
-            const expectedClass = basename(testPath, ext)
-            toWrite = normalizeJvmWrittenTestClassName(toWrite, expectedClass, lang)
-            if (lang === "java") {
-              toWrite = sanitizeJavaPrimitiveInstanceofMisuse(toWrite)
-            }
-          }
-
-          const leakedTokens: string[] = []
-          const toWriteCode = stripStringLiteralsAndComments(toWrite)
-          for (const filePath of files) {
-            try {
-              const source = await readFile(resolve(workDir, filePath), "utf-8")
-              const privateIds = extractPrivateIdentifiers(filePath, source)
-              for (const id of privateIds) {
-                if (toWriteCode.includes(id)) {
-                  leakedTokens.push(id)
-                }
-              }
-            } catch {
-              // File might not exist yet (newly created) — skip
-            }
-          }
-
-          if (leakedTokens.length > 0) {
-            const unique = [...new Set(leakedTokens)]
-            throw new BollardError({
-              code: "POSTCONDITION_FAILED",
-              message: `Information leak detected in adversarial tests: [${unique.join(", ")}]`,
-              context: { leakedTokens: unique, sourceFiles: files },
-            })
-          }
-
-          const fullPath = resolve(workDir, testPath)
-          await mkdir(dirname(fullPath), { recursive: true })
-          await writeFile(fullPath, toWrite, "utf-8")
-          await formatGeneratedAdversarialTestFile(ctx, workDir, fullPath)
-
-          return {
-            status: "ok",
-            data: { testFile: testPath, bytesWritten: toWrite.length },
-          }
-        },
-      },
-
-      {
-        id: "run-tests",
-        name: "Run Tests",
-        type: "deterministic",
-        onFailure: "skip",
-        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const writeResult = ctx.results["write-tests"]
-          const boundaryTestFile =
-            writeResult?.status === "ok"
-              ? (writeResult.data as { testFile?: string } | undefined)?.testFile
-              : undefined
-          const testFiles = boundaryTestFile !== undefined ? [boundaryTestFile] : undefined
-          const result = await runTests(workDir, testFiles, ctx.toolchainProfile)
-          if (result.failed > 0) {
-            return {
-              status: "fail",
-              data: result,
-              error: {
-                code: "TEST_FAILED",
-                message: `${result.failed}/${result.total} tests failed: ${result.failedTests.join(", ")}`,
-              },
-            }
-          }
-          return { status: "ok", data: result }
-        },
-      },
-
-      {
-        id: "assess-contract-risk",
-        name: "Assess Contract Risk",
-        type: "deterministic",
-        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const profile = ctx.toolchainProfile
-
-          if (profile?.adversarial.contract.enabled !== true) {
-            ctx.log.info("contract_scope_decision", {
-              event: "contract_scope_decision",
-              runId: ctx.runId,
-              decision: "skipped-by-profile",
-              riskLevel: "n/a",
-              touchesExportedSymbols: false,
-              skipContract: true,
-            })
-            return {
-              status: "ok",
-              data: { skipContract: true, reason: "contract scope disabled in profile" },
-            }
-          }
-
-          const plan = ctx.plan as
-            | {
-                risk_assessment?: {
-                  level?: unknown
-                  blast_radius?: unknown
-                  reversibility?: unknown
-                  dollars_at_risk?: unknown
-                  security_sensitivity?: unknown
-                  novelty?: unknown
-                }
-              }
-            | undefined
-          const ra = plan?.risk_assessment
-          const riskLevel = deriveRiskLevel(ra)
-          const touchesExportedSymbols = await hasExportedSymbolChanges(
-            workDir,
-            profile,
-            ctx.log.warn,
-          )
-          const skipContract = riskLevel === "low" && !touchesExportedSymbols
-
-          const decision = skipContract ? "skipped-by-risk-gate" : "run"
-          ctx.log.info("contract_scope_decision", {
-            event: "contract_scope_decision",
-            runId: ctx.runId,
-            decision,
-            riskLevel,
-            touchesExportedSymbols,
-            skipContract,
-          })
-
-          return {
-            status: "ok",
-            data: { skipContract, riskLevel, touchesExportedSymbols },
-          }
-        },
-      },
-
-      {
-        id: "extract-contracts",
-        name: "Extract Contract Graph",
-        type: "deterministic",
-        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const profile = ctx.toolchainProfile
-          if (!profile?.adversarial.contract.enabled) {
-            return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
-          }
-          const riskGate = ctx.results["assess-contract-risk"]?.data as
-            | { skipContract?: boolean }
-            | undefined
-          if (riskGate?.skipContract) {
-            return { status: "ok", data: { skipped: true, reason: "risk-gate" } }
-          }
-          const affected = getAffectedSourceFiles(ctx)
-          const contract = await buildContractContext(affected, profile, workDir, ctx.log.warn)
-          return { status: "ok", data: { contract } }
-        },
-      },
-
-      {
-        id: "generate-contract-tests",
-        name: "Generate Contract Tests",
-        type: "agentic",
-        agent: "contract-tester",
-      },
-
-      {
-        id: "verify-claim-grounding",
-        name: "Verify Claim Grounding",
-        type: "deterministic",
-        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const profile = ctx.toolchainProfile
-          if (!profile?.adversarial.contract.enabled) {
-            ctx.log.info("contract_grounding_result", {
-              event: "contract_grounding_result",
-              runId: ctx.runId,
-              language: ctx.toolchainProfile?.language ?? "unknown",
-              proposed: 0,
-              grounded: 0,
-              dropped: 0,
-              dropRate: 0,
-              droppedSymbols: [],
-            })
-            return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
-          }
-          const riskGate = ctx.results["assess-contract-risk"]?.data as
-            | { skipContract?: boolean }
-            | undefined
-          if (riskGate?.skipContract) {
-            ctx.log.info("contract_grounding_result", {
-              event: "contract_grounding_result",
-              runId: ctx.runId,
-              language: ctx.toolchainProfile?.language ?? "unknown",
-              proposed: 0,
-              grounded: 0,
-              dropped: 0,
-              dropRate: 0,
-              droppedSymbols: [],
-            })
-            return { status: "ok", data: { skipped: true, reason: "risk-gate" } }
-          }
-
-          const gen = ctx.results["generate-contract-tests"]
-          const raw = typeof gen?.data === "string" ? gen.data : ""
-          if (!raw.trim()) {
-            ctx.log.info("contract_grounding_result", {
-              event: "contract_grounding_result",
-              runId: ctx.runId,
-              language: ctx.toolchainProfile?.language ?? "unknown",
-              proposed: 0,
-              grounded: 0,
-              dropped: 0,
-              dropRate: 0,
-              droppedSymbols: [],
-            })
-            return { status: "ok", data: { skipped: true, reason: "no contract test output" } }
-          }
-
-          // Contract context is stashed on the extract-contracts node result — no new PipelineContext fields needed
-          const extractRes = ctx.results["extract-contracts"]?.data as
-            | { contract?: ContractContext }
-            | undefined
-          const contract = extractRes?.contract ?? {
-            modules: [],
-            edges: [],
-            affectedEdges: [],
-          }
-
-          const plan = ctx.plan as Record<string, unknown> | undefined
-          const planSummary =
-            typeof plan?.["summary"] === "string" ? (plan["summary"] as string) : undefined
-          const taskStr = ctx.task
-          const acceptanceCriteria = Array.isArray(plan?.["acceptance_criteria"])
-            ? (plan["acceptance_criteria"] as unknown[]).map((c) => String(c))
-            : []
-          const corpus = contractContextToCorpus(contract, planSummary, taskStr, acceptanceCriteria)
-
-          const concerns = profile.adversarial.contract.concerns
-          const enabled: EnabledConcerns = {
-            correctness: concerns.correctness !== "off",
-            security: concerns.security !== "off",
-            performance: concerns.performance !== "off",
-            resilience: concerns.resilience !== "off",
-          }
-
-          try {
-            const doc = parseClaimDocument(raw)
-            const result = verifyClaimGrounding(doc, corpus, enabled)
-
-            const proposed = doc.claims.length
-            const grounded = result.kept.length
-            const droppedCount = result.dropped.length
-            const dropRate =
-              proposed === 0 ? 0 : Math.round((droppedCount / proposed) * 1000) / 1000
-            const droppedSymbols = [...new Set(result.dropped.map((d) => d.id))].sort()
-
-            ctx.log.info("contract_grounding_result", {
-              event: "contract_grounding_result",
-              runId: ctx.runId,
-              language: ctx.toolchainProfile?.language ?? "unknown",
-              proposed,
-              grounded,
-              dropped: droppedCount,
-              dropRate,
-              droppedSymbols,
-            })
-
-            return {
-              status: "ok",
-              data: { claims: result.kept, dropped: result.dropped },
-            }
-          } catch (err: unknown) {
-            if (BollardError.is(err)) {
-              return {
-                status: "fail",
-                error: { code: err.code, message: err.message },
-              }
-            }
-            return {
-              status: "fail",
-              error: {
-                code: "NODE_EXECUTION_FAILED",
-                message: err instanceof Error ? err.message : String(err),
-              },
-            }
-          }
-        },
-      },
-
-      {
-        id: "write-contract-tests",
-        name: "Write Contract Test Files",
-        type: "deterministic",
-        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const profile = ctx.toolchainProfile
-          if (!profile?.adversarial.contract.enabled) {
-            return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
-          }
-          const riskGate = ctx.results["assess-contract-risk"]?.data as
-            | { skipContract?: boolean }
-            | undefined
-          if (riskGate?.skipContract) {
-            return { status: "ok", data: { skipped: true, reason: "risk-gate" } }
-          }
-
-          const verifyRes = ctx.results["verify-claim-grounding"]?.data as
-            | { skipped?: boolean; claims?: ClaimRecord[] }
-            | undefined
-          if (verifyRes?.skipped || !verifyRes?.claims || verifyRes.claims.length === 0) {
-            return {
-              status: "ok",
-              data: { skipped: true, reason: "no grounded claims" },
-            }
-          }
-
-          const claims = verifyRes.claims
-          let files = getAffectedSourceFiles(ctx)
-          if (files.length === 0) {
-            const inferred = await inferSourceFileFromClaims(ctx, workDir, claims, "ctr")
-            if (inferred) {
-              ctx.log.info(
-                "write-contract-tests: inferred source file from claims (verification-only run)",
-                {
-                  inferredFile: inferred,
-                  firstClaimId: claims[0]?.id,
-                },
-              )
-              files = [inferred]
-            } else {
-              return {
-                status: "ok",
-                data: {
-                  skipped: true,
-                  reason: "No affected files — could not infer source file from contract claim IDs",
-                },
-              }
-            }
-          }
-          const firstFile = files[0]
-          if (!firstFile) {
-            return {
-              status: "ok",
-              data: {
-                skipped: true,
-                reason: "No affected files — could not infer source file from contract claim IDs",
-              },
-            }
-          }
-
-          const contractExtract = ctx.results["extract-contracts"]?.data as
-            | { contract?: ContractContext }
-            | undefined
-
-          const assembled = assembleTestFile({
-            claims,
-            profile,
-            sourceFile: firstFile,
-            scope: "contract",
-            ...(contractExtract?.contract !== undefined
-              ? { contractContext: contractExtract.contract }
-              : {}),
-            runId: ctx.runId,
-            task: ctx.task,
-          })
-          const { fileContent, testPath } = assembled
-
-          const leakedTokens: string[] = []
-          const fileContentCode = stripStringLiteralsAndComments(fileContent)
-          for (const filePath of files) {
-            try {
-              const source = await readFile(resolve(workDir, filePath), "utf-8")
-              if (!filePath.endsWith(".ts") && !filePath.endsWith(".tsx")) continue
-              const privateIds = extractPrivateIdentifiers(filePath, source)
-              for (const id of privateIds) {
-                if (fileContentCode.includes(id)) leakedTokens.push(id)
-              }
-            } catch {
-              /* skip */
-            }
-          }
-          if (leakedTokens.length > 0) {
-            const unique = [...new Set(leakedTokens)]
-            throw new BollardError({
-              code: "POSTCONDITION_FAILED",
-              message: `Information leak in contract tests: [${unique.join(", ")}]`,
-              context: { leakedTokens: unique },
-            })
-          }
-
-          const fullPath = resolve(workDir, testPath)
-          await mkdir(dirname(fullPath), { recursive: true })
-          await writeFile(fullPath, fileContent, "utf-8")
-          await formatGeneratedAdversarialTestFile(ctx, workDir, fullPath)
-
-          return {
-            status: "ok",
-            data: {
-              testFile: testPath,
-              bytesWritten: fileContent.length,
-              claimCount: claims.length,
-            },
-          }
-        },
-      },
-
-      {
-        id: "run-contract-tests",
-        name: "Run Contract Tests",
-        type: "deterministic",
-        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const profile = ctx.toolchainProfile
-          if (!profile?.adversarial.contract.enabled) {
-            return { status: "ok", data: { skipped: true, reason: "contract scope disabled" } }
-          }
-          const riskGate = ctx.results["assess-contract-risk"]?.data as
-            | { skipContract?: boolean }
-            | undefined
-          if (riskGate?.skipContract) {
-            return { status: "ok", data: { skipped: true, reason: "risk-gate" } }
-          }
-
-          const writeRes = ctx.results["write-contract-tests"]?.data as
-            | { skipped?: boolean; testFile?: string }
-            | undefined
-          if (writeRes?.skipped || !writeRes?.testFile) {
-            return { status: "ok", data: { skipped: true, reason: "no contract tests written" } }
-          }
-
-          const result = await runTests(workDir, [writeRes.testFile], profile)
-          if (result.failed > 0) {
-            return {
-              status: "fail",
-              data: result,
-              error: {
-                code: "TEST_FAILED",
-                message: `Contract tests failed: ${result.failedTests.join(", ") || "see output"}`,
-              },
-            }
-          }
-          return { status: "ok", data: result }
-        },
-      },
-
-      {
-        id: "extract-behavioral-context",
-        name: "Extract Behavioral Context",
-        type: "deterministic",
-        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const profile = ctx.toolchainProfile
-          if (!profile?.adversarial.behavioral.enabled) {
-            return { status: "ok", data: { skipped: true, reason: "behavioral scope disabled" } }
-          }
-          const behavioral = await buildBehavioralContext(profile, workDir, (m) =>
-            ctx.log.warn(m, { nodeId: "extract-behavioral-context" }),
-          )
-          const empty = behavioral.endpoints.length === 0 && behavioral.dependencies.length === 0
-          ctx.log.info("behavioral_context_result", {
-            event: "behavioral_context_result",
-            runId: ctx.runId,
-            endpointCount: behavioral.endpoints.length,
-            dependencyCount: behavioral.dependencies.length,
-            empty,
-          })
-          if (empty) {
-            return {
-              status: "ok",
-              data: {
-                context: behavioral,
-                skipBehavioral: true,
-                reason: "BEHAVIORAL_CONTEXT_EMPTY",
-              },
-            }
-          }
-          return { status: "ok", data: { context: behavioral, skipBehavioral: false } }
-        },
-      },
-
-      {
-        id: "generate-behavioral-tests",
-        name: "Generate Behavioral Tests",
-        type: "agentic",
-        agent: "behavioral-tester",
-      },
-
-      {
-        id: "verify-behavioral-grounding",
-        name: "Verify Behavioral Grounding",
-        type: "deterministic",
-        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const profile = ctx.toolchainProfile
-          if (!profile?.adversarial.behavioral.enabled) {
-            return { status: "ok", data: { skipped: true, reason: "behavioral scope disabled" } }
-          }
-          const behRes = ctx.results["extract-behavioral-context"]?.data as
-            | {
-                skipped?: boolean
-                skipBehavioral?: boolean
-                context?: BehavioralContext
-                reason?: string
-              }
-            | undefined
-          if (behRes?.skipped || behRes?.skipBehavioral) {
-            return {
-              status: "ok",
-              data: { skipped: true, reason: behRes?.reason ?? "behavioral skip" },
-            }
-          }
-
-          const gen = ctx.results["generate-behavioral-tests"]
-          const raw = typeof gen?.data === "string" ? gen.data : ""
-          if (!raw.trim()) {
-            return { status: "ok", data: { skipped: true, reason: "no behavioral test output" } }
-          }
-
-          const behavioralCtx = behRes?.context ?? {
-            endpoints: [],
-            config: [],
-            dependencies: [],
-            failureModes: [],
-          }
-          const corpus = behavioralContextToCorpus(behavioralCtx)
-          const concerns = profile.adversarial.behavioral.concerns
-          const enabled: EnabledConcerns = {
-            correctness: concerns.correctness !== "off",
-            security: concerns.security !== "off",
-            performance: concerns.performance !== "off",
-            resilience: concerns.resilience !== "off",
-          }
-
-          try {
-            const doc = parseClaimDocument(raw, { invalidCode: "BEHAVIORAL_TESTER_OUTPUT_INVALID" })
-            const result = verifyClaimGrounding(doc, corpus, enabled, {
-              noGroundedClaimsCode: "BEHAVIORAL_NO_GROUNDED_CLAIMS",
-            })
-            return {
-              status: "ok",
-              data: { claims: result.kept, dropped: result.dropped },
-            }
-          } catch (err: unknown) {
-            if (BollardError.is(err)) {
-              return {
-                status: "fail",
-                error: { code: err.code, message: err.message },
-              }
-            }
-            return {
-              status: "fail",
-              error: {
-                code: "NODE_EXECUTION_FAILED",
-                message: err instanceof Error ? err.message : String(err),
-              },
-            }
-          }
-        },
-      },
-
-      {
-        id: "write-behavioral-tests",
-        name: "Write Behavioral Test Files",
-        type: "deterministic",
-        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const profile = ctx.toolchainProfile
-          if (!profile?.adversarial.behavioral.enabled) {
-            return { status: "ok", data: { skipped: true, reason: "behavioral scope disabled" } }
-          }
-          const behRes = ctx.results["extract-behavioral-context"]?.data as
-            | { skipBehavioral?: boolean; skipped?: boolean }
-            | undefined
-          if (behRes?.skipped || behRes?.skipBehavioral) {
-            return { status: "ok", data: { skipped: true, reason: "behavioral skip" } }
-          }
-
-          const verifyRes = ctx.results["verify-behavioral-grounding"]?.data as
-            | { skipped?: boolean; claims?: ClaimRecord[] }
-            | undefined
-          if (verifyRes?.skipped || !verifyRes?.claims || verifyRes.claims.length === 0) {
-            return {
-              status: "ok",
-              data: { skipped: true, reason: "no grounded behavioral claims" },
-            }
-          }
-
-          const claims = verifyRes.claims
-
-          const files = getAffectedSourceFiles(ctx)
-          const firstFile = files[0]
-          if (!firstFile) {
-            return {
-              status: "fail",
-              error: {
-                code: "NODE_EXECUTION_FAILED",
-                message: "No affected files for behavioral tests",
-              },
-            }
-          }
-
-          const assembled = assembleTestFile({
-            claims,
-            profile,
-            sourceFile: firstFile,
-            scope: "behavioral",
-            runId: ctx.runId,
-            task: ctx.task,
-          })
-          const { fileContent, testPath } = assembled
-
-          const leakedTokens: string[] = []
-          const fileContentCode = stripStringLiteralsAndComments(fileContent)
-          for (const filePath of files) {
-            try {
-              const source = await readFile(resolve(workDir, filePath), "utf-8")
-              if (!filePath.endsWith(".ts") && !filePath.endsWith(".tsx")) continue
-              const privateIds = extractPrivateIdentifiers(filePath, source)
-              for (const id of privateIds) {
-                if (fileContentCode.includes(id)) leakedTokens.push(id)
-              }
-            } catch {
-              /* skip */
-            }
-          }
-          if (leakedTokens.length > 0) {
-            const unique = [...new Set(leakedTokens)]
-            throw new BollardError({
-              code: "POSTCONDITION_FAILED",
-              message: `Information leak in behavioral tests: [${unique.join(", ")}]`,
-              context: { leakedTokens: unique },
-            })
-          }
-
-          const fullPath = resolve(workDir, testPath)
-          await mkdir(dirname(fullPath), { recursive: true })
-          await writeFile(fullPath, fileContent, "utf-8")
-          await formatGeneratedAdversarialTestFile(ctx, workDir, fullPath)
-
-          return {
-            status: "ok",
-            data: {
-              testFile: testPath,
-              bytesWritten: fileContent.length,
-              claimCount: claims.length,
-            },
-          }
-        },
-      },
-
-      {
-        id: "run-behavioral-tests",
-        name: "Run Behavioral Tests",
-        type: "deterministic",
-        execute: async (ctx: PipelineContext): Promise<NodeResult> => {
-          const profile = ctx.toolchainProfile
-          if (!profile?.adversarial.behavioral.enabled) {
-            return { status: "ok", data: { skipped: true, reason: "behavioral scope disabled" } }
-          }
-          const behRes = ctx.results["extract-behavioral-context"]?.data as
-            | { skipBehavioral?: boolean; skipped?: boolean; context?: BehavioralContext }
-            | undefined
-          if (behRes?.skipped || behRes?.skipBehavioral) {
-            return { status: "ok", data: { skipped: true, reason: "behavioral skip" } }
-          }
-
-          const writeRes = ctx.results["write-behavioral-tests"]?.data as
-            | { skipped?: boolean; testFile?: string }
-            | undefined
-          if (writeRes?.skipped || !writeRes?.testFile) {
-            return { status: "ok", data: { skipped: true, reason: "no behavioral tests written" } }
-          }
-
-          const behavioralCtx = behRes?.context ?? {
-            endpoints: [],
-            config: [],
-            dependencies: [],
-            failureModes: [],
-          }
-          const composePath = resolve(workDir, ".bollard", "compose.behavioral.yml")
-          try {
-            const compose = await generateBehavioralCompose({
-              workDir,
-              profile,
-              behavioralContext: behavioralCtx,
-              behavioralTestRelPath: writeRes.testFile,
-            })
-            await mkdir(dirname(composePath), { recursive: true })
-            await writeFile(composePath, compose.yaml, "utf-8")
-          } catch (err: unknown) {
-            ctx.log.warn("behavioral_compose_write_failed", {
-              message: err instanceof Error ? err.message : String(err),
-            })
-          }
-
-          const result = await runTests(workDir, [writeRes.testFile], profile)
-          if (result.failed > 0) {
-            return {
-              status: "fail",
-              data: result,
-              error: {
-                code: "TEST_FAILED",
-                message: `Behavioral tests failed: ${result.failedTests.join(", ") || "see output"}`,
-              },
-            }
-          }
-
-          let loadTestReport: unknown
-          try {
-            const loadConfig = profile.metrics?.loadTest
-            const shouldRunLoadTest =
-              loadConfig?.enabled === true &&
-              behavioralCtx.endpoints.length > 0 &&
-              (await commandOnPath("k6", workDir))
-            if (shouldRunLoadTest) {
-              const report = await runK6LoadTest(workDir, behavioralCtx.endpoints, {
-                vus: loadConfig.vus,
-                durationSec: loadConfig.durationSec,
-                baseUrl: "http://localhost:3000",
-              })
-              loadTestReport = report
-              ctx.log.info("load_test_result", {
-                event: "load_test_result",
-                runId: ctx.runId,
-                source: report.source,
-                probeCount: report.probes.length,
-              })
-            }
-          } catch (err: unknown) {
-            ctx.log.warn("load_test_skipped", {
-              message: err instanceof Error ? err.message : String(err),
-            })
-          }
-
-          return {
-            status: "ok",
-            data:
-              loadTestReport === undefined
-                ? result
-                : {
-                    result,
-                    loadTest: loadTestReport,
-                  },
-          }
-        },
-      },
-
+      scopeExtractionGroup,
+      scopeChainsGroup,
       {
         id: "extract-probes",
         name: "Extract Production Probes",

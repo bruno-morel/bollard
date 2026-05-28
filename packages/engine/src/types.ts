@@ -18,9 +18,17 @@ export type {
   NodeResultError,
   NodeResult,
   BlueprintNode,
+  BlueprintBranch,
+  BlueprintNodeGroup,
+  BlueprintEntry,
   Blueprint,
   ProbeAssertion,
   ProbeDefinition,
+} from "./blueprint.js"
+export {
+  isParallelGroup,
+  flattenBlueprintNodes,
+  countBlueprintSteps,
 } from "./blueprint.js"
 export type {
   LogLevel,

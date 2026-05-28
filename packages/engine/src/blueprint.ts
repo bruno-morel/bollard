@@ -51,10 +51,58 @@ export interface BlueprintNode {
   maxRetries?: number
 }
 
+export interface BlueprintBranch {
+  /** Stable identifier used in progress events and result keys. */
+  id: string
+  /** Human-readable label shown in CLI progress (e.g. "boundary scope"). */
+  name: string
+  nodes: BlueprintNode[]
+}
+
+export interface BlueprintNodeGroup {
+  /** Discriminator — runner checks this to choose parallel path. */
+  kind: "parallel"
+  id: string
+  name: string
+  branches: BlueprintBranch[]
+  /**
+   * What to do if any branch fails.
+   * "skip" — log warn, continue pipeline (matches existing onFailure: "skip" convention).
+   * "stop" — propagate failure upward (default).
+   */
+  onBranchFailure?: "stop" | "skip"
+}
+
+/** Union of sequential node and parallel group — what the blueprint nodes array contains. */
+export type BlueprintEntry = BlueprintNode | BlueprintNodeGroup
+
+export function isParallelGroup(entry: BlueprintEntry): entry is BlueprintNodeGroup {
+  return (entry as BlueprintNodeGroup).kind === "parallel"
+}
+
+export function flattenBlueprintNodes(entries: BlueprintEntry[]): BlueprintNode[] {
+  const out: BlueprintNode[] = []
+  for (const entry of entries) {
+    if (isParallelGroup(entry)) {
+      for (const branch of entry.branches) {
+        out.push(...branch.nodes)
+      }
+    } else {
+      out.push(entry)
+    }
+  }
+  return out
+}
+
+/** Each top-level entry (node or parallel group) counts as one pipeline step. */
+export function countBlueprintSteps(entries: BlueprintEntry[]): number {
+  return entries.length
+}
+
 export interface Blueprint {
   id: string
   name: string
-  nodes: BlueprintNode[]
+  nodes: BlueprintEntry[]
   maxCostUsd: number
   maxDurationMinutes: number
 }

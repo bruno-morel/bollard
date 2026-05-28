@@ -33,6 +33,7 @@ vi.mock("node:child_process", async (importOriginal) => {
   }
 })
 
+import { flattenBlueprintNodes } from "@bollard/engine/src/blueprint.js"
 import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
 
 function makeWriteTestsCtx(tempDir: string): PipelineContext {
@@ -129,7 +130,7 @@ describe("write-tests node runs biome on generated file", () => {
 
   it("calls biome check --write --unsafe on the written adversarial test path", async () => {
     const bp = createImplementFeatureBlueprint(tempDir)
-    const node = bp.nodes.find((n) => n.id === "write-tests")
+    const node = flattenBlueprintNodes(bp.nodes).find((n) => n.id === "write-tests")
     expect(node?.execute).toBeDefined()
     const execute = node?.execute
     if (!execute) {

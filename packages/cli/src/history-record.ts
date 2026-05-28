@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { Blueprint } from "@bollard/engine/src/blueprint.js"
+import { flattenBlueprintNodes } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import {
   type NodeSummary,
@@ -130,7 +131,7 @@ export function extractNodeSummaries(
   blueprint: Blueprint,
   nodeResults: RunResult["nodeResults"],
 ): NodeSummary[] {
-  return blueprint.nodes.map((node) => {
+  return flattenBlueprintNodes(blueprint.nodes).map((node) => {
     const nr = nodeResults[node.id]
     const status = nr?.status ?? "block"
     const base: NodeSummary = {

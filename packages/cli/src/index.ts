@@ -3,6 +3,7 @@ import { join, resolve } from "node:path"
 import type { AgentResult } from "@bollard/agents/src/types.js"
 import { createImplementFeatureBlueprint } from "@bollard/blueprints/src/implement-feature.js"
 import type { Blueprint, BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
+import { countBlueprintSteps, flattenBlueprintNodes } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import { FileRunHistoryStore } from "@bollard/engine/src/run-history.js"
@@ -63,6 +64,22 @@ function formatCost(usd: number): string {
 
 function cliProgress(event: ProgressEvent): void {
   const prefix = `${DIM}[${event.step}/${event.totalSteps}]${RESET}`
+
+  if (event.type === "group_start") {
+    const branchLabel = (event.branchIds ?? []).join(" | ")
+    log(`${prefix} ${CYAN}⟳${RESET} ${event.groupName} ${DIM}[${branchLabel}]${RESET}`)
+    return
+  }
+
+  if (event.type === "group_complete") {
+    const icon = statusIcon(event.status ?? "ok")
+    const branchCount = event.branchIds?.length ?? 0
+    const duration = event.durationMs ? ` ${DIM}${formatMs(event.durationMs)}${RESET}` : ""
+    log(
+      `${prefix}       ${icon} ${event.groupName} ${DIM}(${branchCount} branches)${RESET}${duration}`,
+    )
+    return
+  }
 
   if (event.type === "node_start") {
     const typeLabel =
@@ -489,7 +506,11 @@ async function runRunCommand(args: string[]): Promise<void> {
     header("run implement-feature")
     log(`${DIM}Task:${RESET}      ${task}`)
     log(`${DIM}Work dir:${RESET}  ${workDir}`)
-    log(`${DIM}Blueprint:${RESET} ${blueprint.name} (${blueprint.nodes.length} steps)`)
+    const stepCount = countBlueprintSteps(blueprint.nodes)
+    const nodeCount = flattenBlueprintNodes(blueprint.nodes).length
+    log(
+      `${DIM}Blueprint:${RESET} ${blueprint.name} (${stepCount} steps${nodeCount !== stepCount ? `, ${DIM}${nodeCount} nodes${RESET}` : ""})`,
+    )
     log(
       `${DIM}Limits:${RESET}    $${blueprint.maxCostUsd} cost / ${blueprint.maxDurationMinutes}min`,
     )
