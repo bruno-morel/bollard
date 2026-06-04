@@ -82,6 +82,10 @@ export class CostTracker {
     return this.remaining() > 0
   }
 
+  isUnlimited(): boolean {
+    return this._limit === Number.POSITIVE_INFINITY
+  }
+
   reset(): void {
     this._total = 0
     this._runCount = 0
