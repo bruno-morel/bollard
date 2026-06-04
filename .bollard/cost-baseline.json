@@ -1,9 +1,8 @@
 {
-  "tag": "post-5e-hardening",
-  "runId": "20260604-0303-run-7c191e",
-  "timestamp": 1780542457350,
+  "tag": "post-prompt-hardening",
+  "runId": "20260604-0334-run-b89290",
+  "timestamp": 1780544361342,
   "blueprintId": "implement-feature",
-  "totalCostUsd": 1.5493819999999994,
-  "thresholdPct": 15,
-  "notes": "humanReadable() self-test post semantic-reviewer ADR-0003 + contract 1b + overwrite guard"
+  "totalCostUsd": 1.0536890000000003,
+  "thresholdPct": 15
 }
