@@ -383,3 +383,46 @@ describe("contractContextToCorpus — task and acceptance criteria", () => {
     expect(corpus.entries).toEqual(["plan summary text"])
   })
 })
+
+describe("contractContextToCorpus with sourceContents", () => {
+  const emptyCtx: ContractContext = { modules: [], edges: [], affectedEdges: [] }
+
+  it("includes source content in corpus entries", () => {
+    const source = "function reset() { this._total = 0 }"
+    const corpus = contractContextToCorpus(emptyCtx, undefined, undefined, undefined, [source])
+    expect(corpus.entries).toContain(source)
+  })
+
+  it("grounding succeeds when quote appears only in source content", () => {
+    const source = "reset(): void { this._total = 0; this._limitUsd = this._limitUsd }"
+    const corpus = contractContextToCorpus(emptyCtx, undefined, undefined, undefined, [source])
+    const doc: ClaimDocument = {
+      claims: [
+        {
+          id: "c1",
+          concern: "correctness",
+          claim: "reset sets total back to zero",
+          grounding: [{ quote: "this._total = 0", source: "source:cost-tracker.ts" }],
+          test: "it('placeholder', () => {})",
+        },
+      ],
+    }
+    const result = verifyClaimGrounding(doc, corpus, { correctness: true })
+    expect(result.kept).toHaveLength(1)
+    expect(result.dropped).toHaveLength(0)
+  })
+
+  it("skips empty and whitespace-only source content", () => {
+    const baseline = contractContextToCorpus(emptyCtx, "plan summary")
+    const withEmpty = contractContextToCorpus(emptyCtx, "plan summary", undefined, undefined, [
+      "",
+      "   ",
+    ])
+    expect(withEmpty.entries).toEqual(baseline.entries)
+  })
+
+  it("preserves backward compat when sourceContents is omitted", () => {
+    const corpus = contractContextToCorpus(emptyCtx, "plan summary text")
+    expect(corpus.entries).toEqual(["plan summary text"])
+  })
+})

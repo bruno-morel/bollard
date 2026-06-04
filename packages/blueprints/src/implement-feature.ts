@@ -741,7 +741,28 @@ export function createImplementFeatureBlueprint(
       const acceptanceCriteria = Array.isArray(plan?.["acceptance_criteria"])
         ? (plan["acceptance_criteria"] as unknown[]).map((c) => String(c))
         : []
-      const corpus = contractContextToCorpus(contract, planSummary, taskStr, acceptanceCriteria)
+
+      // Read affected source files to include in grounding corpus.
+      // This closes the gap where the tester quotes behavioral descriptions from the
+      // source body that don't appear in signatures or plan text.
+      const affectedFiles = getAffectedSourceFiles(ctx)
+      const sourceContents: string[] = []
+      for (const filePath of affectedFiles) {
+        try {
+          const content = await readFile(resolve(workDir, filePath), "utf-8")
+          sourceContents.push(content)
+        } catch {
+          // File may not exist if this is a verification-only run — skip silently.
+        }
+      }
+
+      const corpus = contractContextToCorpus(
+        contract,
+        planSummary,
+        taskStr,
+        acceptanceCriteria,
+        sourceContents,
+      )
 
       const concerns = profile.adversarial.contract.concerns
       const enabled: EnabledConcerns = {

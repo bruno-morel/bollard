@@ -276,6 +276,7 @@ export function contractContextToCorpus(
   planSummary?: string,
   taskStr?: string,
   acceptanceCriteria?: string[],
+  sourceContents?: string[],
 ): ContractCorpus {
   const entries: string[] = []
 
@@ -311,6 +312,10 @@ export function contractContextToCorpus(
 
   for (const criterion of acceptanceCriteria ?? []) {
     if (criterion) entries.push(criterion)
+  }
+
+  for (const content of sourceContents ?? []) {
+    if (content.trim().length > 0) entries.push(content)
   }
 
   return { entries }
