@@ -71,11 +71,11 @@ describe("runCommandTool", () => {
     expect(testCtx.testInvocationCount).toBe(0)
   })
 
-  it("returns hard-stop after MAX_TEST_INVOCATIONS exceeded", async () => {
+  it("returns hard-stop after MAX_TEST_INVOCATIONS (3) exceeded", async () => {
     const testCtx: AgentContext = {
       ...ctx,
       allowedCommands: ["pnpm"],
-      testInvocationCount: 5,
+      testInvocationCount: 3,
     }
     const out = await runCommandTool.execute({ command: "pnpm test" }, testCtx)
     expect(typeof out).toBe("string")
@@ -88,7 +88,7 @@ describe("runCommandTool", () => {
     const exhausted: AgentContext = {
       ...ctx,
       allowedCommands: ["pnpm"],
-      testInvocationCount: 5,
+      testInvocationCount: 3,
     }
     const out1 = await runCommandTool.execute({ command: "pnpm test" }, exhausted)
     expect(out1).toContain("Stop retrying")

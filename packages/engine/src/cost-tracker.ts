@@ -7,10 +7,10 @@ export class CostTracker {
   private readonly _limit: number
 
   constructor(limitUsd: number) {
-    if (!Number.isFinite(limitUsd) || limitUsd < 0) {
+    if ((!Number.isFinite(limitUsd) && limitUsd !== Number.POSITIVE_INFINITY) || limitUsd < 0) {
       throw new BollardError({
         code: "CONTRACT_VIOLATION",
-        message: `Limit must be a non-negative finite number, got: ${limitUsd}`,
+        message: `Limit must be a non-negative finite number or Infinity, got: ${limitUsd}`,
         context: { limitUsd },
       })
     }
@@ -72,7 +72,14 @@ export class CostTracker {
 
   /** Returns the budget remaining (limit minus total). Always ≥ 0; never negative. */
   remaining(): number {
+    if (this._limit === Number.POSITIVE_INFINITY) {
+      return Number.POSITIVE_INFINITY
+    }
     return Math.max(0, this._limit - this._total)
+  }
+
+  available(): boolean {
+    return this.remaining() > 0
   }
 
   reset(): void {
@@ -83,6 +90,7 @@ export class CostTracker {
   runCount(): number {
     return this._runCount
   }
+
   clamp(min: number, max: number): CostTracker {
     if (!Number.isFinite(min) || min < 0) {
       throw new BollardError({
@@ -140,6 +148,7 @@ export class CostTracker {
       runCount: this.runCount(),
     }
   }
+
   divide(divisor: number): CostTracker {
     if (!Number.isFinite(divisor) || divisor <= 0) {
       throw new BollardError({
@@ -205,11 +214,12 @@ export class CostTracker {
     newTracker._total = this._total + other._total
     return newTracker
   }
+
   withLimit(newLimit: number): CostTracker {
-    if (!Number.isFinite(newLimit) || newLimit < 0) {
+    if ((!Number.isFinite(newLimit) && newLimit !== Number.POSITIVE_INFINITY) || newLimit < 0) {
       throw new BollardError({
         code: "CONTRACT_VIOLATION",
-        message: `newLimit must be a non-negative finite number, got: ${newLimit}`,
+        message: `newLimit must be a non-negative finite number or Infinity, got: ${newLimit}`,
         context: { newLimit },
       })
     }
@@ -263,10 +273,14 @@ export class CostTracker {
 
     return this
   }
+
   percentUsed(): number {
-    // Handle percentage calculation with edge case for zero limit
+    // Handle percentage calculation with edge cases
     let percentage: number
-    if (this._limit === 0) {
+    if (this._limit === Number.POSITIVE_INFINITY) {
+      // When limit is Infinity, percentage is always 0% (unlimited budget)
+      percentage = 0
+    } else if (this._limit === 0) {
       // When limit is 0, if total is also 0, percentage is 0%
       // If total > 0, we show it as exceeded (100% to avoid "Infinity")
       percentage = this._total === 0 ? 0 : 100
@@ -277,13 +291,17 @@ export class CostTracker {
     // Clamp result to [0, 100] to ensure no NaN, Infinity, or out-of-range values
     return Math.min(Math.max(percentage, 0), 100)
   }
+
   summary(): string {
     const totalFormatted = this._total.toFixed(2)
-    const limitFormatted = this._limit.toFixed(2)
+    const limitFormatted = this._limit === Number.POSITIVE_INFINITY ? "∞" : this._limit.toFixed(2)
 
-    // Handle percentage calculation with edge case for zero limit
+    // Handle percentage calculation with edge cases
     let percentage: number
-    if (this._limit === 0) {
+    if (this._limit === Number.POSITIVE_INFINITY) {
+      // When limit is Infinity, percentage is always 0% (unlimited budget)
+      percentage = 0
+    } else if (this._limit === 0) {
       // When limit is 0, if total is also 0, percentage is 0%
       // If total > 0, we show it as exceeded (100% to avoid "Infinity")
       percentage = this._total === 0 ? 0 : 100

@@ -83,6 +83,7 @@ The system automatically runs verification checks ({{testFramework}}, {{typechec
 - If verification fails, you will receive the error output. Fix the issues and declare completion again.
 - You MAY still use `run_command` during development for targeted checks (e.g., running a single test file to debug).
 - Focus your tool calls on creative work: reading unfamiliar code, writing implementation, and writing tests.
+- **Always use `{{packageManager}}` to run tests and scripts** — never use a different package manager (e.g. never `npm` in a `pnpm` project, never `yarn` in an `npm` project). Using the wrong package manager bypasses workspace resolution and will produce wrong results or fail silently.
 
 {{#if isJava}}
 **JVM (Maven/Gradle):** Use `mvn` or `./gradlew` from the profile. Typical layout: `src/main/java`, tests in `src/test/java`.

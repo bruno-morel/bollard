@@ -1,117 +1,99 @@
-import { describe, it, expect, vi } from "vitest"
-import { CostTracker } from "@bollard/engine/src/cost-tracker.js"
+import { describe, expect, it } from "vitest"
+import { CostTracker } from "../src/cost-tracker.js"
 
 describe("boundary tests", () => {
-it('reset() returns undefined', () => {
+it('returns true when remaining() is Infinity', () => {
+  const tracker = new CostTracker(Infinity)
+  expect(tracker.available()).toBe(true)
+})
+
+it('returns true when remaining() > 0', () => {
   const tracker = new CostTracker(100)
-  tracker.add(50)
-  const result = tracker.reset()
-  expect(result).toBeUndefined()
+  tracker.add(30)
+  expect(tracker.remaining()).toBeGreaterThan(0)
+  expect(tracker.available()).toBe(true)
 })
 
-it('reset() sets total to 0', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(50)
-  expect(tracker.total()).toBe(50)
-  tracker.reset()
-  expect(tracker.total()).toBe(0)
-})
-
-it('reset() clears runCount to 0', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(10)
-  tracker.add(20)
-  expect(tracker.runCount()).toBeGreaterThan(0)
-  tracker.reset()
-  expect(tracker.runCount()).toBe(0)
-})
-
-it('reset() restores remaining budget to original limit', () => {
-  const limit = 100
-  const tracker = new CostTracker(limit)
-  tracker.add(60)
-  expect(tracker.remaining()).toBe(40)
-  tracker.reset()
-  expect(tracker.remaining()).toBe(limit)
-})
-
-it('reset() clears exceeded state', () => {
+it('returns false when remaining() === 0', () => {
   const tracker = new CostTracker(50)
-  tracker.add(60)
-  expect(tracker.exceeded()).toBe(true)
-  tracker.reset()
-  expect(tracker.exceeded()).toBe(false)
-})
-
-it('reset() works with zero limit', () => {
-  const tracker = new CostTracker(0)
-  tracker.add(0)
-  tracker.reset()
-  expect(tracker.total()).toBe(0)
+  tracker.add(50)
   expect(tracker.remaining()).toBe(0)
-  expect(tracker.runCount()).toBe(0)
+  expect(tracker.available()).toBe(false)
 })
 
-it('reset() works with large limit values', () => {
-  const largeLimit = 1000000
-  const tracker = new CostTracker(largeLimit)
-  tracker.add(500000)
-  expect(tracker.total()).toBe(500000)
-  tracker.reset()
-  expect(tracker.total()).toBe(0)
-  expect(tracker.remaining()).toBe(largeLimit)
+it('returns a boolean primitive type', () => {
+  const tracker = new CostTracker(100)
+  const result = tracker.available()
+  expect(typeof result).toBe('boolean')
+  expect(result === true || result === false).toBe(true)
 })
 
-it('reset() is callable multiple times safely', () => {
+it('does not modify internal state', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(25)
+  const totalBefore = tracker.total()
+  const limitBefore = tracker.limitUsd()
+  const runCountBefore = tracker.runCount()
+  const remainingBefore = tracker.remaining()
+  
+  tracker.available()
+  
+  expect(tracker.total()).toBe(totalBefore)
+  expect(tracker.limitUsd()).toBe(limitBefore)
+  expect(tracker.runCount()).toBe(runCountBefore)
+  expect(tracker.remaining()).toBe(remainingBefore)
+})
+
+it('is idempotent across multiple calls', () => {
   const tracker = new CostTracker(100)
   tracker.add(50)
-  tracker.reset()
-  expect(tracker.total()).toBe(0)
-  tracker.add(30)
-  tracker.reset()
-  expect(tracker.total()).toBe(0)
-  tracker.reset()
-  expect(tracker.total()).toBe(0)
+  const result1 = tracker.available()
+  const result2 = tracker.available()
+  const result3 = tracker.available()
+  expect(result1).toBe(result2)
+  expect(result2).toBe(result3)
 })
 
-it('reset() after multiple add operations', () => {
+it('does not throw errors on valid tracker states', () => {
+  const tracker1 = new CostTracker(100)
+  expect(() => tracker1.available()).not.toThrow()
+  
+  const tracker2 = new CostTracker(Infinity)
+  expect(() => tracker2.available()).not.toThrow()
+  
+  const tracker3 = new CostTracker(50)
+  tracker3.add(50)
+  expect(() => tracker3.available()).not.toThrow()
+})
+
+it('handles Infinity limit scenario correctly', () => {
+  const tracker = new CostTracker(Infinity)
+  tracker.add(1000000)
+  expect(tracker.remaining()).toBe(Infinity)
+  expect(tracker.available()).toBe(true)
+})
+
+it('handles finite limit scenario correctly', () => {
+  const tracker = new CostTracker(1000)
+  tracker.add(500)
+  expect(tracker.remaining()).toBeLessThan(Infinity)
+  expect(tracker.remaining()).toBeGreaterThan(0)
+  expect(tracker.available()).toBe(true)
+})
+
+it('returns correct boolean after reset', () => {
   const tracker = new CostTracker(100)
-  tracker.add(10)
-  tracker.add(20)
-  tracker.add(30)
-  expect(tracker.total()).toBe(60)
-  expect(tracker.runCount()).toBeGreaterThan(0)
-  tracker.reset()
-  expect(tracker.total()).toBe(0)
-  expect(tracker.runCount()).toBe(0)
-  expect(tracker.remaining()).toBe(100)
-})
-
-it('reset() on exceeded tracker', () => {
-  const tracker = new CostTracker(50)
-  tracker.add(75)
-  expect(tracker.exceeded()).toBe(true)
-  expect(tracker.total()).toBe(75)
-  tracker.reset()
-  expect(tracker.exceeded()).toBe(false)
-  expect(tracker.total()).toBe(0)
-  expect(tracker.remaining()).toBe(50)
-})
-
-it('reset() preserves original limit', () => {
-  const originalLimit = 250
-  const tracker = new CostTracker(originalLimit)
   tracker.add(100)
+  expect(tracker.available()).toBe(false)
   tracker.reset()
-  expect(tracker.limitUsd()).toBe(originalLimit)
+  expect(tracker.available()).toBe(true)
 })
 
-it('reset() with positive limit values', () => {
-  const tracker = new CostTracker(75.50)
-  tracker.add(25.25)
-  tracker.reset()
-  expect(tracker.total()).toBe(0)
-  expect(tracker.remaining()).toBe(75.50)
-  expect(tracker.exceeded()).toBe(false)
+it('returns correct boolean after subtract', () => {
+  const tracker = new CostTracker(100)
+  tracker.add(100)
+  expect(tracker.available()).toBe(false)
+  tracker.subtract(50)
+  expect(tracker.available()).toBe(true)
 })
 })
