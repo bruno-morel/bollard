@@ -1,8 +1,8 @@
 {
-  "tag": "post-prompt-hardening",
-  "runId": "20260604-0334-run-b89290",
-  "timestamp": 1780544361342,
+  "tag": "post-determinism-fixes",
+  "runId": "20260604-0406-run-fa5c2b",
+  "timestamp": 1780546277434,
   "blueprintId": "implement-feature",
-  "totalCostUsd": 1.0536890000000003,
+  "totalCostUsd": 1.3808719999999999,
   "thresholdPct": 15
 }
