@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { readFile, readdir, writeFile } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { promisify } from "node:util"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
@@ -544,6 +544,25 @@ export async function strykerSmokeTest(workDir: string): Promise<boolean> {
 }
 
 /**
+ * Walk up from `filePath` toward `rootDir` to find the nearest tsconfig.json.
+ * Returns the absolute path to the tsconfig, or null if none found before root.
+ * Exported for unit testing.
+ */
+export function findNearestTsconfig(filePath: string, rootDir: string): string | null {
+  let dir = dirname(resolve(filePath))
+  const root = resolve(rootDir)
+  while (dir.length >= root.length) {
+    const candidate = join(dir, "tsconfig.json")
+    if (existsSync(candidate)) return candidate
+    if (dir === root) break
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return null
+}
+
+/**
  * Run a fast `tsc --noEmit` check on the files Stryker will instrument.
  * Returns null when the check passes (or is skipped), or an error message string
  * when typecheck fails. This catches syntax errors that cause Stryker to exit
@@ -566,16 +585,40 @@ export async function runStrykerPreflight(
   )
   if (tsFiles.length === 0) return null
 
-  try {
-    await execFileAsync("tsc", ["--noEmit", ...tsFiles], {
-      cwd: workDir,
-      timeout: 15_000,
-    })
-    return null
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return `tsc preflight failed on ${tsFiles.join(", ")}: ${msg.slice(0, 500)}`
+  // Find nearest tsconfig.json for each mutated file. Running `tsc --noEmit file.ts`
+  // uses standalone mode — cross-package workspace imports are unresolvable, causing
+  // false-positive failures even when the full project compiles cleanly (Phase 3
+  // regression observed in isUnlimited() self-test 2026-06-04).
+  const root = resolve(workDir)
+  const tsconfigs = new Set<string>()
+  for (const f of tsFiles) {
+    const tsconfig = findNearestTsconfig(resolve(f), root)
+    if (tsconfig !== null) tsconfigs.add(tsconfig)
   }
+
+  if (tsconfigs.size === 0) {
+    // No tsconfig found — fall back to original standalone check
+    try {
+      await execFileAsync("tsc", ["--noEmit", ...tsFiles], { cwd: workDir, timeout: 15_000 })
+      return null
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return `tsc preflight failed on ${tsFiles.join(", ")}: ${msg.slice(0, 500)}`
+    }
+  }
+
+  for (const tsconfig of tsconfigs) {
+    try {
+      await execFileAsync("tsc", ["--noEmit", "--project", tsconfig], {
+        cwd: workDir,
+        timeout: 30_000,
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return `tsc preflight failed (project ${tsconfig.replace(`${root}/`, "")}): ${msg.slice(0, 500)}`
+    }
+  }
+  return null
 }
 
 /** Map source paths to FQCNs for PIT `-DtargetClasses`. */

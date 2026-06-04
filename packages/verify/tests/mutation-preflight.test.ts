@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { runStrykerPreflight } from "../src/mutation.js"
+import { findNearestTsconfig, runStrykerPreflight } from "../src/mutation.js"
 
 describe("runStrykerPreflight", () => {
   it("returns null for empty files list", async () => {
@@ -24,5 +24,21 @@ describe("runStrykerPreflight", () => {
 
     expect(result).not.toBeNull()
     expect(result).toContain("tsc preflight failed")
+  })
+
+  it("finds tsconfig.json when present in the file's parent directory", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "bollard-preflight-tsconfig-"))
+    const tsconfigPath = join(dir, "tsconfig.json")
+    await writeFile(tsconfigPath, JSON.stringify({ compilerOptions: { strict: true } }), "utf-8")
+    const result = findNearestTsconfig(join(dir, "src", "foo.ts"), dir)
+    // No tsconfig in src/ — should find the one in dir
+    // Note: src/ doesn't exist but findNearestTsconfig only checks dirname, not existence
+    expect(result).toBe(tsconfigPath)
+  })
+
+  it("returns null when no tsconfig.json exists between file and root", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "bollard-preflight-noconfig-"))
+    const result = findNearestTsconfig(join(dir, "src", "foo.ts"), dir)
+    expect(result).toBeNull()
   })
 })

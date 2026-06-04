@@ -199,4 +199,69 @@ describe("verifyReviewGrounding", () => {
     expect(result.kept).toHaveLength(0)
     expect(result.dropped.some((d) => d.reason === "category_invalid")).toBe(true)
   })
+
+  it("keeps diff finding with paraphrased quote when identifiers match corpus (identifier fallback)", () => {
+    const doc = parseReviewDocument(
+      JSON.stringify({
+        findings: [
+          {
+            id: "r1",
+            severity: "warning",
+            category: "plan-divergence",
+            finding: "humanReadable() returns a formatted cost string",
+            grounding: [{ quote: "returns a formatted cost string", source: "diff" }],
+          },
+        ],
+      }),
+    )
+    // diff contains humanReadable — identifier from finding text
+    const corpus = buildReviewCorpus("+  humanReadable(): string {\n+    return 'formatted'\n", {})
+    const result = verifyReviewGrounding(doc, corpus)
+    expect(result.kept).toHaveLength(1)
+    expect(result.dropped).toHaveLength(0)
+  })
+
+  it("drops diff finding when quote is paraphrased and no identifiers match", () => {
+    const doc = parseReviewDocument(
+      JSON.stringify({
+        findings: [
+          {
+            id: "r1",
+            severity: "info",
+            category: "naming-consistency",
+            finding: "method returns wrong value",
+            grounding: [{ quote: "returns wrong value", source: "diff" }],
+          },
+        ],
+      }),
+    )
+    // diff has no identifiers matching the finding text
+    const corpus = buildReviewCorpus("+  foo(): number {\n+    return 42\n", {})
+    const result = verifyReviewGrounding(doc, corpus)
+    expect(result.kept).toHaveLength(0)
+    expect(result.dropped.some((d) => d.reason === "grounding_not_in_corpus")).toBe(true)
+  })
+
+  it("identifier fallback does not apply to plan-sourced quotes (verbatim required)", () => {
+    const doc = parseReviewDocument(
+      JSON.stringify({
+        findings: [
+          {
+            id: "r1",
+            severity: "warning",
+            category: "plan-divergence",
+            finding: "humanReadable method is not in the plan",
+            grounding: [{ quote: "paraphrased plan text", source: "plan" }],
+          },
+        ],
+      }),
+    )
+    const corpus = buildReviewCorpus("+  humanReadable(): string {}\n", {
+      summary: "actual plan text here",
+    })
+    const result = verifyReviewGrounding(doc, corpus)
+    // plan source still requires verbatim — identifier fallback only for diff
+    expect(result.kept).toHaveLength(0)
+    expect(result.dropped.some((d) => d.reason === "grounding_not_in_corpus")).toBe(true)
+  })
 })

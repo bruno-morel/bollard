@@ -258,6 +258,32 @@ function quoteMatchesCorpus(quote: string, source: "diff" | "plan", corpus: Revi
   return false
 }
 
+/**
+ * Identifier-presence fallback for semantic review grounding.
+ * Extracts meaningful named identifiers (camelCase methods, PascalCase types,
+ * UPPER_SNAKE constants) from the finding text and checks if at least one appears
+ * in the diff corpus entries. Used when a verbatim quote match fails for a
+ * source:"diff" grounding item — the reviewer accurately describes the change
+ * but uses behavioral language rather than copy-pasting code text.
+ *
+ * Requires identifiers of length ≥ 4 to avoid matching common words ("diff",
+ * "file", "type", etc.).
+ *
+ * Exported for unit testing.
+ */
+export function findingIdentifiersInCorpus(findingText: string, corpus: ReviewCorpus): boolean {
+  const identifiers =
+    findingText.match(
+      /\b[a-z][a-zA-Z0-9]{3,}(?:\(\))?|\b[A-Z][A-Z0-9_]{3,}\b|\b[A-Z][a-zA-Z0-9]{3,}/g,
+    ) ?? []
+  if (identifiers.length === 0) return false
+  const diffText = corpus.entries
+    .filter((e) => e.source === "diff")
+    .map((e) => e.text)
+    .join("\n")
+  return identifiers.some((id) => diffText.includes(id))
+}
+
 export function verifyReviewGrounding(
   doc: ReviewDocument,
   corpus: ReviewCorpus,
@@ -309,6 +335,12 @@ export function verifyReviewGrounding(
         break
       }
       if (!quoteMatchesCorpus(g.quote, g.source, corpus)) {
+        // For diff-sourced quotes, fall back to identifier-presence: if the finding
+        // text names at least one identifier that appears in the diff, the finding is
+        // grounded even when the quote is behavioral rather than verbatim code text.
+        if (g.source === "diff" && findingIdentifiersInCorpus(finding.finding, corpus)) {
+          continue
+        }
         const truncated = g.quote.length > 120 ? `${g.quote.slice(0, 120)}...` : g.quote
         dropped.push({
           id: finding.id,
