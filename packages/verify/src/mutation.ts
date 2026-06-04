@@ -477,6 +477,16 @@ export class StrykerProvider implements MutationTestingProvider {
       return { ...ZERO_RESULT, duration_ms: Date.now() - startMs }
     }
 
+    if (mutateFiles && mutateFiles.length > 0) {
+      const preflightError = await runStrykerPreflight(workDir, mutateFiles)
+      if (preflightError !== null) {
+        process.stderr.write(
+          `bollard: stryker preflight failed — skipping mutation testing: ${preflightError}\n`,
+        )
+        return { ...ZERO_RESULT, duration_ms: Date.now() - startMs }
+      }
+    }
+
     try {
       // Invoke Stryker via `node` directly on the JS entry point rather than the
       // pnpm-generated shell wrapper. The shell wrapper sets NODE_PATH to absolute
@@ -531,6 +541,41 @@ export class StrykerProvider implements MutationTestingProvider {
 export async function strykerSmokeTest(workDir: string): Promise<boolean> {
   const strykerJs = join(workDir, "node_modules", "@stryker-mutator", "core", "bin", "stryker.js")
   return existsSync(strykerJs)
+}
+
+/**
+ * Run a fast `tsc --noEmit` check on the files Stryker will instrument.
+ * Returns null when the check passes (or is skipped), or an error message string
+ * when typecheck fails. This catches syntax errors that cause Stryker to exit
+ * with 0 mutants (Babel/oxc parse failure on instrumented source).
+ *
+ * Only runs for TypeScript/JavaScript profiles. Returns null immediately for
+ * other languages — they have their own pre-run validation.
+ *
+ * @param workDir  Project root (where tsconfig.json lives)
+ * @param mutateFiles  The source files Stryker will mutate (absolute or relative to workDir)
+ */
+export async function runStrykerPreflight(
+  workDir: string,
+  mutateFiles: string[],
+): Promise<string | null> {
+  if (mutateFiles.length === 0) return null
+
+  const tsFiles = mutateFiles.filter(
+    (f) => f.endsWith(".ts") || f.endsWith(".tsx") || f.endsWith(".js") || f.endsWith(".jsx"),
+  )
+  if (tsFiles.length === 0) return null
+
+  try {
+    await execFileAsync("tsc", ["--noEmit", ...tsFiles], {
+      cwd: workDir,
+      timeout: 15_000,
+    })
+    return null
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return `tsc preflight failed on ${tsFiles.join(", ")}: ${msg.slice(0, 500)}`
+  }
 }
 
 /** Map source paths to FQCNs for PIT `-DtargetClasses`. */
