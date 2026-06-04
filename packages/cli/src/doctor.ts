@@ -5,9 +5,18 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import { detectToolchain } from "@bollard/detect/src/detect.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
-import { FileRunHistoryStore } from "@bollard/engine/src/run-history.js"
-import type { RunRecord } from "@bollard/engine/src/run-history.js"
-import { parseHistoryLine } from "@bollard/engine/src/run-history.js"
+import {
+  FileRunHistoryStore,
+  computeConcernYield,
+  computeScopeCalibration,
+  parseHistoryLine,
+} from "@bollard/engine/src/run-history.js"
+import type {
+  ConcernYieldEntry,
+  ConcernYieldReport,
+  RiskAuditReport,
+  RunRecord,
+} from "@bollard/engine/src/run-history.js"
 import { BOLD, DIM, GREEN, RED, RESET, YELLOW } from "./terminal-styles.js"
 
 const execFileAsync = promisify(execFile)
@@ -43,6 +52,8 @@ export interface HistoryHealth {
   recentFailingNodes: string[]
   mutationScoreRange?: { min: number; max: number }
   promotedManifestHealth?: PromotedManifestHealth
+  riskAudit?: RiskAuditReport
+  concernYield?: ConcernYieldReport
 }
 
 export interface DoctorReport {
@@ -53,6 +64,40 @@ export interface DoctorReport {
 }
 
 const LLM_KEY_NAMES = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"] as const
+
+const CONCERN_YIELD_SCOPES = ["boundary", "contract", "behavioral"] as const
+
+type ConcernYieldScope = (typeof CONCERN_YIELD_SCOPES)[number]
+
+const SCOPE_PROXY_LABEL: Record<ConcernYieldScope, string> = {
+  boundary: "correctness",
+  contract: "security + performance",
+  behavioral: "resilience",
+}
+
+const SCOPE_TO_CONCERN: Record<ConcernYieldScope, ConcernYieldEntry["concern"]> = {
+  boundary: "correctness",
+  contract: "security",
+  behavioral: "resilience",
+}
+
+function findConcernYieldEntry(
+  report: ConcernYieldReport,
+  scope: ConcernYieldScope,
+): ConcernYieldEntry | undefined {
+  const concern = SCOPE_TO_CONCERN[scope]
+  return report.concerns.find((c) => c.concern === concern)
+}
+
+function formatPct(rate: number): string {
+  return `${Math.round(rate * 100)}%`
+}
+
+function concernSuggestionText(suggestion: ConcernYieldEntry["suggestion"]): string {
+  if (suggestion === "increase") return "increase weight"
+  if (suggestion === "decrease") return "consider reducing weight"
+  return "keep"
+}
 
 function countVerificationChecks(checks: ToolchainProfile["checks"]): number {
   return Object.values(checks).filter((c) => c !== undefined).length
@@ -127,7 +172,10 @@ function formatRebuildAgo(iso?: string): string {
   return formatRelativeShort(ms)
 }
 
-export async function checkHistoryHealth(workDir: string): Promise<HistoryHealth> {
+export async function checkHistoryHealth(
+  workDir: string,
+  options?: { riskAudit?: boolean },
+): Promise<HistoryHealth> {
   const jsonlPath = join(workDir, ".bollard", "runs", "history.jsonl")
   const dbPath = join(workDir, ".bollard", "runs", "history.db")
   const jsonlExists = existsSync(jsonlPath)
@@ -173,6 +221,9 @@ export async function checkHistoryHealth(workDir: string): Promise<HistoryHealth
 
   const promotedManifestHealth = await checkPromotedManifestHealth(workDir)
 
+  const concernYield = computeConcernYield(runs)
+  const riskAudit = options?.riskAudit ? computeScopeCalibration(runs) : undefined
+
   return {
     jsonlExists,
     jsonlRecordCount,
@@ -185,6 +236,8 @@ export async function checkHistoryHealth(workDir: string): Promise<HistoryHealth
     recentFailingNodes,
     ...(mutationScoreRange !== undefined ? { mutationScoreRange } : {}),
     promotedManifestHealth,
+    ...(concernYield.hasData ? { concernYield } : {}),
+    ...(riskAudit !== undefined ? { riskAudit } : {}),
   }
 }
 
@@ -266,7 +319,7 @@ function resolveConfigNote(workDir: string): DoctorConfigNote {
 export async function runDoctor(
   workDir: string,
   env: NodeJS.ProcessEnv = process.env,
-  options?: { history?: boolean },
+  options?: { history?: boolean; riskAudit?: boolean },
 ): Promise<DoctorReport> {
   const [dockerCheck, toolchainCheck] = await Promise.all([checkDocker(), checkToolchain(workDir)])
   const llmCheck = checkLlmKeys(env)
@@ -277,12 +330,14 @@ export async function runDoctor(
     checks,
     configNote: resolveConfigNote(workDir),
   }
-  if (options?.history !== true) return base
-  const historyHealth = await checkHistoryHealth(workDir)
+  if (options?.history !== true && options?.riskAudit !== true) return base
+  const historyHealth = await checkHistoryHealth(workDir, {
+    ...(options?.riskAudit === true ? { riskAudit: true } : {}),
+  })
   return { ...base, historyHealth }
 }
 
-function formatHistorySection(h: HistoryHealth): string {
+export function formatHistorySection(h: HistoryHealth): string {
   const lines: string[] = []
   lines.push(`\n  ${BOLD}Run history:${RESET}`)
 
@@ -354,6 +409,56 @@ function formatHistorySection(h: HistoryHealth): string {
       const lastStr =
         pm.lastPromotedAt !== undefined ? `, last ${formatRelativeShort(pm.lastPromotedAt)}` : ""
       lines.push(`    ${GREEN}✓${RESET} Promoted tests: ${pm.promotedCount}${lastStr}`)
+    }
+  }
+
+  if (h.concernYield !== undefined) {
+    lines.push("")
+    lines.push(`  ${BOLD}Concern yield (last ${h.concernYield.runCount} runs):${RESET}`)
+    for (const scope of CONCERN_YIELD_SCOPES) {
+      const entry = findConcernYieldEntry(h.concernYield, scope)
+      const rate = entry?.avgGroundingRate
+      if (entry === undefined || rate === undefined || !Number.isFinite(rate)) {
+        lines.push(`    ${DIM}○${RESET} ${scope}: not enough data`)
+        continue
+      }
+      const proxy = SCOPE_PROXY_LABEL[scope]
+      const icon = entry.suggestion === "decrease" ? `${YELLOW}⚠${RESET}` : `${GREEN}✓${RESET}`
+      lines.push(
+        `    ${icon} ${scope} (${proxy} proxy): ${formatPct(rate)} avg grounding — ${concernSuggestionText(entry.suggestion)}`,
+      )
+    }
+  }
+
+  if (h.riskAudit !== undefined) {
+    lines.push("")
+    lines.push(`  ${BOLD}Scope calibration (risk audit):${RESET}`)
+    if (!h.riskAudit.hasData) {
+      lines.push(
+        `    ${DIM}○${RESET} Insufficient run history (< ${h.riskAudit.minRunsRequired} pipeline runs)`,
+      )
+    }
+    for (const entry of h.riskAudit.scopes) {
+      if (entry.totalEnabledRuns < 5) {
+        lines.push(`    ${DIM}○${RESET} ${entry.scope}: insufficient data (< 5 enabled runs)`)
+        continue
+      }
+      const corr = entry.correlationRate
+      const corrPct = corr !== undefined && Number.isFinite(corr) ? formatPct(corr) : "n/a"
+      let signalIcon = `${RED}✗${RESET}`
+      let signalLabel = "low signal"
+      if (corr !== undefined && Number.isFinite(corr)) {
+        if (corr >= 0.7) {
+          signalIcon = `${GREEN}✓${RESET}`
+          signalLabel = "high signal"
+        } else if (corr >= 0.4) {
+          signalIcon = `${YELLOW}⚠${RESET}`
+          signalLabel = "moderate"
+        }
+      }
+      lines.push(
+        `    ${entry.scope}: ${entry.runsWithFailures} runs with test failures / ${entry.totalEnabledRuns} enabled — ${corrPct} correlated with run failure ${signalIcon} ${signalLabel}`,
+      )
     }
   }
 

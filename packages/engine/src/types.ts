@@ -59,8 +59,18 @@ export type {
   SummaryFilter,
   RunComparison,
   RunHistoryStore,
+  ScopeCalibrationEntry,
+  RiskAuditReport,
+  ConcernYieldEntry,
+  ConcernYieldReport,
 } from "./run-history.js"
-export { RUN_HISTORY_SCHEMA_VERSION, parseHistoryLine, FileRunHistoryStore } from "./run-history.js"
+export {
+  RUN_HISTORY_SCHEMA_VERSION,
+  parseHistoryLine,
+  FileRunHistoryStore,
+  computeScopeCalibration,
+  computeConcernYield,
+} from "./run-history.js"
 export type { TestFingerprint, PromotedTest, PromotedManifest } from "./test-fingerprint.js"
 export type {
   EvalCase,

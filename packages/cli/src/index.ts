@@ -897,7 +897,12 @@ async function main(): Promise<void> {
   if (command === "doctor") {
     const workDir = resolveWorkspaceDirFromArgs(rest)
     const jsonMode = rest.includes("--json")
-    const report = await runDoctor(workDir, process.env, { history: rest.includes("--history") })
+    const historyFlag = rest.includes("--history") || rest.includes("--risk-audit")
+    const riskAuditFlag = rest.includes("--risk-audit")
+    const report = await runDoctor(workDir, process.env, {
+      history: historyFlag,
+      riskAudit: riskAuditFlag,
+    })
     if (jsonMode) {
       process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
     } else {
@@ -988,7 +993,7 @@ async function main(): Promise<void> {
     `    ${DIM}--json: one ndjson line per verify on stdout (pass|fail|error); with --quiet, skips quiet fail-only JSON${RESET}`,
   )
   log(
-    `  ${BOLD}doctor${RESET} [--json] [--history]      Check environment health (docker, LLM key, toolchain; --history adds run history)`,
+    `  ${BOLD}doctor${RESET} [--json] [--history] [--risk-audit]   Check environment health; --history adds run stats; --risk-audit adds scope calibration`,
   )
   log(
     `  ${BOLD}audit-protocol${RESET}                  Lint generated IDE configs for protocol compliance (exits 1 on failure)`,

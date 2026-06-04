@@ -70,6 +70,48 @@ export interface VerifyRecord {
 
 export type HistoryRecord = RunRecord | VerifyRecord
 
+/** Per-scope calibration: how often scope test failures correlated with overall run failures. */
+export interface ScopeCalibrationEntry {
+  scope: "boundary" | "contract" | "behavioral"
+  /** Number of runs where this scope was enabled and had ≥ 1 test failure */
+  runsWithFailures: number
+  /** Of those, how many also had overall run status: "failure" */
+  runsAlsoFailed: number
+  /** runsAlsoFailed / runsWithFailures — undefined when runsWithFailures === 0 */
+  correlationRate?: number
+  /** Number of runs where scope was enabled */
+  totalEnabledRuns: number
+  /** Average grounding rate across enabled runs: claimsGrounded / claimsProposed */
+  avgGroundingRate?: number
+}
+
+export interface RiskAuditReport {
+  /** Minimum runs needed before producing calibration data */
+  minRunsRequired: number
+  /** Actual run count used */
+  runCount: number
+  /** Insufficient data when runCount < minRunsRequired */
+  hasData: boolean
+  scopes: ScopeCalibrationEntry[]
+}
+
+/** Per-concern yield: how often each concern lens produces grounded claims */
+export interface ConcernYieldEntry {
+  concern: "correctness" | "security" | "performance" | "resilience"
+  /** Number of runs where this concern was weighed (not "off") */
+  activeRuns: number
+  /** Average grounding rate on runs where concern was active */
+  avgGroundingRate?: number
+  /** Suggested weight adjustment: "increase" | "decrease" | "keep" */
+  suggestion: "increase" | "decrease" | "keep"
+}
+
+export interface ConcernYieldReport {
+  hasData: boolean
+  runCount: number
+  concerns: ConcernYieldEntry[]
+}
+
 export interface HistoryFilter {
   since?: number
   until?: number
@@ -206,6 +248,120 @@ export function computeCostTrend(costs: number[]): "increasing" | "stable" | "de
   if (change > threshold) return "increasing"
   if (change < -threshold) return "decreasing"
   return "stable"
+}
+
+const ADVERSARIAL_SCOPES = ["boundary", "contract", "behavioral"] as const
+
+type AdversarialScope = (typeof ADVERSARIAL_SCOPES)[number]
+
+function findScopeResult(run: RunRecord, scope: AdversarialScope): ScopeResult | undefined {
+  return run.scopes.find((s) => s.scope === scope)
+}
+
+function scopeGroundingRate(scopeResult: ScopeResult): number | undefined {
+  const proposed = scopeResult.claimsProposed
+  const grounded = scopeResult.claimsGrounded
+  if (proposed === undefined || grounded === undefined || proposed <= 0) return undefined
+  return grounded / proposed
+}
+
+function hasValidClaimData(scopeResult: ScopeResult): boolean {
+  return scopeGroundingRate(scopeResult) !== undefined
+}
+
+function yieldSuggestion(rate: number): ConcernYieldEntry["suggestion"] {
+  if (rate < 0.3) return "decrease"
+  if (rate > 0.7) return "increase"
+  return "keep"
+}
+
+const SCOPE_TO_CONCERN: Record<AdversarialScope, ConcernYieldEntry["concern"]> = {
+  boundary: "correctness",
+  contract: "security",
+  behavioral: "resilience",
+}
+
+export function computeScopeCalibration(runs: RunRecord[], minRuns = 5): RiskAuditReport {
+  const scopes: ScopeCalibrationEntry[] = ADVERSARIAL_SCOPES.map((scope) => {
+    const enabledRuns = runs.filter((run) => {
+      const sr = findScopeResult(run, scope)
+      return sr?.enabled === true
+    })
+    const runsWithFailures = enabledRuns.filter((run) => {
+      const sr = findScopeResult(run, scope)
+      return (sr?.testsFailed ?? 0) > 0
+    })
+    const runsAlsoFailed = runsWithFailures.filter((run) => run.status === "failure")
+    const groundingRates = enabledRuns
+      .map((run) => findScopeResult(run, scope))
+      .filter((sr): sr is ScopeResult => sr !== undefined)
+      .map((sr) => scopeGroundingRate(sr))
+      .filter((r): r is number => r !== undefined)
+    const avgGroundingRate =
+      groundingRates.length > 0
+        ? groundingRates.reduce((a, b) => a + b, 0) / groundingRates.length
+        : undefined
+
+    const entry: ScopeCalibrationEntry = {
+      scope,
+      runsWithFailures: runsWithFailures.length,
+      runsAlsoFailed: runsAlsoFailed.length,
+      totalEnabledRuns: enabledRuns.length,
+    }
+    if (runsWithFailures.length > 0) {
+      entry.correlationRate = runsAlsoFailed.length / runsWithFailures.length
+    }
+    if (avgGroundingRate !== undefined) {
+      entry.avgGroundingRate = avgGroundingRate
+    }
+    return entry
+  })
+
+  return {
+    minRunsRequired: minRuns,
+    runCount: runs.length,
+    hasData: runs.length >= minRuns,
+    scopes,
+  }
+}
+
+export function computeConcernYield(runs: RunRecord[], minRuns = 5): ConcernYieldReport {
+  const runsWithClaimData = runs.filter((run) =>
+    run.scopes.some((sr) => sr.enabled === true && hasValidClaimData(sr)),
+  )
+
+  const concerns: ConcernYieldEntry[] = []
+  for (const scope of ADVERSARIAL_SCOPES) {
+    const qualifyingRuns = runs.filter((run) => {
+      const sr = findScopeResult(run, scope)
+      return sr?.enabled === true && hasValidClaimData(sr)
+    })
+    if (qualifyingRuns.length === 0) continue
+
+    const rates = qualifyingRuns
+      .map((run) => findScopeResult(run, scope))
+      .filter((sr): sr is ScopeResult => sr !== undefined)
+      .map((sr) => scopeGroundingRate(sr))
+      .filter((r): r is number => r !== undefined)
+
+    if (rates.length === 0) continue
+
+    const avgGroundingRate = rates.reduce((a, b) => a + b, 0) / rates.length
+    if (!Number.isFinite(avgGroundingRate)) continue
+
+    concerns.push({
+      concern: SCOPE_TO_CONCERN[scope],
+      activeRuns: qualifyingRuns.length,
+      avgGroundingRate,
+      suggestion: yieldSuggestion(avgGroundingRate),
+    })
+  }
+
+  return {
+    hasData: runsWithClaimData.length >= minRuns,
+    runCount: runsWithClaimData.length,
+    concerns,
+  }
 }
 
 function computeSummaryFromRecords(records: HistoryRecord[], filter?: SummaryFilter): RunSummary {
