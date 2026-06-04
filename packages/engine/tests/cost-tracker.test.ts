@@ -105,8 +105,10 @@ describe("CostTracker", () => {
     expect(() => new CostTracker(Number.NaN)).toThrow(BollardError)
   })
 
-  it("rejects Infinity limit", () => {
-    expect(() => new CostTracker(Number.POSITIVE_INFINITY)).toThrow(BollardError)
+  it("accepts Infinity limit (unlimited budget)", () => {
+    const tracker = new CostTracker(Number.POSITIVE_INFINITY)
+    expect(tracker.limitUsd()).toBe(Number.POSITIVE_INFINITY)
+    expect(tracker.remaining()).toBe(Number.POSITIVE_INFINITY)
   })
 
   it("accepts adding zero cost", () => {
@@ -1403,20 +1405,16 @@ describe("CostTracker", () => {
           expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
           expect(err).toHaveProperty(
             "message",
-            "newLimit must be a non-negative finite number, got: -1",
+            "newLimit must be a non-negative finite number or Infinity, got: -1",
           )
         }
       })
 
-      it("throws CONTRACT_VIOLATION for Infinity", () => {
+      it("accepts Infinity as newLimit (unlimited budget)", () => {
         const tracker = new CostTracker(10)
-
-        expect(() => tracker.withLimit(Number.POSITIVE_INFINITY)).toThrow(BollardError)
-        try {
-          tracker.withLimit(Number.POSITIVE_INFINITY)
-        } catch (err) {
-          expect(BollardError.hasCode(err, "CONTRACT_VIOLATION")).toBe(true)
-        }
+        const unlimited = tracker.withLimit(Number.POSITIVE_INFINITY)
+        expect(unlimited.limitUsd()).toBe(Number.POSITIVE_INFINITY)
+        expect(unlimited.remaining()).toBe(Number.POSITIVE_INFINITY)
       })
 
       it("throws CONTRACT_VIOLATION for -Infinity", () => {
