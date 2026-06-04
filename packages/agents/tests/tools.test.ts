@@ -9,6 +9,7 @@ import { readFileTool } from "../src/tools/read-file.js"
 import {
   formatVitestFailureSummary,
   isTestCommand,
+  resolveAllowedCommands,
   runCommandTool,
 } from "../src/tools/run-command.js"
 import { searchTool } from "../src/tools/search.js"
@@ -396,6 +397,15 @@ describe("run_command", () => {
     expect(summary).toMatch(/\[\.\.\.truncated: \d+ more lines not shown\]/)
   })
 
+  it("isTestCommand recognizes npm test", () => {
+    expect(isTestCommand("npm test".split(/\s+/))).toBe(true)
+    expect(isTestCommand("npm run test".split(/\s+/))).toBe(true)
+  })
+
+  it("isTestCommand recognizes cargo test", () => {
+    expect(isTestCommand("cargo test".split(/\s+/))).toBe(true)
+  })
+
   it("isTestCommand recognizes pnpm test variants", () => {
     const trueCases = [
       "pnpm test",
@@ -403,6 +413,12 @@ describe("run_command", () => {
       "pnpm exec vitest run",
       "vitest run",
       "npx vitest run",
+      "npm test",
+      "yarn test",
+      "bun test",
+      "cargo test",
+      "go test",
+      "pytest",
     ]
     for (const cmd of trueCases) {
       expect(isTestCommand(cmd.split(/\s+/))).toBe(true)
@@ -412,6 +428,18 @@ describe("run_command", () => {
     for (const cmd of falseCases) {
       expect(isTestCommand(cmd.split(/\s+/))).toBe(false)
     }
+  })
+
+  it("resolveAllowedCommands adds yarn when profile has yarn and allowedCommands unset", () => {
+    const pipelineCtx = createContext("test", "test-bp", TEST_CONFIG)
+    pipelineCtx.toolchainProfile = {
+      packageManager: "yarn",
+    } as AgentContext["pipelineCtx"]["toolchainProfile"]
+    const agentCtx: AgentContext = {
+      pipelineCtx,
+      workDir: tempDir,
+    }
+    expect(resolveAllowedCommands(agentCtx)).toContain("yarn")
   })
 
   it("returns structured summary for failed pnpm run test", async () => {

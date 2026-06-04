@@ -1,14 +1,14 @@
 import { execFile } from "node:child_process"
 import { resolve, sep } from "node:path"
 import { promisify } from "node:util"
-import type { AgentTool } from "../types.js"
+import type { AgentContext, AgentTool } from "../types.js"
 
 const execFileAsync = promisify(execFile)
 
 const MAX_OUTPUT_LINES = 100
 
 /** Hard stop after this many test-command invocations per coder session. */
-const MAX_TEST_INVOCATIONS = 5
+const MAX_TEST_INVOCATIONS = 3
 
 const ANSI_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g")
 
@@ -17,13 +17,27 @@ function stripAnsi(text: string): string {
 }
 
 export function isTestCommand(parts: string[]): boolean {
-  if (parts[0] === "pnpm") {
+  const cmd = parts[0]
+  if (cmd === "pnpm") {
     if (parts[1] === "test") return true
     if (parts[1] === "run" && parts[2] === "test") return true
     if (parts[1] === "exec" && parts[2] === "vitest") return true
   }
-  if (parts[0] === "vitest") return true
-  if (parts[0] === "npx" && parts[1] === "vitest") return true
+  if ((cmd === "npm" || cmd === "yarn" || cmd === "bun") && parts[1] === "test") {
+    return true
+  }
+  if (
+    (cmd === "npm" || cmd === "yarn" || cmd === "bun") &&
+    parts[1] === "run" &&
+    parts[2] === "test"
+  ) {
+    return true
+  }
+  if (cmd === "vitest") return true
+  if (cmd === "npx" && parts[1] === "vitest") return true
+  if (cmd === "pytest") return true
+  if (cmd === "cargo" && parts[1] === "test") return true
+  if (cmd === "go" && parts[1] === "test") return true
   return false
 }
 
@@ -128,19 +142,36 @@ function truncateStream(stream: string, label: "stdout" | "stderr"): string {
 }
 
 const DEFAULT_ALLOWED_COMMANDS = [
-  "pnpm",
-  "npx",
-  "node",
-  "tsc",
   "biome",
-  "git",
   "cat",
-  "head",
-  "tail",
-  "wc",
   "diff",
+  "git",
+  "head",
+  "ls",
+  "node",
+  "npx",
+  "pnpm",
   "rm",
+  "tail",
+  "tsc",
+  "wc",
 ]
+
+/**
+ * Build the allowed command list for a coder session.
+ * Uses ctx.allowedCommands when set by the caller (profile-driven path).
+ * Falls back to DEFAULT_ALLOWED_COMMANDS + the project's package manager
+ * derived from ctx.pipelineCtx.toolchainProfile when available.
+ */
+export function resolveAllowedCommands(ctx: AgentContext): string[] {
+  if (ctx.allowedCommands !== undefined) return ctx.allowedCommands
+  const pm = ctx.pipelineCtx.toolchainProfile?.packageManager
+  if (pm === undefined) return DEFAULT_ALLOWED_COMMANDS
+  const base = DEFAULT_ALLOWED_COMMANDS.includes(pm)
+    ? DEFAULT_ALLOWED_COMMANDS
+    : [...DEFAULT_ALLOWED_COMMANDS, pm]
+  return base
+}
 
 export const runCommandTool: AgentTool = {
   name: "run_command",
@@ -199,7 +230,7 @@ export const runCommandTool: AgentTool = {
       ].join(" ")
     }
 
-    const allowed = ctx.allowedCommands ?? DEFAULT_ALLOWED_COMMANDS
+    const allowed = resolveAllowedCommands(ctx)
 
     if (!executable || !allowed.includes(executable)) {
       throw new Error(`Command "${executable}" is not allowed. Allowed: ${allowed.join(", ")}`)
