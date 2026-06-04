@@ -69,9 +69,30 @@ Each claim object has these fields:
   - `source` is a human-readable label like `"signature:ModuleName.symbol"`, `"edge:consumer->provider"`, or `"source:filename.ts"`. It is not machine-verified but aids human review.
 - `test` — the **full test case** including the `it(...)` or `test(...)` wrapper, written in the project's test framework ({{testFramework}}). The test must exercise the contract stated in `claim`. Include any needed `import` statements for modules under test as standalone lines **before** the `it(...)` block — these will be hoisted to the top of the assembled test file. Do not import the test framework itself (`describe`, `it`, `expect`, `vi`) — that is handled automatically.
 
-**DO NOT paraphrase grounding quotes.** If the source says `return Math.max(0, this._limit - this._total)`, your quote must be exactly that string — not "returns limit minus total clamped to zero". Paraphrases are always rejected. Prefer quotes from the source file body (most specific) over signatures over plan text.
+**DO NOT paraphrase grounding quotes.** The verifier runs a literal substring match — no fuzzy matching, no synonym expansion.
+
+Bad (paraphrase — will be rejected):
+```json
+{ "quote": "returns limit minus total clamped to zero", "source": "signature:CostTracker.remaining" }
+```
+
+Good (verbatim — exact characters from the source):
+```json
+{ "quote": "return Math.max(0, this._limit - this._total)", "source": "source:cost-tracker.ts" }
+```
 
 If you cannot find a verbatim substring in the provided context that supports a claim, **do not emit that claim**. Fewer grounded claims is always better than more ungrounded ones.
+
+## BEFORE EMITTING — Self-check (run this for every claim)
+
+For each claim in your `claims` array, verify:
+
+1. **Locate the quote:** Find each `grounding[].quote` as a literal substring in the context you received. If you cannot locate it character-for-character, replace it with a quote you CAN locate — or drop the claim.
+2. **No paraphrase:** The quote must be copy-pasted, not reworded. "clamped to zero" is a paraphrase of `Math.max(0, ...)` — reject it.
+3. **Source preference:** Quotes from the source file body are strongest (most specific). Prefer them over signatures, and signatures over plan text.
+4. **Claim survives without the test framework:** The `claim` field must be true or false based on the contract alone — not on test implementation choices.
+
+Only emit after this check passes for every claim.
 
 {{#if isTypeScript}}
 **Vitest assertion note:** `toThrow()` accepts an Error class or a regex, NOT a callback function. To check an error code, use a try/catch with `expect(err.code).toBe(...)` or `BollardError.hasCode()`.
