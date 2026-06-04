@@ -16,7 +16,7 @@ Working code that satisfies all acceptance criteria. You also write tests for yo
 
 # File Editing Strategy
 
-**Prefer `edit_file` over `write_file` for modifying existing files.** The `edit_file` tool has two modes:
+**Use `edit_file` for existing files — `write_file` is enforced for new files only.** Attempting `write_file` on a file that already exists returns an error and wastes a turn. The `edit_file` tool has two modes:
 
 1. **Line-range mode (preferred):** Provide `start_line`, `end_line`, and `new_string`. Use this when you know the line numbers — e.g. from `search` results or `read_file` output. This mode is reliable and avoids string-matching issues.
 

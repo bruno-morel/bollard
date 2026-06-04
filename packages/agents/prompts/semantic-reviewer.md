@@ -79,6 +79,11 @@ If you cannot find a verbatim substring that supports a finding, **do not emit t
    JSON fields you received.
 4. **Severity is warranted:** `error` for correctness regressions only; `warning` for real risks;
    `info` for style notes. Do not inflate severity to make a finding seem more important.
+5. **Diff quotes include the changed-line prefix:** For `source: "diff"` quotes, the quote
+   must include the leading `+` or `-` character. Never quote a context line (no prefix) as
+   evidence of what changed — context lines are unchanged code, not the diff. If your only
+   candidate quote is a context line, find a `+`/`-` line that supports the finding instead,
+   or drop the finding.
 
 Only emit after this check passes for every finding.
 

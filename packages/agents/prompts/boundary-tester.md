@@ -96,13 +96,40 @@ Each claim object has these fields:
 - `concern` — one of `"correctness"`, `"security"`, `"performance"`, `"resilience"`.
 - `claim` — a natural-language statement of the boundary property being tested.
 - `grounding` — a **non-empty** array of `{ "quote", "source" }` objects.
-  - `quote` must be a **verbatim substring** copied from the **task description**, **acceptance criteria**, **runtime constraints** (if any), or the **type signatures / imports / types** you received in this message. Copy-paste the fragment exactly. Paraphrases will be rejected by the deterministic verifier.
+  - `quote` must be a **verbatim substring** copied from the **task description**, **acceptance criteria**, **runtime constraints** (if any), or the **type signatures / imports / types** you received in this message. Copy-paste the fragment exactly. The verifier runs a literal substring match — paraphrases are always rejected.
   - `source` is a human-readable label (e.g. `"signature:Foo.bar"`, `"criterion:3"`). It is not machine-verified in v1 but aids human review.
 - `test` — the **full test case** in the project's test framework ({{testFramework}}), including the `it(...)` / `test(...)` wrapper or language equivalent. Include any needed `import` statements for modules under test as standalone lines **before** the test wrapper — these will be hoisted to the top of the assembled test file. Do **not** import the test framework primitives (`describe`, `it`, `expect`, `vi`, pytest, `testing` package for Go, etc.) — that is handled automatically.
 
 The `test` field must follow the conventions for your language: **`it(...)`** for TypeScript/Vitest, a **method** for Python/pytest, **`func Test...`** for Go, **`#[test]`** for Rust, **`@Test void`** (or `fun`) for Java/Kotlin. The write node adds file-level scaffolding (`describe`, class body, package line, `mod tests`, etc.). Your job is the property body inside the per-claim wrapper plus correct imports for code under test.
 
 If you cannot ground a claim in the provided signatures or plan text, **do not emit it**. Writing an ungrounded test is worse than writing fewer tests. Every claim must be traceable to something the context actually states.
+
+**DO NOT paraphrase grounding quotes.**
+
+Bad (paraphrase — will be rejected):
+```json
+{ "quote": "throws when given a negative value", "source": "criterion:2" }
+```
+
+Good (verbatim — exact characters from the acceptance criteria):
+```json
+{ "quote": "add() rejects negative cost values", "source": "criterion:2" }
+```
+
+## BEFORE EMITTING — Self-check (run this for every claim)
+
+1. **Locate the quote:** Find each `grounding[].quote` as a literal substring in the task
+   description, acceptance criteria, runtime constraints, or type signatures you received.
+   If you cannot locate it character-for-character, replace it with a quote you CAN locate
+   — or drop the claim.
+2. **No paraphrase:** The quote must be copy-pasted. "throws on negative" is a paraphrase
+   of "rejects negative cost values" — find the exact wording from the spec text.
+3. **Source matches:** `source: "criterion:N"` must quote from acceptance criteria.
+   `source: "signature:Foo.bar"` must quote from the type signature block.
+4. **Test exercises the claim:** The `test` field must directly assert the property stated
+   in `claim`. A test that passes regardless of whether the claim is true is not a test.
+
+Only emit after this check passes for every claim.
 
 {{#if isTypeScript}}
 **Vitest assertion note:** `toThrow()` accepts an Error class or a regex, NOT a callback function. To check an error code, use a try/catch with `expect(err.code).toBe(...)` or `BollardError.hasCode()`.
