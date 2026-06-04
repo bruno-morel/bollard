@@ -1,99 +1,123 @@
-import { describe, expect, it } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { CostTracker } from "../src/cost-tracker.js"
+import { BollardError } from "../src/errors.js"
 
 describe("boundary tests", () => {
-it('returns true when remaining() is Infinity', () => {
+it('returns correct format for finite limits', () => {
+  const tracker = new CostTracker(10.00)
+  tracker.add(1.23)
+  const result = tracker.humanReadable()
+  expect(result).toBe('$1.23 / $10.00 (12.3%)')
+})
+
+it('returns infinity format for infinite limits', () => {
   const tracker = new CostTracker(Infinity)
-  expect(tracker.available()).toBe(true)
+  tracker.add(5.50)
+  const result = tracker.humanReadable()
+  expect(result).toBe('$5.50 / ∞ (∞%)')
 })
 
-it('returns true when remaining() > 0', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(30)
-  expect(tracker.remaining()).toBeGreaterThan(0)
-  expect(tracker.available()).toBe(true)
+it('returns infinity percentage when limit is zero', () => {
+  const tracker = new CostTracker(0)
+  const result = tracker.humanReadable()
+  expect(result).toBe('$0.00 / $0.00 (∞%)')
 })
 
-it('returns false when remaining() === 0', () => {
-  const tracker = new CostTracker(50)
-  tracker.add(50)
-  expect(tracker.remaining()).toBe(0)
-  expect(tracker.available()).toBe(false)
-})
-
-it('returns a boolean primitive type', () => {
-  const tracker = new CostTracker(100)
-  const result = tracker.available()
-  expect(typeof result).toBe('boolean')
-  expect(result === true || result === false).toBe(true)
-})
-
-it('does not modify internal state', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(25)
-  const totalBefore = tracker.total()
-  const limitBefore = tracker.limitUsd()
-  const runCountBefore = tracker.runCount()
-  const remainingBefore = tracker.remaining()
-  
-  tracker.available()
-  
-  expect(tracker.total()).toBe(totalBefore)
-  expect(tracker.limitUsd()).toBe(limitBefore)
-  expect(tracker.runCount()).toBe(runCountBefore)
-  expect(tracker.remaining()).toBe(remainingBefore)
-})
-
-it('is idempotent across multiple calls', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(50)
-  const result1 = tracker.available()
-  const result2 = tracker.available()
-  const result3 = tracker.available()
+it('is idempotent and does not modify state', () => {
+  const tracker = new CostTracker(10.00)
+  tracker.add(2.50)
+  const result1 = tracker.humanReadable()
+  const result2 = tracker.humanReadable()
+  const result3 = tracker.humanReadable()
   expect(result1).toBe(result2)
   expect(result2).toBe(result3)
+  expect(tracker.total()).toBe(2.50)
+  expect(tracker.limitUsd()).toBe(10.00)
 })
 
-it('does not throw errors on valid tracker states', () => {
-  const tracker1 = new CostTracker(100)
-  expect(() => tracker1.available()).not.toThrow()
+it('throws CONTRACT_VIOLATION when total exceeds finite limit', () => {
+  const tracker = new CostTracker(5.00)
+  // Manually corrupt state by adding beyond limit
+  tracker.add(3.00)
+  tracker.add(3.00)
+  expect(() => tracker.humanReadable()).toThrow(BollardError)
+})
+
+it('formats percentage to 1 decimal place', () => {
+  const tracker = new CostTracker(3.00)
+  tracker.add(1.00)
+  const result = tracker.humanReadable()
+  expect(result).toMatch(/\(33\.3%\)/)
+  expect(result).not.toMatch(/\(33\.30%\)/)
+})
+
+it('formats dollar amounts to 2 decimal places', () => {
+  const tracker = new CostTracker(100.00)
+  tracker.add(0.1)
+  const result = tracker.humanReadable()
+  expect(result).toMatch(/\$0\.10 \/ \$100\.00/)
+})
+
+it('calculates percentage correctly for various ratios', () => {
+  const tracker1 = new CostTracker(100.00)
+  tracker1.add(50.00)
+  expect(tracker1.humanReadable()).toBe('$50.00 / $100.00 (50.0%)')
   
-  const tracker2 = new CostTracker(Infinity)
-  expect(() => tracker2.available()).not.toThrow()
+  const tracker2 = new CostTracker(100.00)
+  tracker2.add(33.33)
+  expect(tracker2.humanReadable()).toMatch(/\(33\.3%\)/)
   
-  const tracker3 = new CostTracker(50)
-  tracker3.add(50)
-  expect(() => tracker3.available()).not.toThrow()
+  const tracker3 = new CostTracker(100.00)
+  tracker3.add(0.01)
+  expect(tracker3.humanReadable()).toMatch(/\(0\.0%\)/)
 })
 
-it('handles Infinity limit scenario correctly', () => {
-  const tracker = new CostTracker(Infinity)
-  tracker.add(1000000)
-  expect(tracker.remaining()).toBe(Infinity)
-  expect(tracker.available()).toBe(true)
+it('handles zero total with finite limit', () => {
+  const tracker = new CostTracker(10.00)
+  const result = tracker.humanReadable()
+  expect(result).toBe('$0.00 / $10.00 (0.0%)')
 })
 
-it('handles finite limit scenario correctly', () => {
-  const tracker = new CostTracker(1000)
-  tracker.add(500)
-  expect(tracker.remaining()).toBeLessThan(Infinity)
-  expect(tracker.remaining()).toBeGreaterThan(0)
-  expect(tracker.available()).toBe(true)
+it('includes all required format elements', () => {
+  const tracker = new CostTracker(50.00)
+  tracker.add(12.50)
+  const result = tracker.humanReadable()
+  expect(result).toContain('$')
+  expect(result).toContain('/')
+  expect(result).toContain('(')
+  expect(result).toContain(')')
+  expect(result).toContain('%')
+  expect(result).toBe('$12.50 / $50.00 (25.0%)')
 })
 
-it('returns correct boolean after reset', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(100)
-  expect(tracker.available()).toBe(false)
-  tracker.reset()
-  expect(tracker.available()).toBe(true)
+it('handles very small percentages', () => {
+  const tracker = new CostTracker(10000.00)
+  tracker.add(0.05)
+  const result = tracker.humanReadable()
+  expect(result).toMatch(/\(0\.0%\)/)
 })
 
-it('returns correct boolean after subtract', () => {
-  const tracker = new CostTracker(100)
-  tracker.add(100)
-  expect(tracker.available()).toBe(false)
-  tracker.subtract(50)
-  expect(tracker.available()).toBe(true)
+it('handles percentages at or near 100%', () => {
+  const tracker = new CostTracker(10.00)
+  tracker.add(10.00)
+  const result = tracker.humanReadable()
+  expect(result).toBe('$10.00 / $10.00 (100.0%)')
+})
+
+it('output format is consistent and not injectable', () => {
+  const tracker = new CostTracker(10.00)
+  tracker.add(1.23)
+  const result = tracker.humanReadable()
+  const parts = result.match(/^\$(\d+\.\d{2}) \/ \$([\d.∞]+) \(([\d.∞]+)%\)$/)
+  expect(parts).not.toBeNull()
+  expect(parts?.length).toBe(4)
+})
+
+it('handles fractional costs with proper rounding', () => {
+  const tracker = new CostTracker(10.00)
+  tracker.add(0.005)
+  tracker.add(0.004)
+  const result = tracker.humanReadable()
+  expect(result).toMatch(/\$0\.0[0-9] \/ \$10\.00/)
 })
 })

@@ -314,4 +314,38 @@ export class CostTracker {
 
     return this.exceeded() ? `${baseString} [EXCEEDED]` : baseString
   }
+  humanReadable(): string {
+    // Check for internal state corruption (should never happen in normal operation)
+    if (Number.isFinite(this._limit) && this._total > this._limit) {
+      throw new BollardError({
+        code: "CONTRACT_VIOLATION",
+        message: `Internal state corrupted: total ${this._total} exceeds finite limit ${this._limit}`,
+        context: { total: this._total, limit: this._limit },
+      })
+    }
+
+    // Format total using formatCost() with default 2 decimal places
+    const totalFormatted = this.formatCost()
+
+    // Format limit
+    let limitFormatted: string
+    if (this._limit === Number.POSITIVE_INFINITY) {
+      limitFormatted = "∞"
+    } else {
+      limitFormatted = `$${this._limit.toFixed(2)}`
+    }
+
+    // Calculate percentage
+    let percentageFormatted: string
+    if (this._limit === Number.POSITIVE_INFINITY) {
+      percentageFormatted = "∞%"
+    } else if (this._limit === 0) {
+      percentageFormatted = "∞%"
+    } else {
+      const percentage = (this._total / this._limit) * 100
+      percentageFormatted = `${percentage.toFixed(1)}%`
+    }
+
+    return `${totalFormatted} / ${limitFormatted} (${percentageFormatted})`
+  }
 }
