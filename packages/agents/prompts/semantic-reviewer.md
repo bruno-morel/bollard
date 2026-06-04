@@ -47,8 +47,40 @@ Output **only** a single JSON object (optionally wrapped in a ` ```json ` fence)
 **Grounding rules**
 
 - Every finding must have at least one grounding object.
-- Each `quote` must be copied **verbatim** from the diff or plan text you received (substring match). Paraphrases are invalid.
+- Each `quote` must be copied **verbatim** from the diff or plan text you received. The verifier
+  runs a literal substring match — no fuzzy matching, no synonym expansion.
 - `source` is either `"diff"` or `"plan"` and must match where the quote was copied from.
+
+**DO NOT paraphrase grounding quotes.**
+
+Bad (paraphrase — will be rejected):
+```json
+{ "quote": "the method doesn't handle negative inputs", "source": "diff" }
+```
+
+Good (verbatim — exact characters from the diff hunk):
+```json
+{ "quote": "+  if (factor <= 0) throw new BollardError(", "source": "diff" }
+```
+
+If you cannot find a verbatim substring that supports a finding, **do not emit that finding**.
+`{ "findings": [] }` is a valid and correct output — prefer it over ungrounded findings.
+
+## BEFORE EMITTING — Self-check (run this for every finding)
+
+1. **Locate the quote:** For each `grounding[].quote`, find it as a literal substring in the
+   received text — diff lines for `source: "diff"`, plan JSON text for `source: "plan"`. If you
+   cannot locate it character-for-character, replace it with a quote you CAN locate — or drop
+   the finding entirely.
+2. **No paraphrase:** The quote must be copy-pasted. "doesn't handle negative inputs" is a
+   paraphrase — find the actual `+` line from the diff hunk instead.
+3. **Source matches location:** Every `source: "diff"` quote must appear in a diff hunk line
+   (starting with `+`, `-`, or context). Every `source: "plan"` quote must appear in the plan
+   JSON fields you received.
+4. **Severity is warranted:** `error` for correctness regressions only; `warning` for real risks;
+   `info` for style notes. Do not inflate severity to make a finding seem more important.
+
+Only emit after this check passes for every finding.
 
 **Severity:** one of `info`, `warning`, `error`.
 
