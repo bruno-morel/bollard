@@ -1,11 +1,11 @@
-import { mkdir, writeFile } from "node:fs/promises"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import type { AgentTool } from "../types.js"
 
 export const writeFileTool: AgentTool = {
   name: "write_file",
   description:
-    "Write content to a file. Creates parent directories if needed. Overwrites existing files.",
+    "Write content to a NEW file. Creates parent directories if needed. For existing files, use edit_file instead — write_file on an existing file will be rejected.",
   inputSchema: {
     type: "object",
     properties: {
@@ -27,6 +27,22 @@ export const writeFileTool: AgentTool = {
       }
       if (!ctx.allowedWritePaths.includes(filePath)) {
         return `Error: "${String(input["path"])}" is not in the plan's affected_files. Only allowed to write: ${ctx.allowedWritePaths.map((p) => p.replace(`${workDir}/`, "")).join(", ")}. If you need to modify this file, read the plan again — it must be listed there.`
+      }
+    }
+
+    // Full-file overwrite guard (Phase 5e): when operating in a scoped coder context,
+    // write_file is only for NEW files. If the target already exists, redirect to
+    // edit_file — write_file overwrites all content and corrupts line numbers for
+    // subsequent edits (root cause of the turn-18 full-rewrite regression in the
+    // available() self-test 2026-06-02).
+    if (ctx.allowedWritePaths !== undefined) {
+      try {
+        const existing = await readFile(filePath, "utf-8")
+        if (existing.length > 0) {
+          return `Error: "${String(input["path"])}" already exists. Use edit_file to modify existing files — write_file is only for creating new files. Overwriting with write_file discards all existing content and breaks line-range edits in subsequent turns.`
+        }
+      } catch {
+        // File does not exist yet — allow write_file to create it normally
       }
     }
 

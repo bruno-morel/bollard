@@ -227,6 +227,36 @@ describe("write_file", () => {
 
     expect(ctxWithScope.blockedTestPaths).toBeUndefined()
   })
+
+  it("blocks write_file on existing non-empty file when allowedWritePaths is set (overwrite guard)", async () => {
+    const srcFile = join(tempDir, "src/cost-tracker.ts")
+    mkdirSync(join(tempDir, "src"), { recursive: true })
+    writeFileSync(srcFile, "export const existing = true")
+    const ctxWithScope = { ...ctx, allowedWritePaths: [srcFile] }
+
+    const result = await writeFileTool.execute(
+      { path: "src/cost-tracker.ts", content: "export const overwritten = true" },
+      ctxWithScope,
+    )
+    expect(result).toContain("Error:")
+    expect(result).toContain("already exists")
+    expect(result).toContain("edit_file")
+    // File must not be overwritten
+    expect(readFileSync(srcFile, "utf-8")).toBe("export const existing = true")
+  })
+
+  it("allows write_file on non-existent file in allowedWritePaths (overwrite guard passthrough)", async () => {
+    const newFile = join(tempDir, "src/new-module.ts")
+    const ctxWithScope = { ...ctx, allowedWritePaths: [newFile] }
+
+    const result = await writeFileTool.execute(
+      { path: "src/new-module.ts", content: "export const fresh = true" },
+      ctxWithScope,
+    )
+    expect(result).toContain("bytes")
+    expect(result).not.toContain("Error:")
+    expect(readFileSync(newFile, "utf-8")).toBe("export const fresh = true")
+  })
 })
 
 describe("list_dir", () => {
