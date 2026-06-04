@@ -40,6 +40,11 @@ export type BollardErrorCode =
   | "LOCAL_MODEL_TIMEOUT"
   | "PATCHER_PATCH_INVALID"
   | "PATCHER_NO_PROGRESS"
+  // Stage 6: Lifecycle Ownership
+  | "TAKEOVER_CONFLICT" // human edit detected in a Bollard-managed file
+  | "OWNERSHIP_MANIFEST_INVALID" // .bollard/ownership.json fails schema validation
+  | "CURATION_NO_PROGRESS" // curate-* blueprint ran but found nothing to improve
+  | "TAKEOVER_TRUST_GATE" // action requires higher trust than configured trust level
 
 const RETRYABLE_CODES: ReadonlySet<BollardErrorCode> = new Set([
   "LLM_TIMEOUT",
