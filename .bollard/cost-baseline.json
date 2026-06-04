@@ -1,11 +1,9 @@
 {
-  "tag": "stage5a-validated",
-  "runId": "20260519-0005-run-afec32",
-  "timestamp": 1779149696484,
+  "tag": "post-5e-hardening",
+  "runId": "20260604-0303-run-7c191e",
+  "timestamp": 1780542457350,
   "blueprintId": "implement-feature",
-  "totalCostUsd": 1.633,
-  "coderTurns": 32,
-  "avgInputTokensPerTurn": null,
-  "thresholdPct": 20,
-  "notes": "Stage 5a + 5d Phase 2 validated baseline — avg $1.255 across runCount() $0.88 + formatCost() $1.63; threshold 20% ($1.96 ceiling). Prior baseline: phase9-validated $2.56 (run 75c385)."
+  "totalCostUsd": 1.5493819999999994,
+  "thresholdPct": 15,
+  "notes": "humanReadable() self-test post semantic-reviewer ADR-0003 + contract 1b + overwrite guard"
 }
