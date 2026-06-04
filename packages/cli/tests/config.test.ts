@@ -320,4 +320,72 @@ describe("resolveConfig", () => {
     expect(sources["localModels.binary"]?.warning).toMatch(/dev-local/)
     expect(sources["localModels.binary"]?.warning).toContain("patcher")
   })
+
+  it("parses takeover.tests from .bollard.yml with defaults", async () => {
+    const yaml = ["takeover:", "  tests:", "    enabled: false"].join("\n")
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    const { config, sources } = await resolveConfig(undefined, tempDir)
+
+    expect(config.takeover?.tests).toEqual({
+      enabled: false,
+      trust: "review",
+      minMutationScoreToTrigger: 0,
+      maxFilesPerCycle: 5,
+    })
+    expect(sources["takeover"]?.source).toBe("file")
+    expect(sources["takeover"]?.detail).toBe("file:.bollard.yml")
+  })
+
+  it("parses takeover.ci.platforms from .bollard.yml", async () => {
+    const yaml = [
+      "takeover:",
+      "  ci:",
+      "    enabled: true",
+      "    trust: auto-commit",
+      "    platforms:",
+      "      - github-actions",
+      "      - gitlab-ci",
+    ].join("\n")
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    const { config } = await resolveConfig(undefined, tempDir)
+
+    expect(config.takeover?.ci).toEqual({
+      enabled: true,
+      trust: "auto-commit",
+      platforms: ["github-actions", "gitlab-ci"],
+    })
+  })
+
+  it("parses takeover.deps.securityOnly: false from .bollard.yml", async () => {
+    const yaml = [
+      "takeover:",
+      "  deps:",
+      "    enabled: true",
+      "    trust: silent",
+      "    securityOnly: false",
+    ].join("\n")
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    const { config } = await resolveConfig(undefined, tempDir)
+
+    expect(config.takeover?.deps).toEqual({
+      enabled: true,
+      trust: "silent",
+      securityOnly: false,
+    })
+  })
+
+  it("rejects invalid takeover trust level with CONFIG_INVALID", async () => {
+    const yaml = ["takeover:", "  tests:", "    trust: autonomous"].join("\n")
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    try {
+      await resolveConfig(undefined, tempDir)
+      expect.fail("expected throw")
+    } catch (err) {
+      expect(BollardError.hasCode(err, "CONFIG_INVALID")).toBe(true)
+    }
+  })
 })

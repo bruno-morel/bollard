@@ -33,13 +33,100 @@ export interface LocalModelsConfig {
   patcherModel?: string
 }
 
+// ─── Stage 6: Lifecycle Ownership (Takeover Mode) ────────────────────────────
+
+/**
+ * How Bollard commits changes when it owns a lifecycle domain.
+ * - `review`: changes staged in `.bollard/curation/`, presented at a human gate before writing
+ * - `auto-commit`: committed to a `bollard/curate-<domain>-<runId>` branch; PR opened automatically
+ * - `silent`: written directly to workspace; CI validates (no human gate)
+ */
+export type TakeoverTrustLevel = "review" | "auto-commit" | "silent"
+
+/** CI platforms Bollard can generate and maintain workflow configs for. */
+export type CiPlatformId = "github-actions" | "gitlab-ci" | "circleci" | "buildkite"
+
+/** Base config shared by every takeover domain. */
+export interface TakeoverDomainConfig {
+  enabled: boolean
+  /** How Bollard commits ownership changes. Default: `review`. */
+  trust: TakeoverTrustLevel
+}
+
+export interface TakeoverTestsConfig extends TakeoverDomainConfig {
+  /**
+   * Only initiate curation when the file's mutation score is below this threshold.
+   * Set to 0 to curate unconditionally every cycle. Default: 0.
+   */
+  minMutationScoreToTrigger: number
+  /** Maximum number of test files promoted, pruned, or rewritten per curation run. Default: 5. */
+  maxFilesPerCycle: number
+}
+
+export interface TakeoverCiConfig extends TakeoverDomainConfig {
+  /** CI platforms to generate/update configs for. Defaults to the auto-detected platform. */
+  platforms?: CiPlatformId[]
+}
+
+export interface TakeoverDepsConfig extends TakeoverDomainConfig {
+  /**
+   * When true (default), only apply security-patch-level updates (CVE advisories).
+   * Set to false to also allow major/minor version bumps.
+   */
+  securityOnly: boolean
+}
+
+/**
+ * Lifecycle ownership configuration (Stage 6).
+ * Each domain is independently opt-in. All default to `enabled: false`.
+ *
+ * Ownership state is tracked in `.bollard/ownership.json` — the TestOwnershipManifest —
+ * which records managed vs user-owned files, per-file mutation scores, and last-commit SHAs
+ * for conflict detection (`TAKEOVER_CONFLICT`).
+ */
+export interface TakeoverModeConfig {
+  /**
+   * Test curation: Bollard promotes adversarial tests to the main suite,
+   * prunes redundant low-value tests, and scores test quality after each pipeline run.
+   * New blueprint: `curate-tests`.
+   */
+  tests?: TakeoverTestsConfig
+  /**
+   * CI/CD ownership: Bollard generates and keeps CI workflow files in sync with
+   * the project's toolchain and adversarial configuration. Runs when `bollard verify`
+   * detects drift between `.bollard.yml` adversarial config and the current CI workflows.
+   * New blueprint: `curate-ci`.
+   */
+  ci?: TakeoverCiConfig
+  /**
+   * Dependency hygiene: Bollard audits and auto-updates dependencies,
+   * opening PRs for security patches (and optionally version bumps).
+   * New blueprint: `curate-deps`.
+   */
+  deps?: TakeoverDepsConfig
+  /**
+   * Documentation: Bollard updates docstrings and README API sections when
+   * public signatures change (triggered by contract scope export changes).
+   * New blueprint: `curate-docs`.
+   */
+  docs?: TakeoverDomainConfig
+  /**
+   * Monitoring: Bollard continuously manages `.bollard/probes/` — updating probe
+   * definitions and assertion thresholds as behavioral context and metrics evolve.
+   * New blueprint: `curate-monitoring`.
+   */
+  monitoring?: TakeoverDomainConfig
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export interface BollardConfig {
   llm: {
     default: { provider: string; model: string }
     agents?: Record<string, { provider: string; model: string }>
     /**
-     * Optional per-agent hard cost caps in USD. Parsed and surfaced in `config show --sources`.
-     * Enforcement (fallback to cheaper tier when exceeded) is Stage 6.
+     * Optional per-agent hard cost caps in USD. Parsed, surfaced in `config show --sources`,
+     * and enforced at runtime (Stage 5d Phase 13 — shipped).
      */
     agentBudgets?: Record<string, number>
   }
@@ -49,6 +136,11 @@ export interface BollardConfig {
   }
   /** Optional overrides; omitted fields use LocalProvider defaults. */
   localModels?: Partial<LocalModelsConfig>
+  /**
+   * Lifecycle ownership configuration (Stage 6).
+   * Each domain defaults to disabled. Opt in per-domain via `.bollard.yml` `takeover:`.
+   */
+  takeover?: TakeoverModeConfig
 }
 
 export interface PipelineContext {
@@ -69,6 +161,8 @@ export interface PipelineContext {
   toolchainProfile?: ToolchainProfile
   /** Checks to skip in static-checks node (CI-injected via --ci-passed). */
   skipChecks?: string[]
+  /** Ownership manifest loaded by curate-* blueprints (Stage 6). */
+  ownershipManifest?: unknown
   costTracker: CostTracker
   log: {
     debug: (message: string, data?: Record<string, unknown>) => void

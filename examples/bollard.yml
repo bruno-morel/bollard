@@ -39,3 +39,42 @@ mutation:
   threshold: 60
   timeoutMs: 300000
   concurrency: 2
+
+# Stage 6: Lifecycle Ownership (Takeover Mode) — all domains default to disabled.
+# Each domain is independently opt-in. Trust levels: review | auto-commit | silent.
+# Ownership state tracked in .bollard/ownership.json (TestOwnershipManifest).
+#
+# takeover:
+#   # Test curation: Bollard promotes adversarial tests to main suite, prunes redundant tests.
+#   # New blueprint: `bollard curate tests`
+#   tests:
+#     enabled: false
+#     trust: review            # review: human gate; auto-commit: opens PR; silent: writes directly
+#     minMutationScoreToTrigger: 0  # 0 = curate every cycle regardless of score
+#     maxFilesPerCycle: 5      # cap on files promoted/pruned/rewritten per run
+#
+#   # CI/CD ownership: Bollard generates and keeps CI workflows in sync with .bollard.yml config.
+#   # New blueprint: `bollard curate ci`
+#   ci:
+#     enabled: false
+#     trust: review
+#     platforms: [github-actions]  # github-actions | gitlab-ci | circleci | buildkite
+#
+#   # Dependency hygiene: Bollard audits and auto-updates deps, opening PRs for security patches.
+#   # New blueprint: `bollard curate deps`
+#   deps:
+#     enabled: false
+#     trust: review
+#     securityOnly: true       # true = CVE patches only; false = also major/minor bumps
+#
+#   # Documentation: Bollard updates docstrings/READMEs when public API signatures change.
+#   # New blueprint: `bollard curate docs`
+#   docs:
+#     enabled: false
+#     trust: review
+#
+#   # Monitoring: Bollard continuously manages .bollard/probes/ as behavioral context evolves.
+#   # New blueprint: `bollard curate monitoring`
+#   monitoring:
+#     enabled: false
+#     trust: review

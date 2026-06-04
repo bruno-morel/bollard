@@ -7,7 +7,12 @@ import type {
   VerificationCommand,
 } from "@bollard/detect/src/types.js"
 import { DEFAULT_METRICS_CONFIG } from "@bollard/detect/src/types.js"
-import type { BollardConfig, LocalModelsConfig } from "@bollard/engine/src/context.js"
+import type {
+  BollardConfig,
+  CiPlatformId,
+  LocalModelsConfig,
+  TakeoverModeConfig,
+} from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import { isBinaryAvailable } from "@bollard/llm/src/providers/local.js"
 import type { ObserveProviderConfig } from "@bollard/observe/src/providers/types.js"
@@ -107,6 +112,45 @@ const observeYamlSchema = z
   })
   .strict()
 
+// ─── Stage 6: Lifecycle Ownership (Takeover Mode) ────────────────────────────
+
+const ciPlatformSchema = z.enum(["github-actions", "gitlab-ci", "circleci", "buildkite"])
+
+const takeoverDomainSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    trust: z.enum(["review", "auto-commit", "silent"]).optional(),
+  })
+  .strict()
+
+const takeoverYamlSchema = z
+  .object({
+    tests: takeoverDomainSchema
+      .extend({
+        minMutationScoreToTrigger: z.number().min(0).max(100).optional(),
+        maxFilesPerCycle: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
+    ci: takeoverDomainSchema
+      .extend({
+        platforms: z.array(ciPlatformSchema).optional(),
+      })
+      .strict()
+      .optional(),
+    deps: takeoverDomainSchema
+      .extend({
+        securityOnly: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    docs: takeoverDomainSchema.optional(),
+    monitoring: takeoverDomainSchema.optional(),
+  })
+  .strict()
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const localModelsYamlSchema = z
   .object({
     minFreeRamGb: z.number().positive().optional(),
@@ -197,6 +241,7 @@ const bollardYamlSchema = z
     metrics: metricsYamlSchema.optional(),
     observe: observeYamlSchema.optional(),
     localModels: localModelsYamlSchema.optional(),
+    takeover: takeoverYamlSchema.optional(),
   })
   .strict()
 
@@ -271,6 +316,7 @@ export async function resolveConfig(
     }
   }
   applyMetricsConfig(profile, yamlResult?.metrics)
+  applyTakeoverConfig(config, yamlResult?.takeover, sources)
 
   applyEnvVars(config, sources)
 
@@ -438,6 +484,7 @@ interface LoadedBollardYaml {
   }
   observe?: ObserveProviderConfig
   metrics?: z.infer<typeof metricsYamlSchema>
+  takeover?: z.infer<typeof takeoverYamlSchema>
   /** Roles whose `llm.agents.<role>` came from `.bollard.yml` (keys of parsed `llm.agents`, not post-merge). */
   overriddenAgentRoles?: Set<string>
 }
@@ -478,6 +525,56 @@ function applyMetricsConfig(
         metricsYaml?.loadTest?.durationSec ?? DEFAULT_METRICS_CONFIG.loadTest.durationSec,
     },
   }
+}
+
+function applyTakeoverConfig(
+  config: BollardConfig,
+  takeoverYaml: z.infer<typeof takeoverYamlSchema> | undefined,
+  sources: Record<string, AnnotatedValue<unknown>>,
+): void {
+  if (takeoverYaml === undefined) return
+
+  const takeover: TakeoverModeConfig = {}
+
+  if (takeoverYaml.tests !== undefined) {
+    takeover.tests = {
+      enabled: takeoverYaml.tests.enabled ?? false,
+      trust: takeoverYaml.tests.trust ?? "review",
+      minMutationScoreToTrigger: takeoverYaml.tests.minMutationScoreToTrigger ?? 0,
+      maxFilesPerCycle: takeoverYaml.tests.maxFilesPerCycle ?? 5,
+    }
+  }
+  if (takeoverYaml.ci !== undefined) {
+    takeover.ci = {
+      enabled: takeoverYaml.ci.enabled ?? false,
+      trust: takeoverYaml.ci.trust ?? "review",
+      ...(takeoverYaml.ci.platforms !== undefined
+        ? { platforms: takeoverYaml.ci.platforms as CiPlatformId[] }
+        : {}),
+    }
+  }
+  if (takeoverYaml.deps !== undefined) {
+    takeover.deps = {
+      enabled: takeoverYaml.deps.enabled ?? false,
+      trust: takeoverYaml.deps.trust ?? "review",
+      securityOnly: takeoverYaml.deps.securityOnly ?? true,
+    }
+  }
+  if (takeoverYaml.docs !== undefined) {
+    takeover.docs = {
+      enabled: takeoverYaml.docs.enabled ?? false,
+      trust: takeoverYaml.docs.trust ?? "review",
+    }
+  }
+  if (takeoverYaml.monitoring !== undefined) {
+    takeover.monitoring = {
+      enabled: takeoverYaml.monitoring.enabled ?? false,
+      trust: takeoverYaml.monitoring.trust ?? "review",
+    }
+  }
+
+  config.takeover = takeover
+  sources["takeover"] = { value: takeover, source: "file", detail: "file:.bollard.yml" }
 }
 
 function loadBollardYaml(
@@ -566,6 +663,7 @@ function loadBollardYaml(
     ...(data.mutation !== undefined ? { mutation: data.mutation } : {}),
     ...(data.observe !== undefined ? { observe: data.observe as ObserveProviderConfig } : {}),
     ...(data.metrics !== undefined ? { metrics: data.metrics } : {}),
+    ...(data.takeover !== undefined ? { takeover: data.takeover } : {}),
     ...(overriddenAgentRoles !== undefined ? { overriddenAgentRoles } : {}),
   }
 }
