@@ -86,6 +86,45 @@ export class CostTracker {
     return this._limit === Number.POSITIVE_INFINITY
   }
 
+  breakdown(): {
+    totalCostUsd: number
+    limitUsd: number
+    remainingUsd: number
+    percentUsed: number
+    isUnlimited: boolean
+  } {
+    const totalCostUsd = this._total
+    const limitUsd = this._limit
+    const isUnlimited = this._limit === Number.POSITIVE_INFINITY
+
+    let remainingUsd: number
+    if (isUnlimited) {
+      remainingUsd = Number.POSITIVE_INFINITY
+    } else {
+      remainingUsd = Math.max(0, this._limit - this._total)
+    }
+
+    let percentUsed: number
+    if (isUnlimited) {
+      percentUsed = 0
+    } else if (this._limit === 0) {
+      percentUsed = this._total === 0 ? 0 : 100
+    } else {
+      percentUsed = (this._total / this._limit) * 100
+    }
+
+    // Clamp percentUsed to [0, 100]
+    percentUsed = Math.min(Math.max(percentUsed, 0), 100)
+
+    return {
+      totalCostUsd,
+      limitUsd,
+      remainingUsd,
+      percentUsed,
+      isUnlimited,
+    }
+  }
+
   reset(): void {
     this._total = 0
     this._runCount = 0
