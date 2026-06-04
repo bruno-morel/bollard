@@ -55,15 +55,24 @@ Bollard runs its own `implement-feature` pipeline on Bollard changes. Every PR t
 
 - ~~**Prompt regression gating (Phase 1):**~~ **DONE (2026-05-19).** `EvalBaseline` store at `.bollard/eval-baseline.json` records per-agent pass rates. `bollard eval tag/show/diff` CLI commands — `diff` exits 1 when any agent's pass rate drops more than `thresholdPct` percentage points below baseline. All 5 agents at 100% on baseline `stage5b-quality` after hardening brittle assertions (string vs. object grounding, synonym sets for resilience/reject/quote).
 - ~~**Eval regression CI (Phase 2):**~~ **DONE (2026-05-19).** `.github/workflows/eval-regression.yml` — weekly Wednesday 04:00 UTC + manual dispatch. First live run green ([#26072692411](https://github.com/bruno-morel/bollard/actions/runs/26072692411), 7m35s, exit 0, all 5 agents at 100%).
-- **Meta-verification:** Risk score auditing — confusion matrix of agent assessments vs. actual outcomes over N runs. `bollard doctor --risk-audit` for calibration quality.
-- **Adaptive concern weights:** Analyze which concern lenses find real bugs most often per project. Suggest weight adjustments in `bollard doctor` output based on historical probe hit rates.
+- ~~**Meta-verification (Phase 3):**~~ **DONE (2026-05-30).** `computeScopeCalibration` in `@bollard/engine` — per-scope test-failure vs run-failure correlation from `RunRecord` history. `bollard doctor --risk-audit` renders scope calibration table (advisory only).
+- ~~**Adaptive concern weights (Phase 3):**~~ **DONE (2026-05-30).** `computeConcernYield` — scope-level claim grounding rate proxy with increase/keep/decrease suggestions in `bollard doctor --history` when ≥ 5 runs with claim data exist. Boundary degrades gracefully when claim counts are not persisted in history.
 - **Protocol behavioral audit (future):** LLM-based self-test — run a synthetic task through MCP tools and verify agent followed the verification protocol. Extends the manual Bollard-on-Bollard pattern into an automated, repeatable behavioral check. Structural lint shipped in 5a Phase 6 (`bollard audit-protocol`).
 
 ### 5c: Agent Intelligence Upgrades
 
-- **MCP client for agents:** Bollard's planner/coder agents consume external MCP tools (GitHub, Slack, Jira). Agent tool list = built-in tools + available MCP servers, with allowlist/denylist in `.bollard.yml`.
+- **MCP client for agents:** Bollard's planner/coder agents consume external MCP tools (GitHub, Slack, Jira). Agent tool list = built-in tools + available MCP servers, with allowlist/denylist in `.bollard.yml`. **DEFERRED** — too early; external tool surface adds complexity before core pipeline cost is stable.
 - ~~**Parallel scope execution:**~~ **DONE (2026-05-27).** Boundary, contract, and behavioral scope extraction and chains run concurrently via `BlueprintNodeGroup` + `executeParallelGroup`; `implement-feature` has **17** top-level steps (**31** leaf nodes). **+11** unit tests. Live pipeline self-test (`CostTracker.reset()`) optional follow-up — see [stage5c-parallel-scopes-validation.md](./stage5c-parallel-scopes-validation.md).
-- **Agent memory across runs:** Agents learn from previous runs on the same project — which probes found real bugs, which test patterns were most effective, which concerns had the highest yield.
+- **Agent memory across runs:** Agents learn from previous runs on the same project — which probes found real bugs, which test patterns were most effective, which concerns had the highest yield. **DEFERRED** — after cost stabilization.
+
+### 5e: Pipeline Cost Hardening (NEW — 2026-06-01)
+
+Observed from Bollard-on-Bollard self-tests: clean runs land $0.88–$1.90 (19–32 coder turns); elevated runs ($3.38–$5.02, 36–54 turns) are driven by two recurring failure modes. This stage addresses them deterministically before adding new agentic capability.
+
+- ~~**Contract grounding corpus expansion (Phase 1a):**~~ **DONE (2026-06-01).** `contractContextToCorpus` gains optional `sourceContents?: string[]`; `verify-claim-grounding` node reads affected source files from disk post-implementation and passes content into corpus. Closes `grounding_not_in_context` gap where tester quotes source body behavior not present in signatures/plan. +4 tests in `contract-grounding.test.ts`. 1381 pass / 6 skip.
+- **Contract-tester prompt tightening (Phase 1b):** Follow-up to Phase 1a. The corpus now contains source text, but the tester may still generate paraphrased quotes that don't appear verbatim. Tighten the contract-tester prompt to reinforce that `grounding[].quote` must be an exact copy-paste substring from the received context. **NEXT.**
+- ~~**Coder turn reduction on multi-step tasks (Phase 2):**~~ **DONE (2026-06-02).** (a) `MAX_TEST_INVOCATIONS` lowered 5→3 in `run-command.ts`; (c) `resolveAllowedCommands` derives fallback allowlist from `ctx.pipelineCtx.toolchainProfile.packageManager` when `ctx.allowedCommands` unset; `isTestCommand` extended to npm/yarn/bun/pytest/cargo/go; `ls` added to `DEFAULT_ALLOWED_COMMANDS`. +3 tests. 1397 pass / 6 skip. (b) verification short-circuit in post-completion hook — **deferred** (existing `createVerificationHook` + patcher sufficient). Prompt quick-fix already shipped: `coder.md` tells coder to use `{{packageManager}}`.
+- ~~**Stryker `stryker_no_mutants` pre-flight (Phase 3):**~~ **DONE (2026-06-02).** `runStrykerPreflight` in `@bollard/verify` — `tsc --noEmit` on scoped `mutateFiles` before Stryker; stderr diagnostic + `ZERO_RESULT` skip on failure. +3 tests in `mutation-preflight.test.ts`. 1400 pass / 6 skip.
 
 ### 5d: Token Economy — Determinism + Local Models
 
