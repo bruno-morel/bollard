@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import { detectToolchain } from "@bollard/detect/src/detect.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
+import type { BollardConfig } from "@bollard/engine/src/context.js"
 import {
   FileRunHistoryStore,
   computeConcernYield,
@@ -17,6 +18,9 @@ import type {
   RiskAuditReport,
   RunRecord,
 } from "@bollard/engine/src/run-history.js"
+import { findModelEntry, registryEntriesForProvider } from "@bollard/llm/src/model-registry.js"
+import type { ModelStatus } from "@bollard/llm/src/model-registry.js"
+import { resolveConfig } from "./config.js"
 import { BOLD, DIM, GREEN, RED, RESET, YELLOW } from "./terminal-styles.js"
 
 const execFileAsync = promisify(execFile)
@@ -56,12 +60,24 @@ export interface HistoryHealth {
   concernYield?: ConcernYieldReport
 }
 
+export interface RegistryHealth {
+  /** Models referenced by the active config that are deprecated/retired in the registry. */
+  deprecatedInUse: { role: string; model: string; status: ModelStatus; replacement?: string }[]
+  /** Registry entries for the default provider whose verifiedOn is older than 90 days. */
+  staleEntries: { id: string; verifiedOn: string }[]
+  /** Models referenced by the active config that have no registry entry. */
+  unknownInUse: { role: string; model: string }[]
+}
+
 export interface DoctorReport {
   allPassed: boolean
   checks: DoctorCheck[]
   configNote: DoctorConfigNote
+  registryHealth: RegistryHealth
   historyHealth?: HistoryHealth
 }
+
+export const REGISTRY_STALENESS_DAYS = 90
 
 const LLM_KEY_NAMES = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"] as const
 
@@ -316,12 +332,96 @@ function resolveConfigNote(workDir: string): DoctorConfigNote {
   return existsSync(join(workDir, ".bollard.yml")) ? "custom config" : "using defaults"
 }
 
+function parseReplacementFromNotes(notes?: string): string | undefined {
+  if (notes === undefined) return undefined
+  const match = notes.match(/replaced by ([\w.-]+)/i)
+  return match?.[1]
+}
+
+function collectConfigModels(config: BollardConfig): { role: string; model: string }[] {
+  const out: { role: string; model: string }[] = [
+    { role: "default", model: config.llm.default.model },
+  ]
+  if (config.llm.agents !== undefined) {
+    for (const [role, assignment] of Object.entries(config.llm.agents)) {
+      out.push({ role, model: assignment.model })
+    }
+  }
+  return out
+}
+
+export function checkModelRegistry(config: BollardConfig, now: Date = new Date()): RegistryHealth {
+  const deprecatedInUse: RegistryHealth["deprecatedInUse"] = []
+  const unknownInUse: RegistryHealth["unknownInUse"] = []
+
+  for (const { role, model } of collectConfigModels(config)) {
+    const entry = findModelEntry(model)
+    if (entry === undefined) {
+      unknownInUse.push({ role, model })
+      continue
+    }
+    if (entry.status === "deprecated" || entry.status === "retired") {
+      const replacement = parseReplacementFromNotes(entry.notes)
+      deprecatedInUse.push({
+        role,
+        model,
+        status: entry.status,
+        ...(replacement !== undefined ? { replacement } : {}),
+      })
+    }
+  }
+
+  const staleCutoff = new Date(now)
+  staleCutoff.setDate(staleCutoff.getDate() - REGISTRY_STALENESS_DAYS)
+
+  const staleEntries = registryEntriesForProvider(config.llm.default.provider)
+    .filter((entry) => {
+      const verified = new Date(entry.verifiedOn)
+      return !Number.isNaN(verified.getTime()) && verified < staleCutoff
+    })
+    .map((entry) => ({ id: entry.id, verifiedOn: entry.verifiedOn }))
+
+  return { deprecatedInUse, staleEntries, unknownInUse }
+}
+
+export function formatRegistrySection(h: RegistryHealth): string {
+  const lines: string[] = []
+  lines.push(`\n  ${BOLD}Model registry:${RESET}`)
+
+  const healthy =
+    h.deprecatedInUse.length === 0 && h.staleEntries.length === 0 && h.unknownInUse.length === 0
+
+  if (healthy) {
+    lines.push(`    ${GREEN}✓${RESET} Registry healthy`)
+    return lines.join("\n")
+  }
+
+  for (const item of h.deprecatedInUse) {
+    const repl = item.replacement !== undefined ? ` — consider ${item.replacement}` : ""
+    lines.push(`    ${YELLOW}⚠${RESET} ${item.role}: ${item.model} is ${item.status}${repl}`)
+  }
+  for (const item of h.unknownInUse) {
+    lines.push(`    ${YELLOW}⚠${RESET} ${item.role}: ${item.model} not in model-registry.ts`)
+  }
+  for (const item of h.staleEntries) {
+    lines.push(
+      `    ${YELLOW}⚠${RESET} ${item.id}: verifiedOn ${item.verifiedOn} (>${REGISTRY_STALENESS_DAYS} days old)`,
+    )
+  }
+
+  return lines.join("\n")
+}
+
 export async function runDoctor(
   workDir: string,
   env: NodeJS.ProcessEnv = process.env,
   options?: { history?: boolean; riskAudit?: boolean },
 ): Promise<DoctorReport> {
-  const [dockerCheck, toolchainCheck] = await Promise.all([checkDocker(), checkToolchain(workDir)])
+  const [dockerCheck, toolchainCheck, resolved] = await Promise.all([
+    checkDocker(),
+    checkToolchain(workDir),
+    resolveConfig(undefined, workDir, { requireApiKey: false }),
+  ])
   const llmCheck = checkLlmKeys(env)
   const checks = [dockerCheck, llmCheck, toolchainCheck]
   const allPassed = checks.every((c) => c.status === "pass")
@@ -329,6 +429,7 @@ export async function runDoctor(
     allPassed,
     checks,
     configNote: resolveConfigNote(workDir),
+    registryHealth: checkModelRegistry(resolved.config),
   }
   if (options?.history !== true && options?.riskAudit !== true) return base
   const historyHealth = await checkHistoryHealth(workDir, {
@@ -473,6 +574,7 @@ export function formatDoctorReport(report: DoctorReport): string {
   }
   lines.push("")
   lines.push(`  ${DIM}Config:${RESET} ${report.configNote}`)
+  lines.push(formatRegistrySection(report.registryHealth))
   if (report.historyHealth !== undefined) {
     lines.push(formatHistorySection(report.historyHealth))
   }

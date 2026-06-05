@@ -252,10 +252,10 @@ const bollardYamlSchema = z
  */
 const DEFAULTS: BollardConfig = {
   llm: {
-    default: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+    default: { provider: "anthropic", model: "claude-sonnet-4-6" },
     agents: {
       planner: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-      coder: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+      coder: { provider: "anthropic", model: "claude-sonnet-4-6" },
       "boundary-tester": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
       "contract-tester": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
       "behavioral-tester": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },

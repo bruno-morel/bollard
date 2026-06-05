@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import { createCurateTestsBlueprint } from "../src/curate-tests.js"
 
 const baseConfig: BollardConfig = {
-  llm: { default: { provider: "anthropic", model: "claude-sonnet-4-20250514" } },
+  llm: { default: { provider: "anthropic", model: "claude-sonnet-4-6" } },
   agent: { max_cost_usd: 50, max_duration_minutes: 30 },
 }
 

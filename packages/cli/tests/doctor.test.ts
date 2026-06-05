@@ -65,7 +65,7 @@ describe("runDoctor", () => {
     tempDir = await mkdtemp(join(tmpdir(), "bollard-doctor-"))
     await writeFile(join(tempDir, "tsconfig.json"), '{"compilerOptions":{}}', "utf-8")
     await writeFile(join(tempDir, "package.json"), "{}", "utf-8")
-    await writeFile(join(tempDir, ".bollard.yml"), "# minimal\n", "utf-8")
+    await writeFile(join(tempDir, ".bollard.yml"), "# minimal\n{}\n", "utf-8")
     const report = await runDoctor(tempDir, envWithoutLlmKeys())
     expect(report.configNote).toBe("custom config")
   })
@@ -81,11 +81,18 @@ describe("runDoctor", () => {
   })
 })
 
+const healthyRegistry = {
+  deprecatedInUse: [] as const,
+  staleEntries: [] as const,
+  unknownInUse: [] as const,
+}
+
 describe("doctor --json payload", () => {
   it("round-trips DoctorReport through JSON with stable shape", () => {
     const report = {
       allPassed: false,
       configNote: "using defaults" as const,
+      registryHealth: healthyRegistry,
       checks: [
         { id: "docker" as const, label: "Docker", status: "pass" as const, detail: "Docker ok" },
         {
@@ -123,6 +130,7 @@ describe("formatDoctorReport", () => {
     const report = {
       allPassed: false,
       configNote: "using defaults" as const,
+      registryHealth: healthyRegistry,
       checks: [
         { id: "docker" as const, label: "Docker", status: "pass" as const, detail: "Docker ok" },
         {
@@ -153,6 +161,7 @@ describe("formatDoctorReport", () => {
     const report = {
       allPassed: true,
       configNote: "using defaults" as const,
+      registryHealth: healthyRegistry,
       checks: [
         { id: "docker" as const, label: "Docker", status: "pass" as const, detail: "ok" },
         { id: "llm-key" as const, label: "LLM API key", status: "pass" as const, detail: "set: X" },

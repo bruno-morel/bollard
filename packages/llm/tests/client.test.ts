@@ -104,10 +104,10 @@ describe("LLMClient", () => {
   it("resolves planner to Haiku when config matches Stage 5d DEFAULTS shape", () => {
     const config = mockConfig({
       llm: {
-        default: { provider: "mock", model: "claude-sonnet-4-20250514" },
+        default: { provider: "mock", model: "claude-sonnet-4-6" },
         agents: {
           planner: { provider: "mock", model: "claude-haiku-4-5-20251001" },
-          coder: { provider: "mock", model: "claude-sonnet-4-20250514" },
+          coder: { provider: "mock", model: "claude-sonnet-4-6" },
         },
       },
     })
@@ -118,15 +118,15 @@ describe("LLMClient", () => {
   it("resolves coder to Sonnet when config matches Stage 5d DEFAULTS shape", () => {
     const config = mockConfig({
       llm: {
-        default: { provider: "mock", model: "claude-sonnet-4-20250514" },
+        default: { provider: "mock", model: "claude-sonnet-4-6" },
         agents: {
           planner: { provider: "mock", model: "claude-haiku-4-5-20251001" },
-          coder: { provider: "mock", model: "claude-sonnet-4-20250514" },
+          coder: { provider: "mock", model: "claude-sonnet-4-6" },
         },
       },
     })
     const client = new LLMClient(config)
-    expect(client.forAgent("coder").model).toBe("claude-sonnet-4-20250514")
+    expect(client.forAgent("coder").model).toBe("claude-sonnet-4-6")
   })
 
   it("throws PROVIDER_NOT_FOUND for unknown provider", () => {

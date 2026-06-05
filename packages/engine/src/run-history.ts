@@ -16,6 +16,7 @@ export interface NodeSummary {
   costUsd?: number
   durationMs?: number
   turns?: number
+  model?: string
   error?: { code: string; message: string }
 }
 

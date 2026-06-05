@@ -36,6 +36,7 @@ export interface NodeResult {
   cost_usd?: number
   duration_ms?: number
   turns?: number
+  model?: string
   error?: NodeResultError
   probes?: ProbeDefinition[]
 }

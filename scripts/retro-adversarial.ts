@@ -218,7 +218,7 @@ interface RetroResult {
 async function main() {
   const config: BollardConfig = {
     llm: {
-      default: { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+      default: { provider: "anthropic", model: "claude-sonnet-4-6" },
     },
     agent: { max_cost_usd: 10, max_duration_minutes: 60 },
   }

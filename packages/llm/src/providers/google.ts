@@ -8,6 +8,7 @@ import type {
   GenerativeModel,
   Part,
 } from "@google/generative-ai"
+import { estimateCostForModel } from "../model-registry.js"
 import type {
   LLMContentBlock,
   LLMProvider,
@@ -16,18 +17,7 @@ import type {
   LLMStreamEvent,
 } from "../types.js"
 
-// Pricing per 1M tokens (USD) — update periodically as pricing changes
-const PRICING: Record<string, { input: number; output: number }> = {
-  "gemini-2.0-flash": { input: 0.1, output: 0.4 },
-  "gemini-2.5-pro-preview-05-06": { input: 1.25, output: 10 },
-}
-
-const DEFAULT_PRICING = { input: 0.1, output: 0.4 }
-
-function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
-  const pricing = PRICING[model] ?? DEFAULT_PRICING
-  return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000
-}
+const FALLBACK_PRICING = { input: 0.1, output: 0.4 }
 
 function mapGoogleStopReason(
   finishReason: string | undefined,
@@ -235,7 +225,7 @@ export async function* googleChunksToStreamEvents(
       content,
       stopReason: mapGoogleStopReason(lastFinishReason, hasToolCalls),
       usage: { inputTokens: promptTokens, outputTokens },
-      costUsd: estimateCost(modelId, promptTokens, outputTokens),
+      costUsd: estimateCostForModel(modelId, promptTokens, outputTokens, FALLBACK_PRICING),
     },
   }
 }
@@ -293,7 +283,7 @@ export class GoogleProvider implements LLMProvider {
         content,
         stopReason,
         usage: { inputTokens, outputTokens },
-        costUsd: estimateCost(request.model, inputTokens, outputTokens),
+        costUsd: estimateCostForModel(request.model, inputTokens, outputTokens, FALLBACK_PRICING),
       }
     } catch (err: unknown) {
       mapGoogleError(err)

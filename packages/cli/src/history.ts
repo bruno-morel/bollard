@@ -33,6 +33,18 @@ function padEndVisible(s: string, width: number): string {
   return `${s}${" ".repeat(pad)}`
 }
 
+/** Dim suffix for agentic node lines: turns and/or resolved model (e.g. `22t · claude-sonnet-4-6`). */
+export function formatNodeAgentSuffix(n: {
+  turns?: number
+  model?: string
+}): string {
+  const segments: string[] = []
+  if (n.turns !== undefined) segments.push(`${n.turns}t`)
+  if (n.model !== undefined) segments.push(n.model)
+  if (segments.length === 0) return ""
+  return ` ${DIM}${segments.join(" · ")}${RESET}`
+}
+
 interface ParsedHistoryCli {
   json: boolean
   limit: number
@@ -234,9 +246,9 @@ async function cmdShow(workDir: string, runId: string, json: boolean): Promise<v
         ? ` $${n.costUsd.toFixed(2)}`
         : ` ${DIM}$0.00${RESET}`
     const dur = n.durationMs !== undefined ? formatMs(n.durationMs) : "—"
-    const turnsStr = n.turns !== undefined ? ` ${DIM}${n.turns}t${RESET}` : ""
+    const agentSuffix = formatNodeAgentSuffix(n)
     log(
-      `  ${statusIcon(n.status)} ${padEndVisible(n.name, 28)} ${padEndVisible(dur, 8)}${cost}${turnsStr}`,
+      `  ${statusIcon(n.status)} ${padEndVisible(n.name, 28)} ${padEndVisible(dur, 8)}${cost}${agentSuffix}`,
     )
     if (n.error) {
       log(`      ${RED}${n.error.code}:${RESET} ${n.error.message}`)

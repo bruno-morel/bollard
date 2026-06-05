@@ -22,7 +22,7 @@ describe("resolveConfig", () => {
     const { config, sources } = await resolveConfig(undefined, tempDir)
 
     expect(config.llm.default.provider).toBe("anthropic")
-    expect(config.llm.default.model).toBe("claude-sonnet-4-20250514")
+    expect(config.llm.default.model).toBe("claude-sonnet-4-6")
     expect(config.agent.max_cost_usd).toBe(50)
     expect(config.agent.max_duration_minutes).toBe(30)
     expect(sources["llm.default.provider"]?.source).toBe("default")
@@ -273,7 +273,7 @@ describe("resolveConfig", () => {
   it("defaults coder to Sonnet", async () => {
     const { config } = await resolveConfig(undefined, tempDir)
 
-    expect(config.llm.agents?.coder?.model).toBe("claude-sonnet-4-20250514")
+    expect(config.llm.agents?.coder?.model).toBe("claude-sonnet-4-6")
   })
 
   it("respects .bollard.yml planner model override and marks source as file", async () => {
@@ -282,13 +282,13 @@ describe("resolveConfig", () => {
       "  agents:",
       "    planner:",
       "      provider: anthropic",
-      "      model: claude-sonnet-4-20250514",
+      "      model: claude-sonnet-4-6",
     ].join("\n")
     writeFileSync(join(tempDir, ".bollard.yml"), yaml)
 
     const { config, sources } = await resolveConfig(undefined, tempDir)
 
-    expect(config.llm.agents?.planner?.model).toBe("claude-sonnet-4-20250514")
+    expect(config.llm.agents?.planner?.model).toBe("claude-sonnet-4-6")
     expect(sources["llm.agents.planner.model"]?.source).toBe("file")
     expect(sources["llm.agents.planner.model"]?.detail).toBe("file:.bollard.yml")
   })

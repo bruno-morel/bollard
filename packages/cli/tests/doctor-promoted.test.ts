@@ -84,6 +84,11 @@ describe("formatDoctorReport promoted manifest section", () => {
     const baseReport = {
       allPassed: true,
       configNote: "using defaults" as const,
+      registryHealth: {
+        deprecatedInUse: [] as const,
+        staleEntries: [] as const,
+        unknownInUse: [] as const,
+      },
       checks: [
         { id: "docker" as const, label: "Docker", status: "pass" as const, detail: "ok" },
         {

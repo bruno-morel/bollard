@@ -143,7 +143,7 @@ describe("writeTestMetadata", () => {
       task: "Add auth retry logic",
       featureSlug: "auth-retry",
       generatedAt: new Date().toISOString(),
-      agentModel: "claude-sonnet-4-20250514",
+      agentModel: "claude-sonnet-4-6",
       testFramework: "vitest",
       testCount: 5,
       replaces: null,

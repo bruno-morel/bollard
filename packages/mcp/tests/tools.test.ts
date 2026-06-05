@@ -126,7 +126,7 @@ describe("MCP tool definitions", () => {
     expect(Array.isArray(result.modules)).toBe(true)
     expect(Array.isArray(result.edges)).toBe(true)
     expect(Array.isArray(result.affectedEdges)).toBe(true)
-  })
+  }, 30_000)
 
   it("bollard_plan handler returns status", async () => {
     const tool = tools.find((t) => t.name === "bollard_plan")

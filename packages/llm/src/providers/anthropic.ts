@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { BollardError } from "@bollard/engine/src/errors.js"
+import { estimateCostForModel } from "../model-registry.js"
 import type {
   LLMContentBlock,
   LLMProvider,
@@ -8,18 +9,7 @@ import type {
   LLMStreamEvent,
 } from "../types.js"
 
-const PRICING: Record<string, { input: number; output: number }> = {
-  "claude-sonnet-4-20250514": { input: 3, output: 15 },
-  "claude-haiku-4-5-20251001": { input: 1, output: 5 },
-  "claude-opus-4-20250514": { input: 15, output: 75 },
-}
-
-const DEFAULT_PRICING = { input: 3, output: 15 }
-
-function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
-  const pricing = PRICING[model] ?? DEFAULT_PRICING
-  return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000
-}
+const FALLBACK_PRICING = { input: 3, output: 15 }
 
 function mapContentBlock(block: Anthropic.ContentBlock): LLMContentBlock {
   if (block.type === "text") {
@@ -106,7 +96,7 @@ export class AnthropicProvider implements LLMProvider {
         content,
         stopReason: mapStopReason(response.stop_reason),
         usage: { inputTokens, outputTokens },
-        costUsd: estimateCost(request.model, inputTokens, outputTokens),
+        costUsd: estimateCostForModel(request.model, inputTokens, outputTokens, FALLBACK_PRICING),
       }
     } catch (err: unknown) {
       if (BollardError.is(err)) throw err
@@ -209,7 +199,7 @@ export class AnthropicProvider implements LLMProvider {
           content: finalMessage.content.map(mapContentBlock),
           stopReason: mapStopReason(finalMessage.stop_reason),
           usage: { inputTokens, outputTokens },
-          costUsd: estimateCost(request.model, inputTokens, outputTokens),
+          costUsd: estimateCostForModel(request.model, inputTokens, outputTokens, FALLBACK_PRICING),
         },
       }
     } catch (err: unknown) {

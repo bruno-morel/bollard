@@ -607,6 +607,21 @@ function buildTestCuratorMessage(ctx: PipelineContext): string {
   ].join("\n")
 }
 
+function logAgentModelResolved(
+  ctx: PipelineContext,
+  config: BollardConfig,
+  agentRole: string,
+  model: string,
+): void {
+  const assignment = config.llm.agents?.[agentRole] ?? config.llm.default
+  ctx.log.info("agent_model_resolved", {
+    event: "agent_model_resolved",
+    role: agentRole,
+    provider: assignment.provider,
+    model,
+  })
+}
+
 export async function createAgenticHandler(
   config: BollardConfig,
   workDir: string,
@@ -657,6 +672,7 @@ export async function createAgenticHandler(
 
     if (!agent) {
       const { provider, model } = llmClient.forAgent(agentRole)
+      logAgentModelResolved(ctx, config, agentRole, model)
       const startMs = Date.now()
       const response = await provider.chat({
         system: `You are the "${agentRole}" agent in a Bollard pipeline run.`,
@@ -679,10 +695,12 @@ export async function createAgenticHandler(
         data: text,
         cost_usd: response.costUsd,
         duration_ms: Date.now() - startMs,
+        model,
       }
     }
 
     const { provider, model } = llmClient.forAgent(agentRole)
+    logAgentModelResolved(ctx, config, agentRole, model)
     const spinner = createAgentSpinner({ metrics: options?.metrics === true })
     const agentCtx: AgentContext = {
       pipelineCtx: ctx,
@@ -806,6 +824,7 @@ export async function createAgenticHandler(
         data: "",
         cost_usd: partialCost,
         duration_ms: Date.now() - startMs,
+        model,
         error: { code: errorCode, message: errorMsg },
       }
     } finally {
@@ -822,6 +841,7 @@ export async function createAgenticHandler(
       cost_usd: result.totalCostUsd,
       duration_ms: Date.now() - startMs,
       turns: result.turns,
+      model,
     }
   }
 

@@ -155,11 +155,18 @@ describe("formatHistorySection concern yield and risk audit", () => {
   })
 })
 
+const healthyRegistry = {
+  deprecatedInUse: [] as const,
+  staleEntries: [] as const,
+  unknownInUse: [] as const,
+}
+
 describe("formatDoctorReport integration", () => {
   it("renders concern yield via formatDoctorReport", () => {
     const out = formatDoctorReport({
       allPassed: true,
       configNote: "using defaults",
+      registryHealth: healthyRegistry,
       checks: [
         { id: "docker", label: "Docker", status: "pass", detail: "ok" },
         { id: "llm-key", label: "LLM API key", status: "pass", detail: "set: X" },

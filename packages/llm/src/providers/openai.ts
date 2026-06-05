@@ -1,5 +1,6 @@
 import { BollardError } from "@bollard/engine/src/errors.js"
 import OpenAI from "openai"
+import { estimateCostForModel } from "../model-registry.js"
 import type {
   LLMContentBlock,
   LLMProvider,
@@ -8,19 +9,7 @@ import type {
   LLMStreamEvent,
 } from "../types.js"
 
-// Pricing per 1M tokens (USD) — update periodically as pricing changes
-const PRICING: Record<string, { input: number; output: number }> = {
-  "gpt-4o": { input: 2.5, output: 10 },
-  "gpt-4o-mini": { input: 0.15, output: 0.6 },
-  "o3-mini": { input: 1.1, output: 4.4 },
-}
-
-const DEFAULT_PRICING = { input: 2.5, output: 10 }
-
-function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
-  const pricing = PRICING[model] ?? DEFAULT_PRICING
-  return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000
-}
+const FALLBACK_PRICING = { input: 2.5, output: 10 }
 
 function mapStopReason(
   reason: string | null | undefined,
@@ -242,7 +231,7 @@ export async function* openAIChunksToStreamEvents(
       content,
       stopReason: mapStopReason(finishReason, hasToolCalls),
       usage: { inputTokens, outputTokens },
-      costUsd: estimateCost(model, inputTokens, outputTokens),
+      costUsd: estimateCostForModel(model, inputTokens, outputTokens, FALLBACK_PRICING),
     },
   }
 }
@@ -315,7 +304,7 @@ export class OpenAIProvider implements LLMProvider {
         content,
         stopReason: mapStopReason(choice.finish_reason, hasToolCalls),
         usage: { inputTokens, outputTokens },
-        costUsd: estimateCost(request.model, inputTokens, outputTokens),
+        costUsd: estimateCostForModel(request.model, inputTokens, outputTokens, FALLBACK_PRICING),
       }
     } catch (err: unknown) {
       mapOpenAIError(err)
