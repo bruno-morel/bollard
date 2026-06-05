@@ -10,6 +10,7 @@ import { createContractTesterAgent } from "@bollard/agents/src/contract-tester.j
 import { executeAgent } from "@bollard/agents/src/executor.js"
 import { createPlannerAgent } from "@bollard/agents/src/planner.js"
 import { createSemanticReviewerAgent } from "@bollard/agents/src/semantic-reviewer.js"
+import { createTestCuratorAgent } from "@bollard/agents/src/test-curator.js"
 import type { AgentContext, AgentResult, ExecutorOptions } from "@bollard/agents/src/types.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
@@ -579,6 +580,33 @@ export interface CreateAgenticHandlerOptions {
   metrics?: boolean
 }
 
+function buildTestCuratorMessage(ctx: PipelineContext): string {
+  const assessData = ctx.results["assess-test-quality"]?.data as
+    | {
+        scores?: unknown[]
+        promotionCandidates?: string[]
+        pruneCandidates?: string[]
+      }
+    | undefined
+  const scores = assessData?.scores ?? []
+  const promotionCandidates = assessData?.promotionCandidates ?? []
+  const manifest = ctx.ownershipManifest
+  const managedCount = manifest?.bollardManaged.length ?? 0
+  const userOwnedCount = manifest?.userOwned.length ?? 0
+
+  return [
+    "Quality Report:",
+    JSON.stringify(scores, null, 2),
+    "",
+    "Adversarial Promotion Candidates:",
+    promotionCandidates.length > 0 ? promotionCandidates.join("\n") : "(none)",
+    "",
+    "Manifest Summary:",
+    `managed: ${managedCount} files`,
+    `userOwned: ${userOwnedCount} files`,
+  ].join("\n")
+}
+
 export async function createAgenticHandler(
   config: BollardConfig,
   workDir: string,
@@ -593,6 +621,7 @@ export async function createAgenticHandler(
     "contract-tester": await createContractTesterAgent(profile),
     "behavioral-tester": await createBehavioralTesterAgent(profile),
     "semantic-reviewer": await createSemanticReviewerAgent(profile),
+    "test-curator": await createTestCuratorAgent(profile),
   }
 
   const extractionLlm = llmClient.forAgent("boundary-tester")
@@ -735,6 +764,10 @@ export async function createAgenticHandler(
 
     if (agentRole === "semantic-reviewer") {
       userMessage = buildSemanticReviewerMessage(ctx)
+    }
+
+    if (agentRole === "test-curator") {
+      userMessage = buildTestCuratorMessage(ctx)
     }
 
     if (agentRole !== "coder" && resolvedMaxCostUsd !== undefined) {

@@ -260,6 +260,7 @@ const DEFAULTS: BollardConfig = {
       "contract-tester": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
       "behavioral-tester": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
       "semantic-reviewer": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      "test-curator": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
     },
   },
   agent: { max_cost_usd: 50, max_duration_minutes: 30 },

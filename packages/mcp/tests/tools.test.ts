@@ -8,8 +8,8 @@ import { tools } from "../src/tools.js"
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 
 describe("MCP tool definitions", () => {
-  it("registers exactly 16 tools", () => {
-    expect(tools).toHaveLength(16)
+  it("registers exactly 17 tools", () => {
+    expect(tools).toHaveLength(17)
   })
 
   it("all tools have name, description, inputSchema, and handler", () => {

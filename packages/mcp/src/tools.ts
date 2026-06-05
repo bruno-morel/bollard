@@ -36,6 +36,11 @@ const profileInputSchema = z.object({
   workDir: z.string().optional(),
 })
 
+const curateTestsInputSchema = z.object({
+  workDir: z.string().optional(),
+  dryRun: z.boolean().optional(),
+})
+
 async function handleVerify(input: Record<string, unknown>, workDir: string): Promise<unknown> {
   const startedAt = Date.now()
   const parsed = verifyInputSchema.parse(input)
@@ -422,6 +427,52 @@ async function handleHistorySummary(
   }
 }
 
+async function handleCurateTests(
+  input: Record<string, unknown>,
+  workDir: string,
+): Promise<unknown> {
+  const parsed = curateTestsInputSchema.parse(input)
+  const dir = parsed.workDir ?? workDir
+
+  if (parsed.dryRun === true) {
+    const { assessTestQualityForWorkDir } = await import("@bollard/blueprints/src/curate-tests.js")
+    const { buildCurationCorpus } = await import("@bollard/engine/src/test-quality.js")
+    const result = await assessTestQualityForWorkDir(dir)
+    return {
+      dryRun: true,
+      scores: result.scores,
+      promotionCandidates: result.promotionCandidates,
+      pruneCandidates: result.pruneCandidates,
+      manifestSummary: {
+        managed: result.manifest.bollardManaged.length,
+        userOwned: result.manifest.userOwned.length,
+      },
+      corpusPreview: buildCurationCorpus(result.scores, result.manifest).slice(0, 2000),
+      note: "Agent curation candidates require dryRun=false with API key",
+      candidates: [] as unknown[],
+      dropped: [] as unknown[],
+    }
+  }
+
+  const { runCuratePipeline } = await import("@bollard/cli/src/curate.js")
+  const pipelineResult = (await runCuratePipeline(dir)) as {
+    status?: string
+    nodeResults?: Record<string, { data?: unknown }>
+  }
+  const nodeResults = pipelineResult.nodeResults ?? {}
+
+  return {
+    dryRun: false,
+    status: pipelineResult.status,
+    scores: nodeResults["assess-test-quality"]?.data,
+    candidates: (nodeResults["verify-curation-grounding"]?.data as { kept?: unknown[] } | undefined)
+      ?.kept,
+    applied: (nodeResults["apply-curation-trust-gate"]?.data as { applied?: unknown[] } | undefined)
+      ?.applied,
+    pipeline: pipelineResult,
+  }
+}
+
 function zodToJsonSchema(schema: z.ZodObject<z.ZodRawShape>): Record<string, unknown> {
   const shape = schema.shape
   const properties: Record<string, unknown> = {}
@@ -568,5 +619,12 @@ export const tools: McpToolDefinition[] = [
       "Show aggregate statistics for Bollard pipeline runs: total runs, success rate, average cost, average duration, cost trend (increasing/stable/decreasing), and per-blueprint breakdowns. Use to answer whether the pipeline is getting more expensive or what the success rate is for a time window. Pass since and until as ISO date strings to scope the window.",
     inputSchema: zodToJsonSchema(historySummaryInputSchema),
     handler: handleHistorySummary,
+  },
+  {
+    name: "bollard_curate_tests",
+    description:
+      "Run the curate-tests pipeline: score test quality, propose curation actions (promote/prune/rewrite), apply with trust gate. Returns quality scores and proposed candidates. Set dryRun=true to score and list deterministic candidates without staging changes.",
+    inputSchema: zodToJsonSchema(curateTestsInputSchema),
+    handler: handleCurateTests,
   },
 ]

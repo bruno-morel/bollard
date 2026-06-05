@@ -1,6 +1,6 @@
 import { promisify } from "node:util"
 import type { MutationConfig, ToolchainProfile } from "@bollard/detect/src/types.js"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const { mockExecFileAsync, mockWriteFile, mockReadFile } = vi.hoisted(() => ({
   mockExecFileAsync: vi.fn(),
@@ -88,8 +88,10 @@ function makeSampleReport(mutants: Array<{ status: string }>): string {
   })
 }
 
-afterEach(() => {
-  vi.restoreAllMocks()
+beforeEach(() => {
+  mockExecFileAsync.mockReset()
+  mockWriteFile.mockReset()
+  mockReadFile.mockReset()
 })
 
 describe("parseStrykerReport", () => {

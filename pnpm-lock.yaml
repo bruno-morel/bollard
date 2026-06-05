@@ -147,6 +147,9 @@ importers:
       '@bollard/agents':
         specifier: workspace:*
         version: link:../agents
+      '@bollard/blueprints':
+        specifier: workspace:*
+        version: link:../blueprints
       '@bollard/cli':
         specifier: workspace:*
         version: link:../cli

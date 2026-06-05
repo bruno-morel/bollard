@@ -44,6 +44,7 @@ export type BollardErrorCode =
   | "TAKEOVER_CONFLICT" // human edit detected in a Bollard-managed file
   | "OWNERSHIP_MANIFEST_INVALID" // .bollard/ownership.json fails schema validation
   | "CURATION_NO_PROGRESS" // curate-* blueprint ran but found nothing to improve
+  | "CURATION_OUTPUT_INVALID" // test-curator agent output failed schema validation
   | "TAKEOVER_TRUST_GATE" // action requires higher trust than configured trust level
 
 const RETRYABLE_CODES: ReadonlySet<BollardErrorCode> = new Set([

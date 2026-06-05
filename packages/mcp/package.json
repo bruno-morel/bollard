@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@bollard/agents": "workspace:*",
+    "@bollard/blueprints": "workspace:*",
     "@bollard/cli": "workspace:*",
     "@bollard/detect": "workspace:*",
     "@bollard/engine": "workspace:*",

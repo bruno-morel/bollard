@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import type { AgentResult } from "@bollard/agents/src/types.js"
+import { createCurateTestsBlueprint } from "@bollard/blueprints/src/curate-tests.js"
 import { createImplementFeatureBlueprint } from "@bollard/blueprints/src/implement-feature.js"
 import type { Blueprint, BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import { countBlueprintSteps, flattenBlueprintNodes } from "@bollard/engine/src/blueprint.js"
@@ -17,6 +18,7 @@ import { formatSkippedChecksNotice, resolveSkipChecks } from "./ci-passed.js"
 import { resolveConfig } from "./config.js"
 import { collectAffectedPathsFromPlan } from "./contract-plan.js"
 import { runCostBaselineCommand } from "./cost-baseline.js"
+import { runCurateCommand } from "./curate.js"
 import { diffToolchainProfile } from "./diff.js"
 import { formatDoctorReport, runDoctor } from "./doctor.js"
 import { runEvalBaselineCommand } from "./eval-baseline.js"
@@ -542,7 +544,32 @@ async function runRunCommand(args: string[]): Promise<void> {
     process.exit(result.status === "success" ? 0 : 1)
   }
 
-  log(`Unknown blueprint: "${blueprintName}". Available: demo, implement-feature`)
+  if (blueprintName === "curate-tests") {
+    const workDir = configCwd
+    const { handler } = await createAgenticHandler(config, workDir, profile)
+    const blueprint = createCurateTestsBlueprint(workDir, config)
+
+    header("run curate-tests")
+    log(`${DIM}Task:${RESET}      ${task}`)
+    log(`${DIM}Work dir:${RESET}  ${workDir}`)
+    log("")
+
+    const result = await runBlueprint(
+      blueprint,
+      task,
+      config,
+      handler,
+      humanGateHandler,
+      cliProgress,
+      profile,
+      persistRunHistory,
+    )
+    printRunSummary(result)
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+    process.exit(result.status === "success" ? 0 : 1)
+  }
+
+  log(`Unknown blueprint: "${blueprintName}". Available: demo, implement-feature, curate-tests`)
   process.exit(1)
 }
 
@@ -963,6 +990,12 @@ async function main(): Promise<void> {
     return
   }
 
+  if (command === "curate") {
+    const workDir = resolveWorkspaceDirFromArgs(rest)
+    await runCurateCommand(rest, workDir)
+    return
+  }
+
   log(`\n${BOLD}${CYAN}bollard${RESET} — artifact integrity framework\n`)
   log("Commands:\n")
   log(
@@ -1015,8 +1048,11 @@ async function main(): Promise<void> {
   log(
     `  ${BOLD}ownership${RESET} list|claim|release|status  Lifecycle ownership management (Stage 6)`,
   )
+  log(
+    `  ${BOLD}curate${RESET} list-quality|run            Test curation pipeline (Stage 6 Phase 2)`,
+  )
   log("")
-  log(`Blueprints: ${DIM}demo, implement-feature${RESET}`)
+  log(`Blueprints: ${DIM}demo, implement-feature, curate-tests${RESET}`)
   log("")
   process.exit(1)
 }

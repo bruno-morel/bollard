@@ -83,6 +83,21 @@ export {
 } from "./ownership.js"
 export type { TestFingerprint, PromotedTest, PromotedManifest } from "./test-fingerprint.js"
 export type {
+  TestQualityScore,
+  CurationCandidate,
+  CurationPlan,
+  CurationGroundingResult,
+} from "./test-quality.js"
+export {
+  assessTestQuality,
+  promoteAdversarialTests,
+  pruneRedundantTests,
+  buildCurationCorpus,
+  verifyCurationGrounding,
+  parseCurationPlan,
+  derivePromotionDestPath,
+} from "./test-quality.js"
+export type {
   EvalCase,
   EvalAssertion,
   EvalAssertionType,

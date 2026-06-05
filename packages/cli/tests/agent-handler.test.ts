@@ -54,20 +54,26 @@ vi.mock("@bollard/agents/src/semantic-reviewer.js", () => ({
   createSemanticReviewerAgent: vi.fn().mockResolvedValue(mockAgentResolved),
 }))
 
+vi.mock("@bollard/agents/src/test-curator.js", () => ({
+  createTestCuratorAgent: vi.fn().mockResolvedValue(mockAgentResolved),
+}))
+
 vi.mock("@bollard/llm/src/client.js", () => ({
-  LLMClient: vi.fn().mockImplementation(() => ({
-    forAgent: vi.fn().mockReturnValue({
-      provider: {
-        chat: vi.fn().mockResolvedValue({
-          content: [{ type: "text" as const, text: "ok" }],
-          stopReason: "end_turn" as const,
-          usage: { inputTokens: 1, outputTokens: 1 },
-          costUsd: 0,
-        }),
-      },
-      model: "mock-model",
-    }),
-  })),
+  LLMClient: class MockLLMClient {
+    forAgent() {
+      return {
+        provider: {
+          chat: vi.fn().mockResolvedValue({
+            content: [{ type: "text" as const, text: "ok" }],
+            stopReason: "end_turn" as const,
+            usage: { inputTokens: 1, outputTokens: 1 },
+            costUsd: 0,
+          }),
+        },
+        model: "mock-model",
+      }
+    }
+  },
 }))
 
 vi.mock("node:child_process", () => ({
