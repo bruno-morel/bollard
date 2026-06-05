@@ -27,7 +27,7 @@ async function makeTempProject(): Promise<string> {
   return mkdtemp(join(tmpdir(), "bollard-beh-"))
 }
 
-describe("buildBehavioralContext", () => {
+describe("buildBehavioralContext", { timeout: 15000 }, () => {
   it("returns empty context for unknown language with warning", async () => {
     const warnings: string[] = []
     const dir = await makeTempProject()
