@@ -30,6 +30,7 @@ import {
   runFlagCommand,
   runProbeCommand,
 } from "./observe-commands.js"
+import { runOwnershipCommand } from "./ownership.js"
 import { promoteTest } from "./promote-test.js"
 import { formatQuietVerifyResult } from "./quiet-verify.js"
 import { createAgentSpinner } from "./spinner.js"
@@ -956,6 +957,12 @@ async function main(): Promise<void> {
     return
   }
 
+  if (command === "ownership") {
+    const workDir = resolveWorkspaceDirFromArgs(rest)
+    await runOwnershipCommand(rest, workDir)
+    return
+  }
+
   log(`\n${BOLD}${CYAN}bollard${RESET} — artifact integrity framework\n`)
   log("Commands:\n")
   log(
@@ -1005,6 +1012,9 @@ async function main(): Promise<void> {
   log(`  ${BOLD}deploy${RESET} record|list|current      Deployment metadata`)
   log(`  ${BOLD}flag${RESET} set|list|kill             Feature flags (file-based)`)
   log(`  ${BOLD}drift${RESET} check|watch             Git drift vs last verified`)
+  log(
+    `  ${BOLD}ownership${RESET} list|claim|release|status  Lifecycle ownership management (Stage 6)`,
+  )
   log("")
   log(`Blueprints: ${DIM}demo, implement-feature${RESET}`)
   log("")

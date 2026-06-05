@@ -71,6 +71,16 @@ export {
   computeScopeCalibration,
   computeConcernYield,
 } from "./run-history.js"
+export type {
+  ManagedFileEntry,
+  TestOwnershipManifest,
+  ConflictReport,
+} from "./ownership.js"
+export {
+  OWNERSHIP_SCHEMA_VERSION,
+  FileOwnershipStore,
+  detectManagedFileConflicts,
+} from "./ownership.js"
 export type { TestFingerprint, PromotedTest, PromotedManifest } from "./test-fingerprint.js"
 export type {
   EvalCase,

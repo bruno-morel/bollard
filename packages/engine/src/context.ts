@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { NodeResult } from "./blueprint.js"
 import { CostTracker } from "./cost-tracker.js"
+import type { TestOwnershipManifest } from "./ownership.js"
 
 export type LogLevel = "debug" | "info" | "warn" | "error"
 
@@ -162,7 +163,7 @@ export interface PipelineContext {
   /** Checks to skip in static-checks node (CI-injected via --ci-passed). */
   skipChecks?: string[]
   /** Ownership manifest loaded by curate-* blueprints (Stage 6). */
-  ownershipManifest?: unknown
+  ownershipManifest?: TestOwnershipManifest
   costTracker: CostTracker
   log: {
     debug: (message: string, data?: Record<string, unknown>) => void
