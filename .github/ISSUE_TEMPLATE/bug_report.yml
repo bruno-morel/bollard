@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in Bollard misbehaves
+labels: ["bug"]
+body:
+  - type: input
+    id: commit
+    attributes:
+      label: Commit / version
+      description: Output of `git rev-parse --short HEAD`
+      placeholder: c7a1ab3
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Exact command(s), via Docker Compose, that trigger the problem
+      placeholder: |
+        docker compose run --rm dev --filter @bollard/cli run start -- run implement-feature --task "..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+      description: What should have happened, and what happened instead
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: Relevant stderr output, run ID, or `bollard history show <run-id>` excerpt. Redact API keys.
+      render: shell
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - pipeline / blueprint nodes
+        - agents / prompts
+        - verification (static, tests, mutation)
+        - toolchain detection
+        - CLI
+        - MCP server
+        - LLM providers
+        - Docker / dev environment
+        - other
+    validations:
+      required: true
