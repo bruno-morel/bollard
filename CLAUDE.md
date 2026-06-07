@@ -59,6 +59,9 @@ docker compose run --rm dev --filter @bollard/cli run start -- cost-baseline dif
 
 # Doctor with run history health
 docker compose run --rm dev --filter @bollard/cli run start -- doctor --history
+
+# Doc-stats audit (README drift guard)
+docker compose run --rm dev --filter @bollard/cli run start -- audit-docs
 ```
 
 ### Known limitations (Stage 4c JVM Wave 1)
@@ -89,6 +92,7 @@ docker compose run --rm dev --filter @bollard/cli run start -- doctor --history
 - **Stage 6 Phase 1 (ownership foundation):** `FileOwnershipStore` reads/writes `.bollard/ownership.json`. `detectManagedFileConflicts` shells to git — returns empty (not error) when git is unavailable or file is untracked.
 - **Stage 6 Phase 1 (Takeover Foundation):** `TestOwnershipManifest` + `FileOwnershipStore` + `detectManagedFileConflicts` + `bollard ownership` CLI (list/claim/release/status). +10 tests.
 - **Stage 6 Phase 2 (test curation):** `assessTestQuality` + `promoteAdversarialTests` + `pruneRedundantTests` + `verifyCurationGrounding` in `@bollard/engine`; `TestCuratorAgent` (Haiku, no tools, 10 turns); 9-node `curate-tests` blueprint; `bollard curate list-quality|run` CLI; MCP `bollard_curate_tests` (`dryRun` for score-only). Trust gate: `review` → human_gate, `silent` → direct apply; `auto-commit` deferred. `rewrite` action stages marker only (rewrite agent Phase 3+). +18 tests; 1489/6.
+- **Stage 6 docs Layer 1 (audit-docs):** `bollard audit-docs` — deterministic README/CLAUDE.md doc-stats audit (MCP tool count via `tools.ts` text scan, spec/ADR link coverage, test-count consistency). Zero LLM. CI step in `.github/workflows/bollard-verify.yml`. +18 tests; 1531/6.
 - **Parallel scope execution (Stage 5c):** After `static-checks`, `scope-extraction` runs `extract-signatures`, `assess-contract-risk`→`extract-contracts`, and `extract-behavioral-context` in parallel; `scope-chains` runs boundary, contract, and behavioral adversarial pipelines in parallel. `flattenBlueprintNodes()` expands groups for history and tests. Concurrent vitest invocations across scopes may contend on workspace caches — monitor on long runs.
 - **Run history records coder turn count:** `NodeResult.turns?: number` added to `blueprint.ts`; `NodeSummary.turns?: number` added to `run-history.ts`; `agent-handler.ts` passes `result.turns` through in the returned `NodeResult`; `history-record.ts` `extractNodeSummaries` wires `nr?.turns` into the `NodeSummary`; `history show` renders it as a dim `Nt` suffix on agentic nodes (e.g., `implement` → `22t`). Previously `AgentResult.turns` was computed but never persisted — self-test retrospectives required manual log inspection to determine how many coder turns ran. Now `bollard history show <run-id>` displays turn counts directly.
 - **Structured test failure output (`run_command`):** When a test command (`pnpm test`, `pnpm run test`, `pnpm exec vitest`, `vitest`, `npx vitest`) exits non-zero, `run_command` returns a compact structured summary instead of 100 truncated raw lines: failing suite paths, failing test names (from `FAIL …` and `×` lines), first error snippet (up to 3 error messages), and the pass/fail count. ANSI codes are stripped before parsing. Success path and non-test commands continue using the existing truncation behavior. This eliminates the "run test 10 times and create scratch files to isolate failures" pattern that appeared in the clamp() self-test.
@@ -408,7 +412,7 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** 9 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`, `behavioral-tester.md`
-- **Latest count (authoritative, 2026-06-05, post Stage 5e Phase 4b eval model resolution):** `1513` passed, `6` skipped (main `vitest run`; 1519 total). Skips: 6 LLM/local smoke tests (no key / opt-in). Adversarial suite `338` passed.
+- **Latest count (authoritative, 2026-06-07, post Stage 6 docs Layer 1 audit-docs):** `1531` passed, `6` skipped (main `vitest run`; 1537 total). Skips: 6 LLM/local smoke tests (no key / opt-in). Adversarial suite `338` passed.
 - **Adversarial suite** (`vitest.adversarial.config.ts`): `338` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c). +4 from Phase 16 test-surgery-loop guard (`run-command.adversarial.test.ts`).
 - **Vitest + Vite 8:** you may see `esbuild` option deprecated in favor of `oxc` — harmless until Vitest defaults align; pin Vite 7.x if you need a silent log.
 
@@ -705,6 +709,7 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 | `curate` (`list-quality`, `run`) | Test curation pipeline — score quality, propose promote/prune/rewrite, trust gate |
 | `history` [list\|show\|compare\|summary\|rebuild] | Run history — list/show/compare/summary/rebuild (`--json`, `--limit`, `--status`, `--blueprint`) |
 | `cost-baseline` (`tag`, `show`, `diff`) | Tagged cost baseline + regression check (`diff` exits 1 on fail; needs ≥ 3 successful runs since baseline) |
+| `audit-docs` | Deterministic README/CLAUDE.md doc-stats audit — MCP tool count, spec/ADR links, test-count consistency (exits 1 on failure) |
 
 All commands output colored, structured progress to stderr. JSON results go to stdout.
 
@@ -810,7 +815,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - `deriveAdversarialTestPath` supports Python, Go, Rust naming conventions and `scope: "boundary" | "contract" | "behavioral"`
 - Adversarial test lifecycle: `TestLifecycle` type, `resolveTestOutputDir`, `resolveContractTestOutputRel`, `writeTestMetadata`, `checkTestRunnerIntegration`
 - `ToolchainProfile.adversarial.boundary.lifecycle` — maps from legacy `toolchain.adversarial.persist` when root `adversarial:` is absent
-- `@bollard/mcp` package — MCP server with 16 tools (verify, plan, implement, eval, config, profile, contract, behavioral, probe_run, deploy_record, flag_set, drift_check, doctor, watch_status, history, history_summary)
+- `@bollard/mcp` package — MCP server with 17 tools (verify, plan, implement, eval, config, profile, contract, behavioral, probe_run, deploy_record, flag_set, drift_check, doctor, watch_status, history, history_summary, curate_tests)
 - `OpenAIProvider` — maps `LLMRequest` to OpenAI Chat Completions API with function calling
 - `GoogleProvider` — maps `LLMRequest` to Google Generative AI API with function declarations
 - `LLMClient` resolves `"openai"` and `"google"` providers via env vars
@@ -933,6 +938,8 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 ### Stage 5a Phase 6 (DONE) — Protocol Compliance CI:
 
 `bollard audit-protocol` — deterministic structural lint on generated IDE configs. Checks 5 structural elements (WHY section, DO NOT list with specific commands, BEFORE REPORTING COMPLETION self-check, `bollard_verify` reference in self-check, no raw-command encouragement) for both `cursor` and `claude-code` platforms. Exits 1 on any failure. `.github/workflows/protocol-compliance.yml` runs on push/PR when `generators/`, `prompts/`, or `packages/mcp/src/` change. Zero LLM cost — fully deterministic.
+
+`bollard audit-docs` — deterministic doc-stats audit (Stage 6 docs Layer 1). Four checks: README MCP tool count vs `packages/mcp/src/tools.ts` text scan, all `spec/NN-*.md` and `spec/adr/NNNN-*.md` files linked in README, README/CLAUDE.md test-count consistency. Exits 1 on failure. Step in `.github/workflows/bollard-verify.yml`. Zero LLM cost — fully deterministic. +18 tests (`audit-docs.test.ts`).
 
 ### Stage 5a Phase 4b (DONE) — Adversarial Test Promotion:
 

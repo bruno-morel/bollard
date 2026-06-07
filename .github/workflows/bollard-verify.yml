@@ -39,6 +39,11 @@ jobs:
           docker compose run --rm dev sh -c \
             'pnpm --filter @bollard/cli run start -- verify --quiet --ci-passed typecheck,lint'
 
+      - name: Bollard audit-docs
+        run: |
+          docker compose run --rm dev sh -c \
+            'pnpm --filter @bollard/cli run start -- audit-docs'
+
       - name: Upload verify result
         uses: actions/upload-artifact@v4
         if: failure()

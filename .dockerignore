@@ -3,3 +3,8 @@ dist
 *.tsbuildinfo
 .git
 .DS_Store
+.bollard
+*.log
+compose.behavioral.yml
+compose.verify.yml
+.stryker-tmp
