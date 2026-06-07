@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { compareToEvalBaseline, readEvalBaseline, writeEvalBaseline } from "../src/eval-baseline.js"
 import type { AgentEvalScore, EvalBaseline } from "../src/eval-baseline.js"
 
-function score(agent: string, passRate: number, thresholdPct = 10): AgentEvalScore {
-  return { agent, caseCount: 4, passRate, thresholdPct }
+function score(agent: string, passRate: number, thresholdPct = 10, model?: string): AgentEvalScore {
+  return { agent, caseCount: 4, passRate, thresholdPct, ...(model !== undefined ? { model } : {}) }
 }
 
 function baseline(scores: AgentEvalScore[]): EvalBaseline {
@@ -65,6 +65,18 @@ describe("writeEvalBaseline", () => {
     const got = await readEvalBaseline(file)
     expect(got).toEqual(b)
   })
+
+  it("round-trips per-score model fields", async () => {
+    const file = join(dir, "eval-baseline.json")
+    const b = baseline([
+      score("planner", 1, 10, "claude-haiku-4-5-20251001"),
+      score("coder", 1, 10, "claude-sonnet-4-6"),
+    ])
+    await writeEvalBaseline(file, b)
+    const got = await readEvalBaseline(file)
+    expect(got?.scores[0]?.model).toBe("claude-haiku-4-5-20251001")
+    expect(got?.scores[1]?.model).toBe("claude-sonnet-4-6")
+  })
 })
 
 describe("compareToEvalBaseline", () => {
@@ -113,5 +125,34 @@ describe("compareToEvalBaseline", () => {
     const current = [score("planner", 0.91, 10)]
     const cmp = compareToEvalBaseline(b, current)
     expect(cmp.verdict).toBe("pass")
+  })
+
+  it("passes when pass rates match but per-score models differ", () => {
+    const b = baseline([score("planner", 1, 10, "claude-sonnet-4-20250514")])
+    const current = [score("planner", 1, 10, "claude-haiku-4-5-20251001")]
+    const cmp = compareToEvalBaseline(b, current)
+    expect(cmp.verdict).toBe("pass")
+    expect(cmp.regressions).toHaveLength(0)
+  })
+
+  it("parses legacy baseline JSON without per-score model", async () => {
+    const dir = join(tmpdir(), `bollard-eb-legacy-${randomUUID()}`)
+    const file = join(dir, "eval-baseline.json")
+    const legacy = {
+      tag: "legacy",
+      timestamp: 1_700_000_000_000,
+      model: "claude-sonnet-4-20250514",
+      scores: [{ agent: "planner", caseCount: 4, passRate: 1, thresholdPct: 10 }],
+    }
+    await mkdir(dir, { recursive: true })
+    await writeFile(file, `${JSON.stringify(legacy, null, 2)}\n`, "utf-8")
+    try {
+      const got = await readEvalBaseline(file)
+      expect(got?.scores[0]?.model).toBeUndefined()
+      const cmp = compareToEvalBaseline(got as EvalBaseline, [score("planner", 1, 10)])
+      expect(cmp.verdict).toBe("pass")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

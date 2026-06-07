@@ -23,7 +23,7 @@ const { makeToolStream } = vi.hoisted(() => {
         id: "msg_1",
         type: "message" as const,
         role: "assistant" as const,
-        model: "claude-haiku-3-5-20241022",
+        model: "claude-haiku-4-5-20251001",
         content: [
           {
             type: "tool_use" as const,
@@ -76,7 +76,7 @@ describe("AnthropicProvider chatStream (mocked SDK)", () => {
       ],
       maxTokens: 100,
       temperature: 0,
-      model: "claude-haiku-3-5-20241022",
+      model: "claude-haiku-4-5-20251001",
     })) {
       events.push(ev)
     }

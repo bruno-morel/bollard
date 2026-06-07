@@ -1,38 +1,43 @@
 {
-  "tag": "stage5b-quality",
-  "timestamp": 1779155892601,
-  "model": "claude-sonnet-4-20250514",
+  "tag": "stage5b-sonnet-4-6",
+  "timestamp": 1780699651054,
+  "model": "claude-sonnet-4-6",
   "scores": [
     {
       "agent": "planner",
       "caseCount": 6,
       "passRate": 1,
-      "thresholdPct": 10
+      "thresholdPct": 10,
+      "model": "claude-haiku-4-5-20251001"
     },
     {
       "agent": "coder",
       "caseCount": 2,
       "passRate": 1,
-      "thresholdPct": 10
+      "thresholdPct": 10,
+      "model": "claude-sonnet-4-6"
     },
     {
       "agent": "boundary-tester",
       "caseCount": 4,
       "passRate": 1,
-      "thresholdPct": 10
+      "thresholdPct": 10,
+      "model": "claude-haiku-4-5-20251001"
     },
     {
       "agent": "contract-tester",
       "caseCount": 2,
       "passRate": 1,
-      "thresholdPct": 10
+      "thresholdPct": 10,
+      "model": "claude-haiku-4-5-20251001"
     },
     {
       "agent": "behavioral-tester",
       "caseCount": 3,
       "passRate": 1,
-      "thresholdPct": 10
+      "thresholdPct": 10,
+      "model": "claude-haiku-4-5-20251001"
     }
   ],
-  "notes": "All 5 agents at 100% after hardening brittle assertions"
+  "notes": "per-agent model resolution; coder sonnet-4-6, others haiku-4-5"
 }

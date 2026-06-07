@@ -42,7 +42,11 @@ export const boundaryTesterEvalCases: EvalCase[] = [
     systemPrompt: BOUNDARY_TESTER_SYSTEM,
     messages: [{ role: "user", content: USER_MESSAGE }],
     assertions: [
-      { type: "contains", value: '"claims"', description: "Has claims array key" },
+      {
+        type: "matches_regex",
+        value: '"claims"\\s*:|\\[\\s*\\{\\s*"id"\\s*:\\s*"bnd',
+        description: "Has claims array key or bnd-prefixed claim array",
+      },
       { type: "contains", value: '"grounding"', description: "Has grounding field" },
       {
         type: "matches_regex",

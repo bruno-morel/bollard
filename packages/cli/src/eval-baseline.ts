@@ -103,23 +103,21 @@ function parseTagArgs(rest: string[]): ParsedTagArgs {
   out.tag = out.positionalTail[0] ?? ""
   if (!out.tag) {
     log(
-      "Usage: bollard eval tag <tag-name> [--model <model>] [--threshold <pct>] [--notes <text>] [--work-dir <path>]",
+      "Usage: bollard eval tag <tag-name> [--model <model>] [--threshold <pct>] [--notes <text>] [--work-dir <path>]\n  --model forces all agents onto one model (A/B override; default resolves per agent via forAgent)",
     )
     process.exit(1)
   }
   return out
 }
 
-async function runAllAgentScores(
+export async function runAllAgentScores(
   workDir: string,
   modelOverride: string | undefined,
   thresholdPct: number,
 ): Promise<{ scores: AgentEvalScore[]; model: string }> {
   const { config } = await resolveConfig(undefined, workDir)
   const llmClient = new LLMClient(config)
-  const { provider, model: defaultModel } = llmClient.forAgent("default")
-  const model = modelOverride ?? defaultModel
-  const evalProvider = { chat: provider.chat.bind(provider) }
+  const { model: defaultModel } = llmClient.forAgent("default")
 
   const { loadEvalCases } = await import("@bollard/agents/src/eval-loader.js")
   const scores: AgentEvalScore[] = []
@@ -127,6 +125,10 @@ async function runAllAgentScores(
   for (const agent of EVAL_AGENTS) {
     const cases = loadEvalCases(agent)
     if (cases.length === 0) continue
+
+    const { provider, model: agentModel } = llmClient.forAgent(agent)
+    const model = modelOverride ?? agentModel
+    const evalProvider = { chat: provider.chat.bind(provider) }
 
     log(`${DIM}Running ${agent} (${String(cases.length)} case(s))...${RESET}`)
     const results = await runEvals(cases, evalProvider, { model, runs: 1 })
@@ -137,10 +139,11 @@ async function runAllAgentScores(
       caseCount: cases.length,
       passRate,
       thresholdPct,
+      model,
     })
   }
 
-  return { scores, model }
+  return { scores, model: modelOverride ?? defaultModel }
 }
 
 function printScoresTable(scores: AgentEvalScore[]): void {
@@ -148,8 +151,9 @@ function printScoresTable(scores: AgentEvalScore[]): void {
     `${padEndVisible(`${BOLD}Agent${RESET}`, 22)} ${padEndVisible(`${BOLD}Cases${RESET}`, 8)} ${padEndVisible(`${BOLD}Pass rate${RESET}`, 12)} ${BOLD}Threshold${RESET}`,
   )
   for (const s of scores) {
+    const agentLabel = s.model ? `${s.agent} ${DIM}${s.model}${RESET}` : s.agent
     log(
-      `${padEndVisible(s.agent, 22)} ${padEndVisible(String(s.caseCount), 8)} ${padEndVisible(formatPassRatePct(s.passRate), 12)} ${String(s.thresholdPct)}%`,
+      `${padEndVisible(agentLabel, 22)} ${padEndVisible(String(s.caseCount), 8)} ${padEndVisible(formatPassRatePct(s.passRate), 12)} ${String(s.thresholdPct)}%`,
     )
   }
   log("")
@@ -217,8 +221,23 @@ async function cmdDiff(workDir: string): Promise<void> {
 
   if (model !== baseline.model) {
     log(
-      `${YELLOW}Warning:${RESET} current model (${model}) differs from baseline model (${baseline.model})`,
+      `${YELLOW}Warning:${RESET} current default model (${model}) differs from baseline default model (${baseline.model})`,
     )
+    log("")
+  }
+
+  const baselineByAgentForModel = new Map(baseline.scores.map((s) => [s.agent, s]))
+  for (const cur of current) {
+    const base = baselineByAgentForModel.get(cur.agent)
+    if (!base?.model || !cur.model || base.model === cur.model) continue
+    log(`${YELLOW}Warning:${RESET} ${cur.agent} model changed (${base.model} → ${cur.model})`)
+  }
+  if (
+    current.some((cur) => {
+      const base = baselineByAgentForModel.get(cur.agent)
+      return base?.model && cur.model && base.model !== cur.model
+    })
+  ) {
     log("")
   }
 
@@ -284,7 +303,7 @@ export async function runEvalBaselineCommand(rest: string[], workDir: string): P
   }
 
   log(
-    "Usage: bollard eval <tag|show|diff> ... [--work-dir <path>]\n  tag <tag-name> [--model <model>] [--threshold <pct>] [--notes <text>]\n  show\n  diff",
+    "Usage: bollard eval <tag|show|diff> ... [--work-dir <path>]\n  tag <tag-name> [--model <model>] [--threshold <pct>] [--notes <text>]\n    --model forces all agents onto one model (A/B override; default resolves per agent)\n  show\n  diff",
   )
   process.exit(1)
 }

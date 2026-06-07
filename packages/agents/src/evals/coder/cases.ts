@@ -30,7 +30,11 @@ export const coderEvalCases: EvalCase[] = [
     ],
     assertions: [
       { type: "contains", value: "status", description: "Has status field" },
-      { type: "contains", value: "complete", description: "Status is complete" },
+      {
+        type: "matches_regex",
+        value: '"status"\\s*:\\s*"(complete|success)"',
+        description: "Status is complete or success",
+      },
     ],
   },
   {

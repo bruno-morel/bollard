@@ -6,6 +6,8 @@ export interface AgentEvalScore {
   caseCount: number
   passRate: number
   thresholdPct: number
+  /** Model that produced this score. Absent on baselines tagged before Phase 4b. */
+  model?: string
 }
 
 export interface EvalBaseline {

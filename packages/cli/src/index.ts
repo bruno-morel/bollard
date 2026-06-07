@@ -119,6 +119,13 @@ function createSimpleAgenticHandler(config: Awaited<ReturnType<typeof resolveCon
     const startMs = Date.now()
 
     const { provider, model } = llmClient.forAgent(agentRole)
+    const assignment = config.llm.agents?.[agentRole] ?? config.llm.default
+    ctx.log.info("agent_model_resolved", {
+      event: "agent_model_resolved",
+      role: agentRole,
+      provider: assignment.provider,
+      model,
+    })
     const response = await provider.chat({
       system: `You are the "${agentRole}" agent in a Bollard pipeline run.`,
       messages: [
@@ -142,6 +149,7 @@ function createSimpleAgenticHandler(config: Awaited<ReturnType<typeof resolveCon
       data: text,
       cost_usd: response.costUsd,
       duration_ms: Date.now() - startMs,
+      model,
     }
   }
 }
