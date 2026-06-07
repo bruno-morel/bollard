@@ -18,17 +18,17 @@ Bollard is **open source** (Apache 2.0), **API-first** (library → CLI + MCP se
 
 ## Status
 
-**Active development — Stages 0 through 5b complete.**
+**Active development — Stages 0 through 5d complete; Stage 5e (model selection) and Stage 6 (lifecycle takeover) in progress.**
 
 The full `implement-feature` pipeline (31 nodes) runs end-to-end on the Bollard codebase itself:
 plan → implement → static checks → boundary adversarial → contract adversarial → behavioral adversarial → mutation testing → semantic review → Docker-isolated verify → human gate → PR.
 
 **Languages supported:** TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin.
-**LLM providers:** Anthropic (Claude), OpenAI, Google (Gemini). Local inference via llama.cpp (opt-in).
+**LLM providers:** Anthropic (Claude), OpenAI, Google (Gemini). Local inference via llama.cpp (opt-in). Per-agent model assignment via a versioned model registry (Haiku for testers/planner/reviewer, Sonnet for the coder).
 **IDE integrations:** Claude Code, Cursor, Codex, Antigravity (via `bollard init --ide`).
-**MCP server:** 16 tools, 6 resource endpoints, 3 prompt templates.
+**MCP server:** 17 tools, 6 resource endpoints, 3 prompt templates.
 
-**Test suite:** 1305 passed / 6 skipped · Adversarial suite: 337 passed.
+**Test suite:** 1513 passed / 6 skipped · Adversarial suite: 338 passed.
 
 ---
 
@@ -76,8 +76,11 @@ docker compose run --rm dev --filter @bollard/cli run start -- doctor --history
 | `watch` | Continuous verification on file changes |
 | `history [show\|compare\|summary\|rebuild]` | Run history with filters |
 | `cost-baseline [tag\|show\|diff]` | Cost regression tracking |
-| `eval [agent]` | Run prompt eval sets |
-| `doctor [--history]` | Health check with run history diagnostics |
+| `eval [agent\|tag\|show\|diff]` | Run prompt eval sets; tag / compare prompt regression baselines |
+| `doctor [--history] [--risk-audit]` | Health check with run history, model registry, and scope-calibration diagnostics |
+| `curate [list-quality\|run]` | Test curation — score quality, promote / prune adversarial tests |
+| `ownership [list\|claim\|release\|status]` | Lifecycle ownership ledger (`.bollard/ownership.json`) |
+| `promote-test <path>` | Promote an adversarial test into the project test suite |
 | `probe / deploy / flag / drift` | Production feedback loop commands |
 
 ---
@@ -121,7 +124,8 @@ All specs live in [`spec/`](spec/):
 | [06 — Toolchain Profiles](spec/06-toolchain-profiles.md) | Language-agnostic verification: `ToolchainProfile`, per-language detection, Docker isolation, adversarial lifecycle |
 | [07 — Adversarial Scopes](spec/07-adversarial-scopes.md) | Boundary / contract / behavioral scopes × correctness / security / performance / resilience concerns — **primary forward roadmap** |
 | [08 — Contract Grounding](spec/08-contract-tester-grounding.md) | Contract-tester grounding architecture: deterministic filters, corpus construction, claim lifecycle |
-| [ROADMAP](spec/ROADMAP.md) | Forward roadmap (Stages 5c → 6+), deferred features |
+| [09 — Model Selection](spec/09-model-selection.md) | Capability-based model selection: versioned model registry, per-role requirements, deterministic resolver |
+| [ROADMAP](spec/ROADMAP.md) | Forward roadmap (Stages 5e → 6+), deferred features |
 
 **ADRs** in [`spec/adr/`](spec/adr/):
 
@@ -131,6 +135,7 @@ All specs live in [`spec/`](spec/):
 | [0002](spec/adr/0002-syn-helper-for-rust-extraction.md) | syn-based Rust extractor helper binary over regex or LLM fallback |
 | [0003](spec/adr/0003-agent-protocol-compliance.md) | WHY + DO NOT + SELF-CHECK structure for all agent protocol prompts |
 | [0004](spec/adr/0004-determinism-local-frontier-tiers.md) | Determinism-first → local inference → frontier: token economy tier model |
+| [0005](spec/adr/0005-capability-based-model-selection.md) | Capability-based model selection via a versioned model registry; defaults derived, not hardcoded |
 
 ---
 
