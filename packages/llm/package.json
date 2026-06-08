@@ -8,9 +8,9 @@
     "./src/*": "./src/*"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^0.102.0",
     "@bollard/engine": "workspace:*",
     "@google/generative-ai": "^0.24.0",
-    "openai": "^4.85.0"
+    "openai": "^6.42.0"
   }
 }
