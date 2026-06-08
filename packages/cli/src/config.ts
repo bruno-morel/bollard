@@ -93,7 +93,7 @@ const toolchainYamlSchema = z
 const observeSlotSchema = z
   .object({
     provider: z.string().optional(),
-    config: z.record(z.unknown()).optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
   })
   .strict()
 
@@ -216,8 +216,10 @@ const bollardYamlSchema = z
         default: z
           .object({ provider: z.string().optional(), model: z.string().optional() })
           .optional(),
-        agents: z.record(z.object({ provider: z.string(), model: z.string() })).optional(),
-        agentBudgets: z.record(z.number().positive()).optional(),
+        agents: z
+          .record(z.string(), z.object({ provider: z.string(), model: z.string() }))
+          .optional(),
+        agentBudgets: z.record(z.string(), z.number().positive()).optional(),
       })
       .optional(),
     agent: z
@@ -226,7 +228,7 @@ const bollardYamlSchema = z
         max_duration_minutes: z.number().optional(),
       })
       .optional(),
-    risk: z.record(z.unknown()).optional(),
+    risk: z.record(z.string(), z.unknown()).optional(),
     toolchain: toolchainYamlSchema.optional(),
     adversarial: rootAdversarialYamlSchema.optional(),
     mutation: z
