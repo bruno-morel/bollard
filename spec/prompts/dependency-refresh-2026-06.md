@@ -42,7 +42,7 @@ Bring every dependency to its latest **stable** version: the pnpm workspace, the
 ## Known traps — read first, these are paid-for lessons
 
 1. **pnpm 11 rejects this repo's lockfile overrides** — that's why `packageManager` is pinned to `pnpm@10.33.0` (in root `package.json` AND the Dockerfiles). Attempt the latest pnpm in Step 6; if `pnpm install --frozen-lockfile` fails on overrides, stay on latest 10.x and note it in DEFERRED.
-2. **`pnpm.overrides` for `vite >= 7.3.2`** exists to clear a GHSA. After the sweep, check whether the resolved vite makes the override redundant — remove it only if `pnpm audit --audit-level=high` stays clean without it.
+2. **`pnpm.overrides` is a mixed bag** — 8 GHSA security floors (`vite`, `hono`, `@hono/node-server`, `fast-uri`, `postcss`, `ip-address`, `brace-expansion`, `qs`) plus a `vitest@<4.1.0 → >=4.1.0` self-bump for stale vitest 3.x transitives. After the sweep and majors land, audit **every** entry in Step 6.5: remove only if the naturally-resolved graph already satisfies the constraint **and** `pnpm audit --audit-level=high` stays clean without it. The vitest override is dead weight once manifests say `^4.1.x`. Keep any override still doing real work; commit message must note why each survivor stays.
 3. **Vitest ↔ Stryker coupling:** `@stryker-mutator/core` + `@stryker-mutator/vitest-runner` move together, and `StrykerProvider` invokes `node node_modules/@stryker-mutator/core/bin/stryker.js run` with `plugins: ["@stryker-mutator/vitest-runner"]` in the generated config (pnpm hoisting workaround). Any Stryker major must be validated with the **live Docker smoke** (Step 7), not just unit tests.
 4. **zod 3 → 4:** check `@modelcontextprotocol/sdk`'s zod peer range FIRST (`pnpm why zod`; the MCP SDK historically requires zod 3). If the latest MCP SDK still wants zod 3, defer zod 4 — do not run two zod majors in the same tree.
 5. **`@google/generative-ai` is deprecated upstream** in favor of `@google/genai`. This is a provider rewrite of `packages/llm/src/providers/google.ts` (chat + chatStream + function declarations), not a version bump. Do it as its own commit; validate with the live smoke test in `google.test.ts` (skips without `GOOGLE_API_KEY` — run it with the key if available, otherwise note partial validation in DEFERRED).
@@ -68,7 +68,7 @@ Bring every dependency to its latest **stable** version: the pnpm workspace, the
 - **Step 3 — tooling majors**, one commit each, in this order: `typescript` → `tsx` → `@types/node` → vitest/stryker pair (only if a major exists).
 - **Step 4 — Biome 2**, alone (trap 8).
 - **Step 5 — library majors**, one commit each: `fast-check` → `@modelcontextprotocol/sdk` → `zod` (trap 4 gate) → `@anthropic-ai/sdk` (trap 6) → `openai` → `@google/genai` migration (trap 5) → `better-sqlite3` (trap 7) → `yaml`/`proper-lockfile` if majors exist.
-- **Step 6 — runtimes & meta:** Node base images + CLAUDE.md one-liner (trap 9) → go/Cargo/pom toolchains + helper rebuild (trap 10) → GitHub Actions (trap 11) → pnpm pin attempt (trap 1) → re-evaluate vite override (trap 2). `docker compose down -v` if volumes go stale.
+- **Step 6 — runtimes & meta:** Node base images + CLAUDE.md one-liner (trap 9) → go/Cargo/pom toolchains + helper rebuild (trap 10) → GitHub Actions (trap 11) → pnpm pin attempt (trap 1) → **Step 6.5: `pnpm.overrides` prune audit** — try removing each of the 9 overrides individually; gate each on lock resolving cleanly + `pnpm audit --audit-level=high` (trap 2). `docker compose down -v` if volumes go stale.
 
 ## Step 7 — Final full gate
 
@@ -85,6 +85,23 @@ Bring every dependency to its latest **stable** version: the pnpm workspace, the
 
 | Source | Current | Latest | Action |
 |--------|---------|--------|--------|
+| Baseline tests | 1531 pass / 6 skip | — | Floor recorded 2026-06-07 |
+| Dependabot | 5 open (1 critical vitest, 4 moderate hono) | 0 | Step 1: hono ≥4.12.21, vitest ≥4.1.0 |
+| pnpm | 10.33.0 | 11.x | Step 6 attempt; defer if overrides fail |
+| Node image | node:22-slim | 24 LTS | Step 6 |
+| TypeScript | 5.9.3 (manifest ^5.7.3) | 6.0.3 | Step 3 major |
+| Vitest | 4.1.8 (manifest ^3.1.1) | 4.x | Step 1 + manifest align Step 2 |
+| Biome | 1.9.4 | 2.4.16 | Step 4 major |
+| Stryker | 9.6.0 | 9.6.1 | Step 2 patch |
+| @anthropic-ai/sdk | 0.39.0 | 0.102.0 | Step 5 major |
+| openai | 4.104.0 | 6.42.0 | Step 5 major |
+| @google/generative-ai | 0.24.0 | @google/genai | Step 5 migration |
+| MCP SDK | 1.29.0 | latest 1.x | Step 2/5 |
+| zod | 3.25.76 | 4.4.3 | Step 5 (after MCP) |
+| fast-check | 3.23.2 | 4.8.0 | Step 5 major |
+| better-sqlite3 | 12.9.0 | 12.10.0 | Step 2/5 |
+| hono (transitive) | 4.12.18 | ≥4.12.21 | Step 1 override bump |
+| pnpm.overrides | 9 entries | prune | Step 6.5 |
 
 ## DEFERRED (fill as needed — reason required)
 
