@@ -1,6 +1,6 @@
 import type { Dirent } from "node:fs"
 import { existsSync } from "node:fs"
-import { readFile, readdir } from "node:fs/promises"
+import { readdir, readFile } from "node:fs/promises"
 import { join, relative, resolve } from "node:path"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
 import { JavaParserExtractor } from "../extractors/java.js"

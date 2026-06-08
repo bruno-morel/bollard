@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto"
 import { mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { FileRunHistoryStore, RUN_HISTORY_SCHEMA_VERSION } from "@bollard/engine/src/run-history.js"
 import type { RunRecord } from "@bollard/engine/src/run-history.js"
+import { FileRunHistoryStore, RUN_HISTORY_SCHEMA_VERSION } from "@bollard/engine/src/run-history.js"
 import { afterEach, describe, expect, it } from "vitest"
 import {
   checkHistoryHealth,

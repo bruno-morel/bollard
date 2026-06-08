@@ -1,5 +1,4 @@
 import { BollardError } from "@bollard/engine/src/errors.js"
-import { GoogleGenerativeAI } from "@google/generative-ai"
 import type {
   Content,
   FunctionDeclaration,
@@ -8,6 +7,7 @@ import type {
   GenerativeModel,
   Part,
 } from "@google/generative-ai"
+import { GoogleGenerativeAI } from "@google/generative-ai"
 import { estimateCostForModel } from "../model-registry.js"
 import type {
   LLMContentBlock,

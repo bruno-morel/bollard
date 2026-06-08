@@ -18,7 +18,7 @@ import { isBinaryAvailable } from "@bollard/llm/src/providers/local.js"
 import type { ObserveProviderConfig } from "@bollard/observe/src/providers/types.js"
 import { parse as parseYaml } from "yaml"
 import { z } from "zod"
-import { type RootAdversarialYaml, applyRootAdversarialYaml } from "./adversarial-yaml.js"
+import { applyRootAdversarialYaml, type RootAdversarialYaml } from "./adversarial-yaml.js"
 
 export type ConfigSource = "default" | "auto-detected" | "env" | "file" | "cli"
 

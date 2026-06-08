@@ -8,9 +8,9 @@ import { promisify } from "node:util"
 import { describe, expect, it } from "vitest"
 import { BollardError } from "../src/errors.js"
 import {
+  detectManagedFileConflicts,
   FileOwnershipStore,
   OWNERSHIP_SCHEMA_VERSION,
-  detectManagedFileConflicts,
 } from "../src/ownership.js"
 
 const execFileAsync = promisify(execFile)

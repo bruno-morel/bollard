@@ -2,8 +2,8 @@ import { BollardError } from "@bollard/engine/src/errors.js"
 import type OpenAI from "openai"
 import { describe, expect, it } from "vitest"
 import {
-  OpenAIProvider,
   buildOpenAIMessages,
+  OpenAIProvider,
   openAIChunksToStreamEvents,
 } from "../src/providers/openai.js"
 import type { LLMStreamEvent } from "../src/types.js"

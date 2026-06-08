@@ -2,9 +2,9 @@ import { readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { createInterface } from "node:readline"
 import {
+  applyStagedCurationChanges,
   CURATION_PLAN_FILE,
   type StagedCurationPlan,
-  applyStagedCurationChanges,
 } from "@bollard/blueprints/src/curation-helpers.js"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"

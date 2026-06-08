@@ -5,10 +5,10 @@ import type { BollardConfig } from "@bollard/engine/src/context.js"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { LLMClient } from "../src/client.js"
 import {
-  LocalProvider,
-  MODEL_FILENAME,
   checkRamFloor,
   isBinaryAvailable,
+  LocalProvider,
+  MODEL_FILENAME,
   resolveModelPath,
   serializePrompt,
 } from "../src/providers/local.js"

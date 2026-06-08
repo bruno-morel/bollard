@@ -4,10 +4,10 @@ import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { LocalModelsConfig } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import {
-  DEFAULT_MODEL_ID,
-  LocalProvider,
   checkRamFloor,
+  DEFAULT_MODEL_ID,
   isBinaryAvailable,
+  LocalProvider,
 } from "@bollard/llm/src/providers/local.js"
 
 const execFileAsync = promisify(execFile)

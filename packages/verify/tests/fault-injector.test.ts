@@ -10,7 +10,7 @@ vi.mock("node:child_process", async (importOriginal) => {
   }
 })
 
-import { type FaultSpec, createFaultInjector } from "../src/fault-injector.js"
+import { createFaultInjector, type FaultSpec } from "../src/fault-injector.js"
 
 describe("createFaultInjector", () => {
   beforeEach(() => {

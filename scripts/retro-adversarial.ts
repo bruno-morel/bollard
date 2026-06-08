@@ -9,7 +9,7 @@
  *   docker compose run --rm --entrypoint sh dev -c "pnpm exec tsx scripts/retro-adversarial.ts"
  */
 
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { basename, dirname, relative, resolve } from "node:path"
 import { createBoundaryTesterAgent } from "@bollard/agents/src/boundary-tester.js"
 import { executeAgent } from "@bollard/agents/src/executor.js"
@@ -250,7 +250,7 @@ async function main() {
       continue
     }
 
-    const moduleName = basename(filePath, ".ts")
+    const _moduleName = basename(filePath, ".ts")
     const testPath = filePath.replace(/\/src\//, "/tests/").replace(/\.ts$/, ".adversarial.test.ts")
     const importRel = relative(dirname(testPath), filePath).replace(/\.ts$/, ".js")
     const importPath = importRel.startsWith(".") ? importRel : `./${importRel}`

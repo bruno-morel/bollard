@@ -1,3 +1,4 @@
 {
-  "linter": { "enabled": true }
+	"root": false,
+	"linter": { "enabled": true }
 }

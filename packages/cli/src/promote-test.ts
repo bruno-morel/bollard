@@ -30,7 +30,7 @@ export function rewriteImportsForPromotion(
   const fromDir = dirname(resolve(fromPath))
   const toDir = dirname(resolve(toPath))
 
-  return content.replace(IMPORT_FROM_RE, (full, quote: string, specifier: string) => {
+  return content.replace(IMPORT_FROM_RE, (full, _quote: string, specifier: string) => {
     if (!specifier.startsWith(".")) {
       return full
     }

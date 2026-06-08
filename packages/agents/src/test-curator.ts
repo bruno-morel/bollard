@@ -8,7 +8,7 @@ import type { AgentDefinition } from "./types.js"
 const THIS_DIR = dirname(fileURLToPath(import.meta.url))
 const PROMPT_PATH = resolve(THIS_DIR, "../prompts/test-curator.md")
 
-const FALLBACK_PROFILE: ToolchainProfile = {
+const _FALLBACK_PROFILE: ToolchainProfile = {
   language: "typescript",
   checks: {},
   sourcePatterns: [],

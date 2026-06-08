@@ -5,11 +5,11 @@ import { defaultAdversarialConfig, withBoundaryOverrides } from "@bollard/detect
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { describe, expect, it } from "vitest"
 import {
-  type TestMetadata,
   checkTestRunnerIntegration,
   resolveContractTestOutputRel,
   resolveLifecycle,
   resolveTestOutputDir,
+  type TestMetadata,
   writeTestMetadata,
 } from "../src/test-lifecycle.js"
 

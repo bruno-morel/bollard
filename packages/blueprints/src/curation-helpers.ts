@@ -1,7 +1,7 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises"
-import { basename, dirname, extname, join, relative, resolve } from "node:path"
-import { derivePromotionDestPath } from "@bollard/engine/src/test-quality.js"
+import { dirname, extname, join, relative, resolve } from "node:path"
 import type { CurationCandidate } from "@bollard/engine/src/test-quality.js"
+import { derivePromotionDestPath } from "@bollard/engine/src/test-quality.js"
 
 export const CURATION_STAGING_DIR = ".bollard/curation/tests"
 export const CURATION_PLAN_FILE = join(CURATION_STAGING_DIR, "plan.json")
@@ -40,7 +40,7 @@ export function rewriteImportsForPromotion(
   const fromDir = dirname(resolve(fromPath))
   const toDir = dirname(resolve(toPath))
 
-  return content.replace(IMPORT_FROM_RE, (full, quote: string, specifier: string) => {
+  return content.replace(IMPORT_FROM_RE, (full, _quote: string, specifier: string) => {
     if (!specifier.startsWith(".")) {
       return full
     }

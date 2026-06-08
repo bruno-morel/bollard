@@ -36,7 +36,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 import { flattenBlueprintNodes } from "@bollard/engine/src/blueprint.js"
 import { createImplementFeatureBlueprint } from "../src/implement-feature.js"
 
-function makeWriteTestsCtx(tempDir: string): PipelineContext {
+function makeWriteTestsCtx(_tempDir: string): PipelineContext {
   const scopeConfig = (enabled: boolean) => ({
     enabled,
     integration: "independent" as const,

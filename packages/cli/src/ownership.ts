@@ -1,7 +1,7 @@
 import {
+  detectManagedFileConflicts,
   FileOwnershipStore,
   type ManagedFileEntry,
-  detectManagedFileConflicts,
 } from "@bollard/engine/src/ownership.js"
 import { BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW } from "./terminal-styles.js"
 

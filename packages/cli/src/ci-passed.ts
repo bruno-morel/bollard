@@ -1,6 +1,6 @@
 import { access } from "node:fs/promises"
 import { homedir } from "node:os"
-import { join, resolve } from "node:path"
+import { resolve } from "node:path"
 import { detectCIEnvironment, readJUnitResults } from "@bollard/verify/src/ci-environment.js"
 
 export function parseCiPassed(args: string[]): string[] {

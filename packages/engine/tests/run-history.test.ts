@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { RunRecord } from "../src/run-history.js"
 import {
   FileRunHistoryStore,
-  RUN_HISTORY_SCHEMA_VERSION,
   parseHistoryLine,
+  RUN_HISTORY_SCHEMA_VERSION,
 } from "../src/run-history.js"
 
 function minimalRun(overrides: Partial<RunRecord> & Pick<RunRecord, "runId">): RunRecord {

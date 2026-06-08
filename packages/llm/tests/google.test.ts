@@ -3,9 +3,9 @@ import type { GenerateContentResponse } from "@google/generative-ai"
 import { GoogleGenerativeAI } from "@google/generative-ai"
 import { describe, expect, it } from "vitest"
 import {
-  GoogleProvider,
   buildGoogleContents,
   buildGoogleToolsConfig,
+  GoogleProvider,
   getGoogleModel,
   googleChunksToStreamEvents,
 } from "../src/providers/google.js"

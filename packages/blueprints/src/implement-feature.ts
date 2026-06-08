@@ -16,31 +16,31 @@ import { extractProbes } from "@bollard/observe/src/probe-extractor.js"
 import type { BehavioralContext } from "@bollard/verify/src/behavioral-extractor.js"
 import { buildBehavioralContext } from "@bollard/verify/src/behavioral-extractor.js"
 import { behavioralContextToCorpus } from "@bollard/verify/src/behavioral-grounding.js"
-import { extractCodeMetrics } from "@bollard/verify/src/code-metrics-runner.js"
 import { commandOnPath, runK6LoadTest } from "@bollard/verify/src/code-metrics.js"
+import { extractCodeMetrics } from "@bollard/verify/src/code-metrics-runner.js"
 import {
   generateBehavioralCompose,
   generateVerifyCompose,
 } from "@bollard/verify/src/compose-generator.js"
-import { MAX_PRELOAD_FILES, expandAffectedFiles } from "@bollard/verify/src/context-expansion.js"
+import { expandAffectedFiles, MAX_PRELOAD_FILES } from "@bollard/verify/src/context-expansion.js"
 import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
 import { buildContractContext } from "@bollard/verify/src/contract-extractor.js"
 import {
   type ClaimRecord,
   type ContractCorpus,
-  type EnabledConcerns,
   contractContextToCorpus,
+  type EnabledConcerns,
   parseClaimDocument,
   verifyClaimGrounding,
 } from "@bollard/verify/src/contract-grounding.js"
 import { runTests } from "@bollard/verify/src/dynamic.js"
 import { runMutationTesting } from "@bollard/verify/src/mutation.js"
+import type { ReviewDocument, ReviewFinding } from "@bollard/verify/src/review-grounding.js"
 import {
   buildReviewCorpus,
   parseReviewDocument,
   verifyReviewGrounding,
 } from "@bollard/verify/src/review-grounding.js"
-import type { ReviewDocument, ReviewFinding } from "@bollard/verify/src/review-grounding.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
 import { extractPrivateIdentifiers, getExtractor } from "@bollard/verify/src/type-extractor.js"
 import { assembleTestFile } from "./test-assembler.js"
@@ -204,7 +204,7 @@ function isRustExportChange(content: string): boolean {
 function isJavaExportChange(content: string): boolean {
   const trimmed = content.trimStart()
   if (/^public\s+(class|interface|enum|record|@interface)\s/.test(trimmed)) return true
-  if (/^public\s+[\w<>,\s\[\]]+\s+\w+\s*\(/.test(trimmed)) return true
+  if (/^public\s+[\w<>,\s[\]]+\s+\w+\s*\(/.test(trimmed)) return true
   if (/^public\s+static\s+final\s+/.test(trimmed)) return true
   return false
 }

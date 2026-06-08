@@ -561,10 +561,10 @@ export class FileRunHistoryStore implements RunHistoryStore {
       all.find((r) => (r.type === "run" || r.type === "verify") && r.runId === id)
     const a = find(runIdA)
     const b = find(runIdB)
-    if (!a || a.type !== "run") {
+    if (a?.type !== "run") {
       throw new Error(`Run history compare: "${runIdA}" is not a pipeline run record`)
     }
-    if (!b || b.type !== "run") {
+    if (b?.type !== "run") {
       throw new Error(`Run history compare: "${runIdB}" is not a pipeline run record`)
     }
     const runA = a

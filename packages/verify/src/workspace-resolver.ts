@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from "node:fs/promises"
+import { readdir, readFile, stat } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 
 /** Resolve `absPath` to an existing file, trying `.ts` / `.tsx` / `.d.ts` when the path ends in `.js` or has no extension. */

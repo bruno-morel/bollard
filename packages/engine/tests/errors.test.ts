@@ -1,7 +1,7 @@
 import fc from "fast-check"
 import { describe, expect, it } from "vitest"
-import { BollardError } from "../src/errors.js"
 import type { BollardErrorCode } from "../src/errors.js"
+import { BollardError } from "../src/errors.js"
 
 const ALL_CODES: BollardErrorCode[] = [
   "LLM_TIMEOUT",

@@ -1,7 +1,7 @@
 import { mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { FileFlagProvider, emergencyKillFlag } from "../src/flag-manager.js"
+import { emergencyKillFlag, FileFlagProvider } from "../src/flag-manager.js"
 
 describe("FileFlagProvider", () => {
   it("set get list roundtrip", async () => {

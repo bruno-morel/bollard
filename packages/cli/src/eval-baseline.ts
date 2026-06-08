@@ -1,8 +1,8 @@
 import { join } from "node:path"
 import {
   type AgentEvalScore,
-  type EvalBaseline,
   compareToEvalBaseline,
+  type EvalBaseline,
   readEvalBaseline,
   writeEvalBaseline,
 } from "@bollard/engine/src/eval-baseline.js"

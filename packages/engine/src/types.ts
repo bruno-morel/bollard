@@ -1,8 +1,33 @@
-export type { BollardErrorCode } from "./errors.js"
-export { BollardError } from "./errors.js"
-export { CostTracker } from "./cost-tracker.js"
+export type {
+  Blueprint,
+  BlueprintBranch,
+  BlueprintEntry,
+  BlueprintNode,
+  BlueprintNodeGroup,
+  NodeResult,
+  NodeResultError,
+  NodeType,
+  ProbeAssertion,
+  ProbeDefinition,
+} from "./blueprint.js"
+export {
+  countBlueprintSteps,
+  flattenBlueprintNodes,
+  isParallelGroup,
+} from "./blueprint.js"
+export type {
+  BollardConfig,
+  LocalModelsConfig,
+  LogEntry,
+  LogLevel,
+  PipelineContext,
+} from "./context.js"
+export { createContext } from "./context.js"
 export type { CostBaseline, CostBaselineComparison } from "./cost-baseline.js"
 export { compareToBaseline, readBaseline, writeBaseline } from "./cost-baseline.js"
+export { CostTracker } from "./cost-tracker.js"
+export type { BollardErrorCode } from "./errors.js"
+export { BollardError } from "./errors.js"
 export type {
   AgentEvalScore,
   EvalBaseline,
@@ -14,100 +39,75 @@ export {
   writeEvalBaseline,
 } from "./eval-baseline.js"
 export type {
-  NodeType,
-  NodeResultError,
-  NodeResult,
-  BlueprintNode,
-  BlueprintBranch,
-  BlueprintNodeGroup,
-  BlueprintEntry,
-  Blueprint,
-  ProbeAssertion,
-  ProbeDefinition,
-} from "./blueprint.js"
-export {
-  isParallelGroup,
-  flattenBlueprintNodes,
-  countBlueprintSteps,
-} from "./blueprint.js"
+  EvalAssertion,
+  EvalAssertionResult,
+  EvalAssertionType,
+  EvalCase,
+  EvalMessage,
+  EvalOptions,
+  EvalProvider,
+  EvalResponse,
+  EvalRunDetail,
+  EvalRunResult,
+  EvalTool,
+} from "./eval-runner.js"
+export { runEvals } from "./eval-runner.js"
 export type {
-  LogLevel,
-  LogEntry,
-  PipelineContext,
-  BollardConfig,
-  LocalModelsConfig,
-} from "./context.js"
-export { createContext } from "./context.js"
-export type {
-  RunResult,
-  AgenticHandler,
-  HumanGateHandler,
-  ProgressEvent,
-  ProgressCallback,
-  RunBlueprintCompleteCallback,
-} from "./runner.js"
-export { runBlueprint } from "./runner.js"
-export type {
-  NodeSummary,
-  ScopeResult,
-  RunRecord,
-  RunSummary,
-  VerifyRecordSource,
-  VerifyRecord,
-  HistoryRecord,
-  HistoryFilter,
-  SummaryFilter,
-  RunComparison,
-  RunHistoryStore,
-  ScopeCalibrationEntry,
-  RiskAuditReport,
-  ConcernYieldEntry,
-  ConcernYieldReport,
-} from "./run-history.js"
-export {
-  RUN_HISTORY_SCHEMA_VERSION,
-  parseHistoryLine,
-  FileRunHistoryStore,
-  computeScopeCalibration,
-  computeConcernYield,
-} from "./run-history.js"
-export type {
+  ConflictReport,
   ManagedFileEntry,
   TestOwnershipManifest,
-  ConflictReport,
 } from "./ownership.js"
 export {
-  OWNERSHIP_SCHEMA_VERSION,
-  FileOwnershipStore,
   detectManagedFileConflicts,
+  FileOwnershipStore,
+  OWNERSHIP_SCHEMA_VERSION,
 } from "./ownership.js"
-export type { TestFingerprint, PromotedTest, PromotedManifest } from "./test-fingerprint.js"
 export type {
-  TestQualityScore,
+  ConcernYieldEntry,
+  ConcernYieldReport,
+  HistoryFilter,
+  HistoryRecord,
+  NodeSummary,
+  RiskAuditReport,
+  RunComparison,
+  RunHistoryStore,
+  RunRecord,
+  RunSummary,
+  ScopeCalibrationEntry,
+  ScopeResult,
+  SummaryFilter,
+  VerifyRecord,
+  VerifyRecordSource,
+} from "./run-history.js"
+export {
+  computeConcernYield,
+  computeScopeCalibration,
+  FileRunHistoryStore,
+  parseHistoryLine,
+  RUN_HISTORY_SCHEMA_VERSION,
+} from "./run-history.js"
+export type {
+  AgenticHandler,
+  HumanGateHandler,
+  ProgressCallback,
+  ProgressEvent,
+  RunBlueprintCompleteCallback,
+  RunResult,
+} from "./runner.js"
+export { runBlueprint } from "./runner.js"
+export type { PromotedManifest, PromotedTest, TestFingerprint } from "./test-fingerprint.js"
+export type {
   CurationCandidate,
-  CurationPlan,
   CurationGroundingResult,
+  CurationPlan,
+  TestQualityScore,
 } from "./test-quality.js"
 export {
   assessTestQuality,
+  buildCurationCorpus,
+  derivePromotionDestPath,
+  parseCurationPlan,
   promoteAdversarialTests,
   pruneRedundantTests,
-  buildCurationCorpus,
   verifyCurationGrounding,
-  parseCurationPlan,
-  derivePromotionDestPath,
 } from "./test-quality.js"
-export type {
-  EvalCase,
-  EvalAssertion,
-  EvalAssertionType,
-  EvalAssertionResult,
-  EvalRunResult,
-  EvalRunDetail,
-  EvalOptions,
-  EvalProvider,
-  EvalMessage,
-  EvalTool,
-  EvalResponse,
-} from "./eval-runner.js"
-export { runEvals } from "./eval-runner.js"

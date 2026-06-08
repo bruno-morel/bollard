@@ -1,5 +1,5 @@
 import type { Dirent } from "node:fs"
-import { readFile, readdir, stat } from "node:fs/promises"
+import { readdir, readFile, stat } from "node:fs/promises"
 import { basename, dirname, join, relative, resolve } from "node:path"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
 import { PythonAstExtractor } from "../extractors/python.js"

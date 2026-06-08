@@ -1,5 +1,5 @@
 import { access, readFile } from "node:fs/promises"
-import { join, resolve } from "node:path"
+import { resolve } from "node:path"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import type { ScopeResult } from "@bollard/engine/src/run-history.js"
 import {

@@ -122,7 +122,7 @@ async function cmdTag(workDir: string, pos: string[]): Promise<void> {
   let rec: RunRecord | undefined
   if (parsed.runId) {
     const found = await store.findByRunId(parsed.runId)
-    if (!found || found.type !== "run") {
+    if (found?.type !== "run") {
       log(`${RED}No pipeline run found for run id:${RESET} ${parsed.runId}`)
       process.exit(1)
     }
@@ -135,7 +135,7 @@ async function cmdTag(workDir: string, pos: string[]): Promise<void> {
       offset: 0,
     })
     const first = rows[0]
-    if (!first || first.type !== "run") {
+    if (first?.type !== "run") {
       log(`${RED}No successful implement-feature run found in history.${RESET}`)
       process.exit(1)
     }

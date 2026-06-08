@@ -207,7 +207,7 @@ describe("createImplementFeatureBlueprint", () => {
   })
 })
 
-function makeWriteTestsCtx(workDir: string): PipelineContext {
+function makeWriteTestsCtx(_workDir: string): PipelineContext {
   const scopeConfig = (enabled: boolean) => ({
     enabled,
     integration: "independent" as const,

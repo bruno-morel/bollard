@@ -1,5 +1,5 @@
 import type { Dirent } from "node:fs"
-import { readFile, readdir } from "node:fs/promises"
+import { readdir, readFile } from "node:fs/promises"
 import { join, relative, resolve } from "node:path"
 import type { LanguageId, ToolchainProfile } from "@bollard/detect/src/types.js"
 import { RustSynExtractor } from "../extractors/rust.js"
@@ -32,7 +32,7 @@ function parseCargoWorkspaceMembers(content: string): string[] | undefined {
   const lines = content.split("\n")
   let inWorkspace = false
   let inMembers = false
-  const members: string[] = []
+  const _members: string[] = []
   let memberBuf = ""
 
   for (const line of lines) {

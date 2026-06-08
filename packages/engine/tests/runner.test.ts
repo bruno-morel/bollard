@@ -6,7 +6,6 @@ import {
   type BlueprintEntry,
   type BlueprintNode,
   type BlueprintNodeGroup,
-  type NodeResult,
   countBlueprintSteps,
   flattenBlueprintNodes,
 } from "../src/blueprint.js"

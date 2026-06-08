@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import { _generateTempRunId, _slugify, createContext } from "../src/context.js"
 import type { BollardConfig } from "../src/context.js"
+import { _generateTempRunId, _slugify, createContext } from "../src/context.js"
 
 const TEST_CONFIG: BollardConfig = {
   llm: { default: { provider: "mock", model: "test-model" } },

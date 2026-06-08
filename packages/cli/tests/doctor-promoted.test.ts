@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { type HistoryHealth, checkHistoryHealth, formatDoctorReport } from "../src/doctor.js"
+import { checkHistoryHealth, formatDoctorReport, type HistoryHealth } from "../src/doctor.js"
 
 let tempDir: string | undefined
 

@@ -2,8 +2,8 @@ import { watch } from "node:fs"
 import { resolve } from "node:path"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import { FileRunHistoryStore } from "@bollard/engine/src/run-history.js"
-import { runStaticChecks } from "@bollard/verify/src/static.js"
 import type { StaticCheckResult } from "@bollard/verify/src/static.js"
+import { runStaticChecks } from "@bollard/verify/src/static.js"
 import { buildVerifyRecord } from "./history-record.js"
 import { BOLD, DIM, GREEN, RED, RESET, YELLOW } from "./terminal-styles.js"
 
@@ -225,7 +225,7 @@ export async function runWatch(options: WatchOptions): Promise<void> {
   }
 
   try {
-    sigintWatcher = watch(resolvedDir, { recursive: true }, (eventType, filename) => {
+    sigintWatcher = watch(resolvedDir, { recursive: true }, (_eventType, filename) => {
       if (!filename) return
 
       if (matchesIgnorePattern(filename, profile.ignorePatterns)) return

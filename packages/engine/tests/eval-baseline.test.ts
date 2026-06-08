@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { compareToEvalBaseline, readEvalBaseline, writeEvalBaseline } from "../src/eval-baseline.js"
 import type { AgentEvalScore, EvalBaseline } from "../src/eval-baseline.js"
+import { compareToEvalBaseline, readEvalBaseline, writeEvalBaseline } from "../src/eval-baseline.js"
 
 function score(agent: string, passRate: number, thresholdPct = 10, model?: string): AgentEvalScore {
   return { agent, caseCount: 4, passRate, thresholdPct, ...(model !== undefined ? { model } : {}) }

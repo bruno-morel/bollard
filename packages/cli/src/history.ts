@@ -34,10 +34,7 @@ function padEndVisible(s: string, width: number): string {
 }
 
 /** Dim suffix for agentic node lines: turns and/or resolved model (e.g. `22t · claude-sonnet-4-6`). */
-export function formatNodeAgentSuffix(n: {
-  turns?: number
-  model?: string
-}): string {
+export function formatNodeAgentSuffix(n: { turns?: number; model?: string }): string {
   const segments: string[] = []
   if (n.turns !== undefined) segments.push(`${n.turns}t`)
   if (n.model !== undefined) segments.push(n.model)

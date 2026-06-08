@@ -1,5 +1,5 @@
-import { BollardError } from "@bollard/engine/src/errors.js"
 import type { BollardErrorCode } from "@bollard/engine/src/errors.js"
+import { BollardError } from "@bollard/engine/src/errors.js"
 import type { ContractContext } from "./contract-extractor.js"
 
 export interface ClaimDocumentParseOptions {

@@ -11,15 +11,14 @@ import { JavaParserExtractor } from "../src/extractors/java.js"
 import { PythonAstExtractor } from "../src/extractors/python.js"
 import { RustSynExtractor } from "../src/extractors/rust.js"
 import {
-  type ExtractionResult,
-  LlmFallbackExtractor,
-  TsCompilerExtractor,
   extractPrivateIdentifiers,
   extractSignatures,
   extractSignaturesFromFiles,
   extractTypeDefinitions,
   getExtractor,
+  LlmFallbackExtractor,
   resolveReferencedTypes,
+  TsCompilerExtractor,
 } from "../src/type-extractor.js"
 
 function createMockProvider(responseText: string): LLMProvider {

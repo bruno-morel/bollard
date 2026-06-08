@@ -1,8 +1,6 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
-  "organizeImports": {
-    "enabled": true
-  },
+  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
@@ -30,11 +28,11 @@
   },
   "overrides": [
     {
-      "include": [
-        "vitest.config.ts",
-        "vitest.adversarial.config.ts",
-        "vitest.contract.config.ts",
-        "vitest.stryker.config.ts"
+      "includes": [
+        "**/vitest.config.ts",
+        "**/vitest.adversarial.config.ts",
+        "**/vitest.contract.config.ts",
+        "**/vitest.stryker.config.ts"
       ],
       "linter": {
         "rules": {
@@ -46,16 +44,17 @@
     }
   ],
   "files": {
-    "ignore": [
-      "node_modules",
-      "dist",
-      ".bollard",
-      "*.json",
-      "*.d.ts",
-      "*.js",
-      "*.map",
-      "*.adversarial.test.ts",
-      ".stryker-tmp"
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/.bollard",
+      "!**/*.json",
+      "!**/*.d.ts",
+      "!**/*.js",
+      "!**/*.map",
+      "!**/*.adversarial.test.ts",
+      "!**/.stryker-tmp"
     ]
   }
 }

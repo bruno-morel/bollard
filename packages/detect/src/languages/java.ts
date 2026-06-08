@@ -1,6 +1,6 @@
 import type { Dirent } from "node:fs"
 import { existsSync } from "node:fs"
-import { readFile, readdir } from "node:fs/promises"
+import { readdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import {
   deriveAllowedCommands,

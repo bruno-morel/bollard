@@ -24,8 +24,8 @@ import { diffToolchainProfile } from "./diff.js"
 import { formatDoctorReport, runDoctor } from "./doctor.js"
 import { runEvalBaselineCommand } from "./eval-baseline.js"
 import { getHeadSha } from "./git-utils.js"
-import { buildRunRecord, buildVerifyRecord, enrichScopeFingerprints } from "./history-record.js"
 import { runHistoryCommand } from "./history.js"
+import { buildRunRecord, buildVerifyRecord, enrichScopeFingerprints } from "./history-record.js"
 import { humanGateHandler } from "./human-gate.js"
 import {
   runDeployCommand,

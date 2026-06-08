@@ -1,8 +1,8 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises"
 import { basename, dirname, join, resolve } from "node:path"
 import type { Blueprint, BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
-import type { BollardConfig, PipelineContext } from "@bollard/engine/src/context.js"
-import { FileOwnershipStore, detectManagedFileConflicts } from "@bollard/engine/src/ownership.js"
+import type { BollardConfig } from "@bollard/engine/src/context.js"
+import { detectManagedFileConflicts, FileOwnershipStore } from "@bollard/engine/src/ownership.js"
 import { FileRunHistoryStore } from "@bollard/engine/src/run-history.js"
 import { readPromotedManifest } from "@bollard/engine/src/test-fingerprint.js"
 import {
@@ -16,11 +16,11 @@ import {
 } from "@bollard/engine/src/test-quality.js"
 import { runTests } from "@bollard/verify/src/dynamic.js"
 import {
+  applyStagedCurationChanges,
   CURATION_PLAN_FILE,
   CURATION_STAGING_DIR,
   type StagedCurationAction,
   type StagedCurationPlan,
-  applyStagedCurationChanges,
   stagingPathForSource,
 } from "./curation-helpers.js"
 

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
-import { readFile, readdir } from "node:fs/promises"
+import { readdir, readFile } from "node:fs/promises"
 import { basename, dirname, resolve } from "node:path"
 import { promisify } from "node:util"
 import { createBehavioralTesterAgent } from "@bollard/agents/src/behavioral-tester.js"
@@ -29,9 +29,9 @@ import {
 } from "@bollard/verify/src/context-expansion.js"
 import type { ContractContext } from "@bollard/verify/src/contract-extractor.js"
 import {
-  type PatcherResult,
   buildPatcherFeedback,
   collectVerificationChecks,
+  type PatcherResult,
   runDeterministicAutofix,
   runLocalPatcher,
   runVerificationChecks,

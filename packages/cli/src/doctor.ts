@@ -6,20 +6,20 @@ import { promisify } from "node:util"
 import { detectToolchain } from "@bollard/detect/src/detect.js"
 import type { ToolchainProfile } from "@bollard/detect/src/types.js"
 import type { BollardConfig } from "@bollard/engine/src/context.js"
-import {
-  FileRunHistoryStore,
-  computeConcernYield,
-  computeScopeCalibration,
-  parseHistoryLine,
-} from "@bollard/engine/src/run-history.js"
 import type {
   ConcernYieldEntry,
   ConcernYieldReport,
   RiskAuditReport,
   RunRecord,
 } from "@bollard/engine/src/run-history.js"
-import { findModelEntry, registryEntriesForProvider } from "@bollard/llm/src/model-registry.js"
+import {
+  computeConcernYield,
+  computeScopeCalibration,
+  FileRunHistoryStore,
+  parseHistoryLine,
+} from "@bollard/engine/src/run-history.js"
 import type { ModelStatus } from "@bollard/llm/src/model-registry.js"
+import { findModelEntry, registryEntriesForProvider } from "@bollard/llm/src/model-registry.js"
 import { resolveConfig } from "./config.js"
 import { BOLD, DIM, GREEN, RED, RESET, YELLOW } from "./terminal-styles.js"
 

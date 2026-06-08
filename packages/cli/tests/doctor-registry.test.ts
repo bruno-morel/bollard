@@ -3,10 +3,10 @@ import { fileURLToPath } from "node:url"
 import type { BollardConfig } from "@bollard/engine/src/context.js"
 import { describe, expect, it } from "vitest"
 import {
-  REGISTRY_STALENESS_DAYS,
   checkModelRegistry,
   formatDoctorReport,
   formatRegistrySection,
+  REGISTRY_STALENESS_DAYS,
   runDoctor,
 } from "../src/doctor.js"
 
