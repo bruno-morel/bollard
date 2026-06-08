@@ -14,7 +14,7 @@
     "@bollard/llm": "workspace:*",
     "@bollard/verify": "workspace:*",
     "@bollard/observe": "workspace:*",
-    "yaml": "^2.8.3",
+    "yaml": "^2.9.0",
     "zod": "^3.24.2"
   }
 }
