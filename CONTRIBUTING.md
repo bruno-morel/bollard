@@ -21,7 +21,7 @@ docker compose run --rm dev add --filter @bollard/<pkg> <dependency>
 docker compose build dev                       # bake into the image
 ```
 
-If you add a new workspace package: update the lockfile via the documented `node:24-slim` one-liner in `CLAUDE.md`, rebuild, then `docker compose down -v` to recreate stale volumes.
+If you add a new workspace package: update the lockfile via `docker compose run --rm -e CI=true dev install --no-frozen-lockfile` (see `CLAUDE.md`), rebuild, then `docker compose down -v` to recreate stale volumes.
 
 LLM-dependent commands need `ANTHROPIC_API_KEY` in a `.env` at the repo root. Unit tests never call real LLMs (`MockProvider`); the suite runs key-free.
 
