@@ -2,7 +2,7 @@
 # Stage A — Go helper builder
 # Builds scripts/extract_go/ into a static binary. Discarded after copy.
 # ──────────────────────────────────────────────────────────────
-FROM golang:1.22-bookworm AS go-helper-builder
+FROM golang:1.24-bookworm AS go-helper-builder
 WORKDIR /src
 COPY scripts/extract_go/go.mod ./
 RUN go mod download
@@ -14,7 +14,7 @@ RUN mkdir -p /out && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/b
 # Stage B — Rust helper builder
 # Builds scripts/extract_rs/ into a release binary. Discarded after copy.
 # ──────────────────────────────────────────────────────────────
-FROM rust:1.80-slim-bookworm AS rust-helper-builder
+FROM rust:1.85-slim-bookworm AS rust-helper-builder
 WORKDIR /src
 COPY scripts/extract_rs/Cargo.toml ./
 RUN mkdir -p src \
@@ -84,7 +84,7 @@ ENTRYPOINT ["pnpm"]
 
 # ──────────────────────────────────────────────────────────────
 # Stage D — dev-full (Stage 3b validation)
-# Extends dev with full Go 1.22 and Rust stable toolchains so the
+# Extends dev with full Go 1.24 and Rust stable toolchains so the
 # pipeline can run go test / cargo test / pytest against project code.
 #
 # Single RUN layer: all installs + cleanup in one layer so that
@@ -106,7 +106,7 @@ RUN set -eux \
          arm64) GO_ARCH=arm64 ;; \
          *) echo "unsupported arch $ARCH" && exit 1 ;; \
        esac \
-    && curl -fsSL "https://go.dev/dl/go1.22.6.linux-${GO_ARCH}.tar.gz" \
+    && curl -fsSL "https://go.dev/dl/go1.24.4.linux-${GO_ARCH}.tar.gz" \
        | tar -C /usr/local -xz \
     && rm -rf /usr/local/go/api /usr/local/go/doc \
               /usr/local/go/test /usr/local/go/misc \

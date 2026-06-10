@@ -11,9 +11,9 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>21</maven.compiler.release>
-    <javaparser.version>3.25.10</javaparser.version>
-    <asm.version>9.7</asm.version>
-    <junit.version>5.11.3</junit.version>
+    <javaparser.version>3.26.4</javaparser.version>
+    <asm.version>9.8</asm.version>
+    <junit.version>5.12.2</junit.version>
   </properties>
   <dependencies>
     <dependency>
@@ -38,7 +38,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.13.0</version>
+        <version>3.14.0</version>
         <configuration>
           <release>21</release>
         </configuration>
@@ -46,7 +46,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.5.2</version>
+        <version>3.5.3</version>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
