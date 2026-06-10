@@ -1,12 +1,12 @@
 import { BollardError } from "@bollard/engine/src/errors.js"
-import type { GenerateContentResponse } from "@google/generative-ai"
-import { GoogleGenerativeAI } from "@google/generative-ai"
+import type { GenerateContentResponse } from "@google/genai"
+import { GoogleGenAI } from "@google/genai"
 import { describe, expect, it } from "vitest"
 import {
   buildGoogleContents,
+  buildGoogleRequestConfig,
   buildGoogleToolsConfig,
   GoogleProvider,
-  getGoogleModel,
   googleChunksToStreamEvents,
 } from "../src/providers/google.js"
 import type { LLMStreamEvent } from "../src/types.js"
@@ -75,17 +75,18 @@ describe("buildGoogleToolsConfig", () => {
   })
 })
 
-describe("getGoogleModel", () => {
-  it("returns a generative model", () => {
-    const client = new GoogleGenerativeAI("k")
-    const model = getGoogleModel(client, {
+describe("buildGoogleRequestConfig", () => {
+  it("includes system instruction and generation settings", () => {
+    const config = buildGoogleRequestConfig({
       system: "s",
       messages: [{ role: "user", content: "x" }],
       maxTokens: 10,
       temperature: 0,
       model: "gemini-2.0-flash",
     })
-    expect(model).toBeDefined()
+    expect(config.systemInstruction).toBe("s")
+    expect(config.maxOutputTokens).toBe(10)
+    expect(new GoogleGenAI({ apiKey: "k" })).toBeDefined()
   })
 })
 

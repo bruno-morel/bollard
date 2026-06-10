@@ -112,10 +112,10 @@ const CLIENT_PATTERNS: ReadonlyArray<{
     clientLibrary: "openai",
   },
   {
-    match: /\bfrom\s+["']@google\/generative-ai["']/,
-    name: "google-generative-ai",
+    match: /\bfrom\s+["']@google\/genai["']/,
+    name: "google-genai",
     type: "http",
-    clientLibrary: "@google/generative-ai",
+    clientLibrary: "@google/genai",
   },
   {
     match: /\bfrom\s+["']@modelcontextprotocol\/sdk["']/,

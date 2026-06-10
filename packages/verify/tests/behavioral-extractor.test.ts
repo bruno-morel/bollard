@@ -249,9 +249,7 @@ import OpenAI from "openai"
     const ctx = await buildBehavioralContext(profileFor("typescript"), REPO_ROOT)
     expect(ctx.dependencies.length).toBeGreaterThan(0)
     const libs = ctx.dependencies.map((d) => d.clientLibrary).join(" ")
-    expect(libs).toMatch(
-      /@anthropic-ai\/sdk|openai|@google\/generative-ai|@modelcontextprotocol\/sdk/,
-    )
+    expect(libs).toMatch(/@anthropic-ai\/sdk|openai|@google\/genai|@modelcontextprotocol\/sdk/)
     expect(ctx.config.some((c) => c.key === "ANTHROPIC_API_KEY")).toBe(true)
   }, 45_000)
 

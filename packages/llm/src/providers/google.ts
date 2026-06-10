@@ -1,13 +1,12 @@
 import { BollardError } from "@bollard/engine/src/errors.js"
-import type {
-  Content,
-  FunctionDeclaration,
-  FunctionDeclarationSchema,
-  GenerateContentResponse,
-  GenerativeModel,
-  Part,
-} from "@google/generative-ai"
-import { GoogleGenerativeAI } from "@google/generative-ai"
+import {
+  type Content,
+  type FunctionDeclaration,
+  type GenerateContentResponse,
+  GoogleGenAI,
+  type Part,
+  type Tool,
+} from "@google/genai"
 import { estimateCostForModel } from "../model-registry.js"
 import type {
   LLMContentBlock,
@@ -71,19 +70,24 @@ function mapGoogleError(err: unknown): never {
 }
 
 /** Tools config for Google model (exported for tests). */
-export function buildGoogleToolsConfig(
-  request: LLMRequest,
-): { functionDeclarations: FunctionDeclaration[] }[] | undefined {
+export function buildGoogleToolsConfig(request: LLMRequest): Tool[] | undefined {
   if (!request.tools?.length) return undefined
-  return [
-    {
-      functionDeclarations: request.tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        parameters: t.inputSchema as unknown as FunctionDeclarationSchema,
-      })),
-    },
-  ]
+  const functionDeclarations: FunctionDeclaration[] = request.tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    parametersJsonSchema: t.inputSchema,
+  }))
+  return [{ functionDeclarations }]
+}
+
+export function buildGoogleRequestConfig(request: LLMRequest) {
+  const tools = buildGoogleToolsConfig(request)
+  return {
+    systemInstruction: request.system,
+    maxOutputTokens: request.maxTokens,
+    temperature: request.temperature,
+    ...(tools ? { tools } : {}),
+  }
 }
 
 /** Message contents for chat / stream (exported for tests). */
@@ -106,7 +110,7 @@ export function buildGoogleContents(request: LLMRequest): Content[] {
         parts.push({
           functionCall: {
             name: block.toolName ?? "",
-            args: (block.toolInput ?? {}) as Record<string, string>,
+            args: (block.toolInput ?? {}) as Record<string, unknown>,
           },
         })
       } else if (block.type === "tool_result") {
@@ -125,19 +129,6 @@ export function buildGoogleContents(request: LLMRequest): Content[] {
   }
 
   return contents
-}
-
-export function getGoogleModel(client: GoogleGenerativeAI, request: LLMRequest): GenerativeModel {
-  const tools = buildGoogleToolsConfig(request)
-  return client.getGenerativeModel({
-    model: request.model,
-    systemInstruction: request.system,
-    generationConfig: {
-      maxOutputTokens: request.maxTokens,
-      temperature: request.temperature,
-    },
-    ...(tools ? { tools } : {}),
-  })
 }
 
 /** Maps Google streaming chunks to Bollard stream events (exported for tests). */
@@ -175,13 +166,13 @@ export async function* googleChunksToStreamEvents(
         const toolUseId = `google-${fc.name}-${Date.now()}-${blockIndex}`
         const argsObj = (fc.args ?? {}) as Record<string, unknown>
         const json = JSON.stringify(argsObj)
-        yield { type: "tool_use_start", toolName: fc.name, toolUseId }
+        yield { type: "tool_use_start", toolName: fc.name ?? "", toolUseId }
         yield { type: "tool_input_delta", toolUseId, partialJson: json }
         yield { type: "content_block_stop", index: blockIndex }
         blockIndex++
         toolRecords.push({
           toolUseId,
-          toolName: fc.name,
+          toolName: fc.name ?? "",
           toolInput: argsObj,
         })
       }
@@ -232,19 +223,19 @@ export async function* googleChunksToStreamEvents(
 
 export class GoogleProvider implements LLMProvider {
   readonly name = "google"
-  private readonly client: GoogleGenerativeAI
+  private readonly client: GoogleGenAI
 
   constructor(apiKey: string) {
-    this.client = new GoogleGenerativeAI(apiKey)
+    this.client = new GoogleGenAI({ apiKey })
   }
 
   async chat(request: LLMRequest): Promise<LLMResponse> {
     try {
-      const model = getGoogleModel(this.client, request)
-      const contents = buildGoogleContents(request)
-
-      const result = await model.generateContent({ contents })
-      const response = result.response
+      const response = await this.client.models.generateContent({
+        model: request.model,
+        contents: buildGoogleContents(request),
+        config: buildGoogleRequestConfig(request),
+      })
       const candidate = response.candidates?.[0]
 
       if (!candidate) {
@@ -265,7 +256,7 @@ export class GoogleProvider implements LLMProvider {
           hasToolCalls = true
           content.push({
             type: "tool_use",
-            toolName: part.functionCall.name,
+            toolName: part.functionCall.name ?? "",
             toolInput: (part.functionCall.args ?? {}) as Record<string, unknown>,
             toolUseId: `google-${part.functionCall.name}-${Date.now()}`,
           })
@@ -291,13 +282,13 @@ export class GoogleProvider implements LLMProvider {
   }
 
   async *chatStream(request: LLMRequest): AsyncIterable<LLMStreamEvent> {
-    const model = getGoogleModel(this.client, request)
-    const contents = buildGoogleContents(request)
-
     let stream: AsyncGenerator<GenerateContentResponse>
     try {
-      const result = await model.generateContentStream({ contents })
-      stream = result.stream
+      stream = await this.client.models.generateContentStream({
+        model: request.model,
+        contents: buildGoogleContents(request),
+        config: buildGoogleRequestConfig(request),
+      })
     } catch (err: unknown) {
       mapGoogleError(err)
     }
