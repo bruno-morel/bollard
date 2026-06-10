@@ -62,7 +62,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git ca-certificates python3 procps ripgrep \
     && rm -rf /var/lib/apt/lists/*
-RUN corepack enable && corepack prepare pnpm@10 --activate
+RUN corepack enable && corepack prepare pnpm@11.5.2 --activate
 COPY --from=go-helper-builder   /out/bollard-extract-go /usr/local/bin/bollard-extract-go
 COPY --from=rust-helper-builder /out/bollard-extract-rs /usr/local/bin/bollard-extract-rs
 COPY --from=java-helper-builder /out/bollard-extract-java /usr/local/bin/bollard-extract-java
