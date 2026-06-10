@@ -281,6 +281,7 @@ export class OpenAIProvider implements LLMProvider {
       }
       if (choice.message.tool_calls) {
         for (const tc of choice.message.tool_calls) {
+          if (tc.type !== "function") continue
           let toolInput: Record<string, unknown> = {}
           try {
             toolInput = JSON.parse(tc.function.arguments) as Record<string, unknown>
