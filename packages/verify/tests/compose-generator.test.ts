@@ -73,7 +73,7 @@ describe("generateVerifyCompose", () => {
     expect(result.yaml).toContain("project-verify:")
     expect(result.yaml).toContain("verify-blackbox:")
     expect(result.yaml).toContain("verify-native:")
-    expect(result.yaml).toContain("node:22-slim")
+    expect(result.yaml).toContain("node:24-slim")
     expect(result.yaml).toContain("bollard/verify:latest")
   })
 

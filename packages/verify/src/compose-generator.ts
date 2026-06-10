@@ -16,8 +16,8 @@ export interface GeneratedCompose {
 }
 
 const DEFAULT_IMAGES: Partial<Record<LanguageId, string>> = {
-  typescript: "node:22-slim",
-  javascript: "node:22-slim",
+  typescript: "node:24-slim",
+  javascript: "node:24-slim",
   python: "python:3.12-slim",
   go: "golang:1.22",
   rust: "rust:1.77-slim",
@@ -29,7 +29,7 @@ function resolveRuntimeImage(profile: ToolchainProfile): string {
   if (profile.adversarial.boundary.runtimeImage) {
     return profile.adversarial.boundary.runtimeImage
   }
-  return DEFAULT_IMAGES[profile.language] ?? "node:22-slim"
+  return DEFAULT_IMAGES[profile.language] ?? "node:24-slim"
 }
 
 function indent(text: string, spaces: number): string {

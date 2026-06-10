@@ -165,7 +165,7 @@ docker compose run --rm dev add --filter @bollard/llm <package>
 docker compose build dev
 
 # If you add NEW packages to pnpm-workspace, update the lockfile first:
-docker run --rm -e CI=true -v "$(pwd):/app" -w /app node:22-slim \
+docker run --rm -e CI=true -v "$(pwd):/app" -w /app node:24-slim \
   sh -c "corepack enable && corepack prepare pnpm@latest --activate && pnpm install --no-frozen-lockfile"
 # Then rebuild: docker compose build dev
 # Then recreate volumes: docker compose down -v

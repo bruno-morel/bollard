@@ -54,10 +54,10 @@ RUN mkdir -p /out \
 
 # ──────────────────────────────────────────────────────────────
 # Stage C — dev (fast, day-to-day)
-# Node 22 + pnpm + python3 + pre-built Go/Rust/Java extractor helpers.
+# Node 24 + pnpm + python3 + pre-built Go/Rust/Java extractor helpers.
 # No Go, Rust, or JVM toolchain at runtime (Java helper is native binary).
 # ──────────────────────────────────────────────────────────────
-FROM node:22-slim AS dev
+FROM node:24-slim AS dev
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git ca-certificates python3 procps ripgrep \
@@ -131,10 +131,10 @@ WORKDIR /app
 ENTRYPOINT ["pnpm"]
 
 # ──────────────────────────────────────────────────────────────
-# Stage E — llama.cpp CLI builder (opt-in, same libc as node:22-slim)
+# Stage E — llama.cpp CLI builder (opt-in, same libc as node:24-slim)
 # Only consumed by dev-local. Never included in dev or dev-full.
 # ──────────────────────────────────────────────────────────────
-FROM node:22-slim AS llamacpp-builder
+FROM node:24-slim AS llamacpp-builder
 ARG LLAMACPP_VERSION=b9113
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
