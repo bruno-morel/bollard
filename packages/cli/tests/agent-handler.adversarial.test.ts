@@ -54,9 +54,9 @@ vi.mock("@bollard/agents/src/semantic-reviewer.js", () => ({
   createSemanticReviewerAgent: vi.fn().mockResolvedValue(mockAgentResolved),
 }))
 
-vi.mock("@bollard/llm/src/client.js", () => ({
-  LLMClient: vi.fn().mockImplementation(() => ({
-    forAgent: vi.fn().mockReturnValue({
+vi.mock("@bollard/llm/src/client.js", () => {
+  class MockLLMClient {
+    forAgent = vi.fn().mockReturnValue({
       provider: {
         chat: vi.fn().mockResolvedValue({
           content: [{ type: "text" as const, text: "ok" }],
@@ -66,9 +66,11 @@ vi.mock("@bollard/llm/src/client.js", () => ({
         }),
       },
       model: "mock-model",
-    }),
-  })),
-}))
+    })
+  }
+
+  return { LLMClient: MockLLMClient }
+})
 
 vi.mock("node:fs/promises", () => ({
   readFile: vi.fn().mockResolvedValue("mock file content"),
