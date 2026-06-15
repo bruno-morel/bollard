@@ -121,8 +121,8 @@ docker compose run --rm dev --filter @bollard/cli run start -- audit-docs
 ## Tech Stack (Non-Negotiable)
 
 - **Dev environment:** Docker Compose — all tooling runs inside containers, nothing installed locally except Docker.
-- **Runtime:** Node.js 22+ (no experimental flags)
-- **Language:** TypeScript 5.x, strict mode ON (`strict: true` in tsconfig). Every `noUnchecked*` flag enabled. `exactOptionalPropertyTypes: true`.
+- **Runtime:** Node.js 24 LTS (no experimental flags)
+- **Language:** TypeScript 6.x, strict mode ON (`strict: true` in tsconfig). Every `noUnchecked*` flag enabled. `exactOptionalPropertyTypes: true`.
 - **Package manager:** pnpm with workspaces. No npm, no yarn.
 - **Test runner:** Vitest. No Jest.
 - **Linter/formatter:** Biome. No ESLint, no Prettier.
@@ -181,7 +181,7 @@ Pass `ANTHROPIC_API_KEY` via a `.env` file at the project root.
 
 Bollard ships three Docker targets:
 
-- **`dev`** (default, fast): Node 22 + pnpm + python3 + pre-built Go/Rust/**Java** extractor helpers (`bollard-extract-go`, `bollard-extract-rs`, `bollard-extract-java` GraalVM native). Use this for day-to-day TS development, unit tests, and any pipeline run that doesn't touch Go/Rust/Java project code. Built by `docker compose build dev`. The llama.cpp binary is **not** included here — `dev` stays lean for fast contributor onboarding.
+- **`dev`** (default, fast): Node 24 + pnpm + python3 + pre-built Go/Rust/**Java** extractor helpers (`bollard-extract-go`, `bollard-extract-rs`, `bollard-extract-java` GraalVM native). Use this for day-to-day TS development, unit tests, and any pipeline run that doesn't touch Go/Rust/Java project code. Built by `docker compose build dev`. The llama.cpp binary is **not** included here — `dev` stays lean for fast contributor onboarding.
 - **`dev-full`** (~2.24 GB; opt-in via compose profile `full`): extends `dev` with full Go 1.22 and Rust stable toolchains plus `pytest`/`ruff`, **JDK 21 + Maven** for JVM pipeline validation. Required for Stage 3b validation runs and any pipeline that runs `go test` / `cargo test` / `pytest` against project code. Built by `docker compose --profile full build dev-full`. Run with `docker compose --profile full run --rm dev-full …`. The single consolidated RUN layer installs everything and cleans up build-only packages (curl, python3-pip) and unused GCC sanitizer runtimes in one pass to minimize image size. **Size floor is roughly 2.2 GB** (Rust toolchain + LLVM ~480 MB, Go ~224 MB, gcc/binutils/libc-dev ~120 MB, on top of the 989 MB `dev` base). Further trimming would require giving up a capability — don't chase it.
 - **`dev-local`** (opt-in via compose profile `local`): extends `dev` with the llama.cpp CLI binary (~10 MB). Models (~1 GB GGUF) are lazy-pulled into the `bollard_models` named volume on first use — the image itself contains no model weights. Required only when `.bollard.yml` configures `provider: local` for any agent (Phase 2 patcher, Phase 5 per-agent assignment). Built by `docker compose --profile local build dev-local`. Run with `docker compose --profile local run --rm dev-local …`. Day-to-day contributors and CI never need this image. The `llamacpp-builder` stage is placed after `dev-full` in the Dockerfile so `docker compose build dev` and `docker compose --profile full build dev-full` never trigger the cmake build.
 
@@ -208,7 +208,7 @@ bollard/
 │   │   └── pom.xml, src/main/java/dev/bollard/extract/*.java
 │   └── retro-adversarial.ts
 ├── docker/
-│   ├── Dockerfile.verify         # Black-box adversarial test container (Node 22 + vitest)
+│   ├── Dockerfile.verify         # Black-box adversarial test container (Node 24 + vitest)
 │   ├── Dockerfile.verify-python  # Node + Python 3 runtime
 │   ├── Dockerfile.verify-go      # Node + Go 1.22
 │   ├── Dockerfile.verify-rust    # Node + Rust toolchain
@@ -411,8 +411,8 @@ bollard/
 - **Run `docker compose run --rm dev run test` for authoritative counts** (Stage 3a added contract/boundary tests and contract extractor coverage).
 - **Adversarial suite:** `vitest.adversarial.config.ts` — `packages/*/tests/**/*.adversarial.test.ts`
 - **Source:** 9 packages; prompts include `planner.md`, `coder.md`, `boundary-tester.md`, `contract-tester.md`, `behavioral-tester.md`
-- **Latest count (authoritative, 2026-06-07, post Stage 6 docs Layer 1 audit-docs):** `1531` passed, `6` skipped (main `vitest run`; 1537 total). Skips: 6 LLM/local smoke tests (no key / opt-in). Adversarial suite `338` passed.
-- **Adversarial suite** (`vitest.adversarial.config.ts`): `338` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c). +4 from Phase 16 test-surgery-loop guard (`run-command.adversarial.test.ts`).
+- **Latest count (authoritative, 2026-06-12, post dependency refresh Step 7):** `1531` passed, `6` skipped (main `vitest run`; 1537 total). Skips: 6 LLM/local smoke tests (no key / opt-in). Adversarial suite `347` passed.
+- **Adversarial suite** (`vitest.adversarial.config.ts`): `347` tests in `30` files — full glob `packages/*/tests/**/*.adversarial.test.ts`; all legacy files were rewritten to current API shapes (Stage 4c). +4 from Phase 16 test-surgery-loop guard (`run-command.adversarial.test.ts`).
 - **Vitest + Vite 8:** you may see `esbuild` option deprecated in favor of `oxc` — harmless until Vitest defaults align; pin Vite 7.x if you need a silent log.
 
 ### Mutation Testing (Stage 3c)
@@ -932,7 +932,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 
 ### Stage 5a Phase 5 (DONE) — Bollard-on-Bollard CI:
 
-`.github/workflows/bollard-verify.yml`: triggers on push/PR to `main`. Runs typecheck + lint natively (fast), then `bollard verify --quiet --ci-passed typecheck,lint` inside the `dev` Docker container (runs audit + secretScan only — skips what was already run). Exits 1 on failure; uploads `.bollard/runs/history.jsonl` as an artifact on failure for structured per-check debugging. Cost: $0 (no LLM calls). The full `implement-feature` pipeline CI is in `cost-regression.yml` (weekly + manual dispatch). Bootstrap fixes applied during first run: pinned `packageManager: "pnpm@10.33.0"` in `package.json` + Dockerfiles (pnpm 11 rejected lockfile overrides); added `requireApiKey?: boolean` option to `resolveConfig()` (default `true`) — `verify`, `watch`, and MCP `bollard_verify` pass `{ requireApiKey: false }` so static-only commands don't require an LLM key. First green run: GitHub Actions run 26065111582, ~2m50s.
+`.github/workflows/bollard-verify.yml`: triggers on push/PR to `main`. Runs typecheck + lint natively (fast), then `bollard verify --quiet --ci-passed typecheck,lint` inside the `dev` Docker container (runs audit + secretScan only — skips what was already run). Exits 1 on failure; uploads `.bollard/runs/history.jsonl` as an artifact on failure for structured per-check debugging. Cost: $0 (no LLM calls). The full `implement-feature` pipeline CI is in `cost-regression.yml` (weekly + manual dispatch). Bootstrap fixes applied during first run: pinned `packageManager` in `package.json` + Dockerfiles (now `pnpm@11.5.2` after 2026-06 dependency refresh); added `requireApiKey?: boolean` option to `resolveConfig()` (default `true`) — `verify`, `watch`, and MCP `bollard_verify` pass `{ requireApiKey: false }` so static-only commands don't require an LLM key. First green run: GitHub Actions run 26065111582, ~2m50s.
 
 ### Stage 5a Phase 6 (DONE) — Protocol Compliance CI:
 

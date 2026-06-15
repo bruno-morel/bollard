@@ -81,29 +81,46 @@ Bring every dependency to its latest **stable** version: the pnpm workspace, the
 7. `pnpm audit --audit-level=high` clean AND Dependabot page shows 0 open findings after push.
 8. Docs: CLAUDE.md tech-stack mentions (Biome/Node/versions), README if counts changed, fill the DEFERRED table, archive this prompt to `spec/archive/`.
 
-## Inventory (fill in Step 0)
+## Inventory (final — landed on main 2026-06-09)
 
-| Source | Current | Latest | Action |
-|--------|---------|--------|--------|
-| Baseline tests | 1531 pass / 6 skip | — | Floor recorded 2026-06-07 |
-| Dependabot | 5 open (1 critical vitest, 4 moderate hono) | 0 | Step 1: hono ≥4.12.21, vitest ≥4.1.0 |
-| pnpm | 10.33.0 | 11.x | Step 6 attempt; defer if overrides fail |
-| Node image | node:22-slim | 24 LTS | Step 6 |
-| TypeScript | 5.9.3 (manifest ^5.7.3) | 6.0.3 | Step 3 major |
-| Vitest | 4.1.8 (manifest ^3.1.1) | 4.x | Step 1 + manifest align Step 2 |
-| Biome | 1.9.4 | 2.4.16 | Step 4 major |
-| Stryker | 9.6.0 | 9.6.1 | Step 2 patch |
-| @anthropic-ai/sdk | 0.39.0 | 0.102.0 | Step 5 major |
-| openai | 4.104.0 | 6.42.0 | Step 5 major |
-| @google/generative-ai | 0.24.0 | @google/genai | Step 5 migration |
-| MCP SDK | 1.29.0 | latest 1.x | Step 2/5 |
-| zod | 3.25.76 | 4.4.3 | Step 5 (after MCP) |
-| fast-check | 3.23.2 | 4.8.0 | Step 5 major |
-| better-sqlite3 | 12.9.0 | 12.10.0 | Step 2/5 |
-| hono (transitive) | 4.12.18 | ≥4.12.21 | Step 1 override bump |
-| pnpm.overrides | 9 entries | prune | Step 6.5 |
+| Source | Before | Landed | Notes |
+|--------|--------|--------|-------|
+| Baseline tests | 1531 pass / 6 skip | 1531 pass / 6 skip | Unchanged after refresh |
+| Adversarial tests | 338 pass | 347 pass | +9 from refresh-era test additions |
+| Dependabot | 5 open (1 critical, 4 moderate) | 2 open moderate | Critical + 3 moderate cleared; `qs` #21, `ip-address` #12 remain |
+| pnpm | 10.33.0 | **11.5.2** | Overrides removed; pnpm 11 migration succeeded (`5b17c4e`) |
+| Node image | node:22-slim | **node:24-slim** | `8f06245` |
+| TypeScript | 5.9.3 | **6.0.3** | `994009a` |
+| Vitest | 4.1.8 | **4.1.8** | Manifest aligned `^4.1.8` |
+| Biome | 1.9.4 | **2.4.16** | `74236a8` |
+| Stryker | 9.6.0 | **9.6.1** | `b4be96a` patch |
+| @anthropic-ai/sdk | 0.39.0 | **0.102.0** | `aebcb87` |
+| openai | 4.104.0 | **6.42.0** | `f94e629` + stream fix `1707f7a` |
+| @google/generative-ai | 0.24.0 | **@google/genai 2.8.0** | `761ad44` rewrite |
+| MCP SDK | 1.29.0 | **1.29.0** | zod 4 peer satisfied |
+| zod | 3.25.76 | **4.4.3** | `9a91c79` |
+| fast-check | 3.23.2 | **4.8.0** | `6e2ad0b` |
+| better-sqlite3 | 12.9.0 | **12.10.0** | patch in sweep |
+| Go helper | go 1.22 | **go 1.24** | `0de5aa7` |
+| pnpm.overrides | 9 entries | **0 entries** | All removed `3a22fc9`; high audit clean |
 
-## DEFERRED (fill as needed — reason required)
+## Step 7 verification results (2026-06-12)
+
+Run against `main` after merge (`3698512` + post-merge fix). No dependency changes; no reverts.
+
+| Gate | Result | Evidence |
+|------|--------|----------|
+| 1 Security | **PASS** (high audit clean) | `pnpm audit --audit-level=high`: 0 high/critical (2 moderate: `qs`, `ip-address`). Dependabot: 2 open moderate (#21, #12) — down from 5; no revert triggered |
+| 2 Eval | **PASS** | `eval diff` exit 0; all 5 agents 100% vs `stage5b-sonnet-4-6` |
+| 3 Self-test | **PASS** | Run `20260612-0238-run-766a96`: 17/17 steps, $0.55, coder 7t on `claude-sonnet-4-6`, testers Haiku |
+| 4 Stryker | **PASS** | 387 mutants, **86.56%** score (`stryker run` on `cost-tracker.ts`) |
+| 5 Suites | **PASS** | Adversarial 347 pass; `audit-docs` exit 0; extractor-helpers 5/5 |
+| 6 Google | **PARTIAL** | `google.test.ts`: 12 pass / 2 skipped (no `GOOGLE_API_KEY`); mocked + mapping tests green |
+
+## DEFERRED
 
 | Dependency | Blocked at | Reason | Revisit when |
 |------------|-----------|--------|--------------|
+| @google/genai live smoke | Gate 6 (2026-06-12) | Migrated to `@google/genai`; mocked tests pass; 2 live smoke tests skipped — no `GOOGLE_API_KEY` in `.env` | Key available; run `vitest run packages/llm/tests/google.test.ts` with key |
+| qs (transitive) | Gate 1 (2026-06-12) | Dependabot #21 moderate; `pnpm audit` reports `qs` 6.11.1–6.15.1 via Stryker→typed-rest-client; patched ≥6.15.2 not yet in graph | Upstream Stryker/typed-rest-client bump or targeted override restore |
+| ip-address (transitive) | Gate 1 (2026-06-12) | Dependabot #12 moderate; via MCP SDK→express-rate-limit; high audit clean without override | MCP SDK transitive update or override `ip-address: ">=10.1.1"` if advisory persists |
