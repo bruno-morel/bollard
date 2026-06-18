@@ -115,7 +115,9 @@ In `packages/llm/src/role-requirements.ts`:
 | `contract-tester` | single-shot claims JSON from contract graph; grounding verifier downstream | standard | light | no | 16K | `claude-haiku-4-5-20251001` |
 | `behavioral-tester` | single-shot claims JSON from behavioral context; grounding verifier downstream | standard | light | no | 16K | `claude-haiku-4-5-20251001` |
 | `semantic-reviewer` | single-shot diff judgement; findings advisory but verification-adjacent | standard | light | no | 8K | `claude-haiku-4-5-20251001` |
-| `llm-fallback-extractor` | signature extraction for unknown languages | light | light | no | 8K | `claude-haiku-4-5-20251001` |
+| `test-curator` | test quality scoring and curation proposals (Stage 6) | standard | light | no | 8K | `claude-haiku-4-5-20251001` |
+
+`llm-fallback-extractor` is not resolved via `forAgent` — `getExtractor` receives an explicit provider+model. A `ROLE_REQUIREMENTS` entry exists for forward use only.
 
 Rationale anchors:
 
@@ -131,13 +133,14 @@ export function resolveModelForRole(
   role: string,
   provider: string,
   registry: ModelRegistryEntry[] = MODEL_REGISTRY,
-): ModelRegistryEntry
+): ModelRegistryEntry | undefined
 ```
 
-1. Look up `ROLE_REQUIREMENTS[role]`; unknown roles use the `default` requirements profile (standard/standard — resolves to the same model as `llm.default` today).
-2. Filter registry: matching `provider`, `status === "current"`, all requirements satisfied.
-3. Pick the cheapest by **output price**, tie-break by input price, then by newest `verifiedOn`. (Output price dominates because Bollard's per-call output is bounded by `maxTokens` while input is managed by Phase 8 context caps — and output is 5× input on every current Anthropic model.)
-4. Empty set → throw `BollardError` `MODEL_NOT_AVAILABLE` with the requirements in `context`. No silent fallback to a model that can't do the work.
+1. Look up `ROLE_REQUIREMENTS[role]`; if absent, return `undefined` (caller uses `llm.default` for unknown/custom roles).
+2. Collect current entries for `provider`. If **zero entries** exist in the registry for that provider (e.g. `mock`, custom name), return `undefined` — caller falls to `llm.default` (§6 step 3 escape hatch).
+3. Filter to entries satisfying all requirements (`status === "current"` already applied in step 2).
+4. Pick the cheapest by **output price**, tie-break by input price, then by newest `verifiedOn`. (Output price dominates because Bollard's per-call output is bounded by `maxTokens` while input is managed by Phase 8 context caps — and output is 5× input on every current Anthropic model.)
+5. Filtered set empty but provider had current entries → throw `BollardError` `MODEL_NOT_AVAILABLE` with the requirements in `context`. No silent fallback to a model that can't do the work.
 
 `LLMClient.forAgent(role)` resolution order (only step 2 is new):
 
@@ -164,7 +167,7 @@ This work ships as **Stage 5e Phases 4–6** ([ROADMAP.md](ROADMAP.md)) — it c
 
 - ~~**Phase 1 — registry + pricing unification (shipped 2026-06-05, Stage 5e Phase 4).**~~ `model-registry.ts` shipped; providers unified; unknown-model warning; coder/default → `claude-sonnet-4-6`; doctor registry section. Self-test `budgetStatus()` GREEN ($1.15, 16 coder turns). Cost baseline **`post-model-registry`**.
 - ~~**Phase 1b — eval per-agent model resolution (shipped 2026-06-05, Stage 5e Phase 4b).**~~ `runAllAgentScores` resolves models via `forAgent(role)`; per-score `model` on baseline; eval baseline **`stage5b-sonnet-4-6`**. Eval-regression CI unblocked.
-- **Phase 2 — requirements + resolver.** Add `role-requirements.ts` and `resolveModelForRole`; wire into `forAgent` step 2; delete the hardcoded `DEFAULTS.llm.agents` map (it becomes a derived value); `config show --sources` annotation. Unit tests: resolution matrix golden test (each role → expected model), `MODEL_NOT_AVAILABLE` paths, override precedence unchanged.
+- ~~**Phase 2 — requirements + resolver (shipped 2026-06-15, Stage 5e Phase 5).**~~ `role-requirements.ts` + `resolveModelForRole`; wired into `forAgent` step 2; deleted hardcoded `DEFAULTS.llm.agents`; `config show --sources` `capability-resolved` annotation; golden resolution test (7 roles unchanged); unknown roles + unregistered providers → `llm.default`. Self-test `headroom()` GREEN ($1.54, 17/17). **1550 pass / 6 skip.**
 - **Phase 3 — lifecycle guardrails.** Doctor registry section, deprecated/retired warnings in `resolveConfig`, run-record annotation for fallback-priced runs.
 - **Phase 4 (experiment, not code) — semantic-reviewer A/B** per §5. Outcome decides whether `semantic-reviewer` requirements move to `reasoning: frontier`.
 

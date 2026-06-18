@@ -96,6 +96,6 @@ Benchmark candidate models per role with the Stage 5b eval framework; pick defau
 Scheduled as **Stage 5e Phases 4–6** in [ROADMAP.md](../ROADMAP.md):
 
 1. [ ] **5e Phase 4** — `model-registry.ts`, pricing unification, coder/default → `claude-sonnet-4-6`; eval tag/diff + self-test + cost-baseline diff around the swap
-2. [ ] **5e Phase 5** — `role-requirements.ts` + `resolveModelForRole` wired into `LLMClient.forAgent`; delete hardcoded `DEFAULTS.llm.agents`; golden resolution tests; lifecycle guardrails (config-time deprecation warning, retired hard error, `bollard doctor` registry section)
+2. [x] **5e Phase 5** — `role-requirements.ts` + `resolveModelForRole` wired into `LLMClient.forAgent`; delete hardcoded `DEFAULTS.llm.agents`; golden resolution tests (2026-06-15). Lifecycle guardrails (config-time deprecation warning, retired hard error) deferred to Phase 3.
 3. [ ] **5e Phase 6** — semantic-reviewer Haiku vs Sonnet 4.6 A/B (eval diff + 2–3 self-tests); decide requirement change on data
 4. [ ] Backlog — prompt caching in `AnthropicProvider`; risk-adaptive coder escalation design note
