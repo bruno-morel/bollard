@@ -1,3 +1,6 @@
+import { BollardError } from "@bollard/engine/src/errors.js"
+import { type ModelRequirements, ROLE_REQUIREMENTS } from "./role-requirements.js"
+
 export type CapabilityLevel = "frontier" | "standard" | "light"
 
 export interface ModelCapabilities {
@@ -199,6 +202,68 @@ export function findModelEntry(id: string): ModelRegistryEntry | undefined {
 
 export function registryEntriesForProvider(provider: string): ModelRegistryEntry[] {
   return MODEL_REGISTRY.filter((entry) => entry.provider === provider)
+}
+
+const CAPABILITY_RANK: Record<CapabilityLevel, number> = {
+  light: 0,
+  standard: 1,
+  frontier: 2,
+}
+
+export function capabilityRank(level: CapabilityLevel): number {
+  return CAPABILITY_RANK[level]
+}
+
+export function modelSatisfiesRequirements(
+  entry: ModelRegistryEntry,
+  req: ModelRequirements,
+): boolean {
+  const caps = entry.capabilities
+  if (capabilityRank(caps.reasoning) < capabilityRank(req.reasoning)) return false
+  if (capabilityRank(caps.codegen) < capabilityRank(req.codegen)) return false
+  if (req.needsToolUse && !caps.toolUse) return false
+  if (caps.contextWindow < req.minContext) return false
+  if (caps.maxOutput < req.minOutput) return false
+  return true
+}
+
+/**
+ * Cheapest current model of `provider` satisfying the role's requirements.
+ * Returns undefined when the role has no requirements entry or the provider
+ * has zero registry entries (caller falls back to llm.default).
+ * Throws MODEL_NOT_AVAILABLE when the provider is known but no current model satisfies.
+ */
+export function resolveModelForRole(
+  role: string,
+  provider: string,
+  registry: ModelRegistryEntry[] = MODEL_REGISTRY,
+): ModelRegistryEntry | undefined {
+  const req = ROLE_REQUIREMENTS[role]
+  if (req === undefined) return undefined
+
+  const currentEntries = registry.filter(
+    (entry) => entry.provider === provider && entry.status === "current",
+  )
+  if (currentEntries.length === 0) return undefined
+
+  const satisfying = currentEntries.filter((entry) => modelSatisfiesRequirements(entry, req))
+  if (satisfying.length === 0) {
+    throw new BollardError({
+      code: "MODEL_NOT_AVAILABLE",
+      message: `No current ${provider} model satisfies requirements for role "${role}"`,
+      context: { role, provider, requirements: req },
+    })
+  }
+
+  satisfying.sort((a, b) => {
+    const outputDiff = a.pricing.output - b.pricing.output
+    if (outputDiff !== 0) return outputDiff
+    const inputDiff = a.pricing.input - b.pricing.input
+    if (inputDiff !== 0) return inputDiff
+    return b.verifiedOn.localeCompare(a.verifiedOn)
+  })
+
+  return satisfying[0]
 }
 
 /**

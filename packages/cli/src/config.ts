@@ -14,13 +14,21 @@ import type {
   TakeoverModeConfig,
 } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
+import { resolveModelForRole } from "@bollard/llm/src/model-registry.js"
 import { isBinaryAvailable } from "@bollard/llm/src/providers/local.js"
+import { ROLE_REQUIREMENTS } from "@bollard/llm/src/role-requirements.js"
 import type { ObserveProviderConfig } from "@bollard/observe/src/providers/types.js"
 import { parse as parseYaml } from "yaml"
 import { z } from "zod"
 import { applyRootAdversarialYaml, type RootAdversarialYaml } from "./adversarial-yaml.js"
 
-export type ConfigSource = "default" | "auto-detected" | "env" | "file" | "cli"
+export type ConfigSource =
+  | "default"
+  | "auto-detected"
+  | "env"
+  | "file"
+  | "cli"
+  | "capability-resolved"
 
 export interface AnnotatedValue<T> {
   value: T
@@ -248,22 +256,13 @@ const bollardYamlSchema = z
   .strict()
 
 /**
- * Per-agent LLM defaults (Stage 5d Phase 5).
- * Haiku: structured JSON / bounded-context work (planner, testers, semantic reviewer).
- * Sonnet: creative multi-step implementation (coder) and fallback for unknown agent roles.
+ * Per-agent LLM defaults are derived from role requirements × model registry
+ * (Stage 5e Phase 5). Override per role via `.bollard.yml` `llm.agents`.
+ * Sonnet: creative multi-step implementation (coder) and fallback for unknown roles.
  */
 const DEFAULTS: BollardConfig = {
   llm: {
     default: { provider: "anthropic", model: "claude-sonnet-4-6" },
-    agents: {
-      planner: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-      coder: { provider: "anthropic", model: "claude-sonnet-4-6" },
-      "boundary-tester": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-      "contract-tester": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-      "behavioral-tester": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-      "semantic-reviewer": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-      "test-curator": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-    },
   },
   agent: { max_cost_usd: 50, max_duration_minutes: 30 },
 }
@@ -359,6 +358,32 @@ export async function resolveConfig(
       value: assignment.model,
       source: isOverridden ? "file" : "default",
       ...(isOverridden ? { detail: "file:.bollard.yml" as const } : {}),
+    }
+  }
+
+  for (const role of Object.keys(ROLE_REQUIREMENTS)) {
+    const modelKey = `llm.agents.${role}.model`
+    if (sources[modelKey] !== undefined) continue
+
+    try {
+      const entry = resolveModelForRole(role, config.llm.default.provider)
+      if (entry === undefined) continue
+      sources[`llm.agents.${role}.provider`] = {
+        value: entry.provider,
+        source: "capability-resolved",
+      }
+      sources[modelKey] = {
+        value: entry.id,
+        source: "capability-resolved",
+      }
+    } catch (err) {
+      if (BollardError.hasCode(err, "MODEL_NOT_AVAILABLE")) {
+        process.stderr.write(
+          `[bollard] warning: no model available for role "${role}" with provider "${config.llm.default.provider}"\n`,
+        )
+        continue
+      }
+      throw err
     }
   }
 

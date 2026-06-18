@@ -262,18 +262,20 @@ describe("resolveConfig", () => {
     expect(profile.mutation).toBeUndefined()
   })
 
-  it("defaults planner to Haiku and annotates model source as default", async () => {
+  it("defaults planner to Haiku via capability-resolved source", async () => {
     const { config, sources } = await resolveConfig(undefined, tempDir)
 
-    expect(config.llm.agents?.planner?.model).toBe("claude-haiku-4-5-20251001")
-    expect(sources["llm.agents.planner.model"]?.source).toBe("default")
+    expect(config.llm.agents?.planner).toBeUndefined()
+    expect(sources["llm.agents.planner.model"]?.source).toBe("capability-resolved")
     expect(sources["llm.agents.planner.model"]?.value).toBe("claude-haiku-4-5-20251001")
   })
 
-  it("defaults coder to Sonnet", async () => {
-    const { config } = await resolveConfig(undefined, tempDir)
+  it("defaults coder to Sonnet via capability-resolved source", async () => {
+    const { config, sources } = await resolveConfig(undefined, tempDir)
 
-    expect(config.llm.agents?.coder?.model).toBe("claude-sonnet-4-6")
+    expect(config.llm.agents?.coder).toBeUndefined()
+    expect(sources["llm.agents.coder.model"]?.source).toBe("capability-resolved")
+    expect(sources["llm.agents.coder.model"]?.value).toBe("claude-sonnet-4-6")
   })
 
   it("respects .bollard.yml planner model override and marks source as file", async () => {

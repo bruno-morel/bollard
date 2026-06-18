@@ -1,6 +1,7 @@
 import type { BollardConfig } from "@bollard/engine/src/context.js"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import { MockProvider } from "./mock.js"
+import { resolveModelForRole } from "./model-registry.js"
 import { AnthropicProvider } from "./providers/anthropic.js"
 import { GoogleProvider } from "./providers/google.js"
 import { LocalProvider } from "./providers/local.js"
@@ -17,9 +18,19 @@ export class LLMClient {
 
   forAgent(agentRole: string): { provider: LLMProvider; model: string } {
     const override = this.config.llm.agents?.[agentRole]
-    const resolved = override ?? this.config.llm.default
-    const provider = this.resolveProvider(resolved.provider)
-    return { provider, model: resolved.model }
+    if (override !== undefined) {
+      const provider = this.resolveProvider(override.provider)
+      return { provider, model: override.model }
+    }
+
+    const resolved = resolveModelForRole(agentRole, this.config.llm.default.provider)
+    const assignment =
+      resolved !== undefined
+        ? { provider: resolved.provider, model: resolved.id }
+        : this.config.llm.default
+
+    const provider = this.resolveProvider(assignment.provider)
+    return { provider, model: assignment.model }
   }
 
   private resolveProvider(name: string): LLMProvider {

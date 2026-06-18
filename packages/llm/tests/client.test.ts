@@ -129,6 +129,81 @@ describe("LLMClient", () => {
     expect(client.forAgent("coder").model).toBe("claude-sonnet-4-6")
   })
 
+  it("resolves coder to Sonnet via capability resolution when no agents map", () => {
+    const origKey = process.env["ANTHROPIC_API_KEY"]
+    process.env["ANTHROPIC_API_KEY"] = "test-key"
+    try {
+      const config = mockConfig({
+        llm: { default: { provider: "anthropic", model: "claude-sonnet-4-6" } },
+      })
+      const client = new LLMClient(config)
+      expect(client.forAgent("coder").model).toBe("claude-sonnet-4-6")
+    } finally {
+      if (origKey !== undefined) {
+        process.env["ANTHROPIC_API_KEY"] = origKey
+      } else {
+        process.env["ANTHROPIC_API_KEY"] = ""
+      }
+    }
+  })
+
+  it("resolves boundary-tester to Haiku via capability resolution", () => {
+    const origKey = process.env["ANTHROPIC_API_KEY"]
+    process.env["ANTHROPIC_API_KEY"] = "test-key"
+    try {
+      const config = mockConfig({
+        llm: { default: { provider: "anthropic", model: "claude-sonnet-4-6" } },
+      })
+      const client = new LLMClient(config)
+      expect(client.forAgent("boundary-tester").model).toBe("claude-haiku-4-5-20251001")
+    } finally {
+      if (origKey !== undefined) {
+        process.env["ANTHROPIC_API_KEY"] = origKey
+      } else {
+        process.env["ANTHROPIC_API_KEY"] = ""
+      }
+    }
+  })
+
+  it("unknown role falls to llm.default not Haiku", () => {
+    const origKey = process.env["ANTHROPIC_API_KEY"]
+    process.env["ANTHROPIC_API_KEY"] = "test-key"
+    try {
+      const config = mockConfig({
+        llm: { default: { provider: "anthropic", model: "claude-sonnet-4-6" } },
+      })
+      const client = new LLMClient(config)
+      expect(client.forAgent("some-custom-role").model).toBe("claude-sonnet-4-6")
+    } finally {
+      if (origKey !== undefined) {
+        process.env["ANTHROPIC_API_KEY"] = origKey
+      } else {
+        process.env["ANTHROPIC_API_KEY"] = ""
+      }
+    }
+  })
+
+  it("explicit override wins over capability resolution", () => {
+    const origKey = process.env["ANTHROPIC_API_KEY"]
+    process.env["ANTHROPIC_API_KEY"] = "test-key"
+    try {
+      const config = mockConfig({
+        llm: {
+          default: { provider: "anthropic", model: "claude-sonnet-4-6" },
+          agents: { coder: { provider: "anthropic", model: "claude-opus-4-8" } },
+        },
+      })
+      const client = new LLMClient(config)
+      expect(client.forAgent("coder").model).toBe("claude-opus-4-8")
+    } finally {
+      if (origKey !== undefined) {
+        process.env["ANTHROPIC_API_KEY"] = origKey
+      } else {
+        process.env["ANTHROPIC_API_KEY"] = ""
+      }
+    }
+  })
+
   it("throws PROVIDER_NOT_FOUND for unknown provider", () => {
     const config = mockConfig({
       llm: { default: { provider: "nonexistent", model: "x" } },
