@@ -122,5 +122,7 @@ Run against `main` after merge (`3698512` + post-merge fix). No dependency chang
 | Dependency | Blocked at | Reason | Revisit when |
 |------------|-----------|--------|--------------|
 | @google/genai live smoke | Gate 6 (2026-06-12) | Migrated to `@google/genai`; mocked tests pass; 2 live smoke tests skipped — no `GOOGLE_API_KEY` in `.env` | Key available; run `vitest run packages/llm/tests/google.test.ts` with key |
-| qs (transitive) | Gate 1 (2026-06-12) | Dependabot #21 moderate; `pnpm audit` reports `qs` 6.11.1–6.15.1 via Stryker→typed-rest-client; patched ≥6.15.2 not yet in graph | Upstream Stryker/typed-rest-client bump or targeted override restore |
-| ip-address (transitive) | Gate 1 (2026-06-12) | Dependabot #12 moderate; via MCP SDK→express-rate-limit; high audit clean without override | MCP SDK transitive update or override `ip-address: ">=10.1.1"` if advisory persists |
+| ~~qs (transitive)~~ | **RESOLVED (2026-06-18, commit `e24ef3f`)** | Override `qs: ">=6.15.2"` restored in `pnpm-workspace.yaml`; `pnpm audit` = 0 | — |
+| ~~ip-address (transitive)~~ | **RESOLVED (2026-06-18, commit `e24ef3f`)** | Override `ip-address: ">=10.1.1"` restored; `pnpm audit` = 0 | — |
+
+**Post-refresh CI finding (2026-06-18):** `bollard-verify` on `main` failed at Bollard's own static `audit` step — `pnpm audit --audit-level=high` caught NEW HIGH advisories published after the refresh merged: `vite 8.0.7` (GHSA-fx2h-pf6j-xcff), `esbuild 0.28.0` (GHSA-gv7w-rqvm-qjhr), `hono <4.12.25` (GHSA-88fw-hqm2-52qc). Commit `e24ef3f` restored seven transitive floors (`vite "8.0.16"` exact, `esbuild >=0.28.1`, `hono >=4.12.25`, `qs >=6.15.2`, `ip-address >=10.1.1`, `protobufjs >=7.6.3`, `@babel/core >=7.29.1`) → `pnpm audit` = 0, Dependabot 6 → 0. This is Bollard's CI catching a real post-merge vuln on `main` — the audit step working as designed.
