@@ -1,6 +1,25 @@
 packages:
   - "packages/*"
 
+# Transitive security floors. These four did NOT resolve cleanly after the
+# 2026-06 dependency refresh removed the full override block:
+# - qs 6.15.1 via @stryker-mutator/core>typed-rest-client (GHSA-q8mj-m7cp-5q26)
+# - ip-address 10.1.0 via @modelcontextprotocol/sdk>express-rate-limit (GHSA-v2v4-37r5-5v8g)
+# - vite 8.0.7 via vitest (GHSA-fx2h-pf6j-xcff, GHSA-v6wh-96g9-6wx3) — breaks bollard-verify audit
+# - esbuild 0.28.0 via vite/tsx (GHSA-gv7w-rqvm-qjhr, GHSA-g7r4-m6w7-qqqr) — breaks bollard-verify audit
+# - hono <4.12.25 via @modelcontextprotocol/sdk (GHSA-88fw-hqm2-52qc) — breaks bollard-verify audit
+# - protobufjs <=7.6.2 via @google/genai (GHSA-f38q-mgvj-vph7)
+# - @babel/core <=7.29.0 via @stryker-mutator/core (GHSA-4x5r-pxfx-6jf8)
+# Remove only when upstream chains ship patched versions and `pnpm audit` stays clean without them.
+overrides:
+  qs: ">=6.15.2"
+  ip-address: ">=10.1.1"
+  vite: "8.0.16"
+  esbuild: ">=0.28.1"
+  hono: ">=4.12.25"
+  protobufjs: ">=7.6.3"
+  "@babel/core": ">=7.29.1"
+
 allowBuilds:
   "@biomejs/biome": true
   "@google/genai": true
