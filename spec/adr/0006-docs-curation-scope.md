@@ -75,6 +75,19 @@ New `audit-docs` check `link-integrity` (generalizes the existing `spec-doc-link
 
 Because it is deterministic and zero-cost, `link-integrity` runs in `audit-docs` and therefore in the `bollard-verify` CI step — broken internal links fail the build, exactly like a stale count does today.
 
+### 5. Drift-candidate selection — the deterministic layer gates the LLM pass
+
+Sending every curate-tier doc's full content to the agent on every run does not scale: the curate tier is ~20 docs (~200K+ chars), and a naive full pass is a ~100K-token firehose producing an unreviewable gate diff at real cost. Worse, it spends frontier tokens on docs that almost certainly haven't drifted (`CODE_OF_CONDUCT.md` does not go stale relative to code).
+
+So a **deterministic candidate selector decides which curate-tier docs the LLM sees** — and whether it runs at all. `selectDriftCandidates(workDir, editable)` returns the subset of curate-tier docs with a real drift signal:
+
+- **audit-docs implication:** the doc appears in a *content*-relevant failing check — it owns a dangling link (`link-integrity`), or it's README/CLAUDE with a count mismatch. **Not** `doc-placement` (a location problem the rewriter can't fix — surfaced separately) or `link-orphans` (reachability, not content).
+- **git staleness vs references:** the doc's last-commit time is older than the newest last-commit time among the code it points at — its `doc→code` links (reusing the link-integrity parser) and, for a package README, its package's `src/`. "The code moved, the doc didn't" is the highest-signal, fully-deterministic staleness indicator.
+
+A doc with **no** drift signal is **not sent** — zero LLM cost. If the candidate set is empty, the run is a no-op (`CURATION_NO_PROGRESS`), and the LLM is never called. A `--all` escape hatch forces the full curate tier for a deliberate sweep. Git unavailable → the staleness signal degrades to empty (audit-implication still applies); `--all` always works.
+
+This is design principles 1 and 16 applied to curation itself: the deterministic layer (audit-docs + git + the resolver) does the selection; the frontier model is spent only where there is a concrete signal that a specific doc lags reality. Detect-only docs are reported regardless (no LLM); never-touch stays invisible.
+
 ### Resulting flow
 
 `audit-docs` (Layer 1) gains `link-integrity` and `doc-placement` over the eligible set (both deterministic, both CI-gated). `curate-docs` (Layer 2) consumes the resolver + tiers: rewrites the curate tier (grounded, human-gated, as validated in Phase 1), reports the detect-only tier, never sees the never-touch set. Auto-move stays out of both layers (deferred, Decision §3).
@@ -121,6 +134,7 @@ Build increments (deterministic first, agent last — ADR-0004 ordering):
 
 1. [x] `resolveCuratableDocs` + `DocClassification` (zones + `*-results` denylist + `curate:`/`tier:` front-matter) — pure, unit-tested.
 2. [x] `docs:` config block (`homes`, defaulted) + `audit-docs` `link-integrity` check (doc→doc + doc→code dangling-link detection; orphan advisory) + `doc-placement` check (eligible-set docs outside `homes`/root; advisory default) — all wired into CI; zero LLM.
-3. [x] `curate-docs` consumes the resolver + tiers: rewrite `curate` tier (unchanged mechanism), report `detect-only` tier, exclude `never-touch`.
+3. [x] `curate-docs` consumes the resolver + tiers: rewrite `curate` tier (runtime allowlist), report `detect-only` tier, exclude `never-touch`. **(increment 3)**
+3b. [ ] `selectDriftCandidates` — deterministic candidate selection (audit-implication + git staleness vs referenced code) gates which curate-tier docs the LLM reviews and whether it runs at all; `--all` escape hatch. The scaling fix so "curate all docs" is not a ~100K-token firehose. **(Decision §5)**
 4. [ ] Persist dropped-edit detail (follow-up from the Phase 1 live run — `d2` drop reason was unrecoverable; the grounding-result dropped array should be written to disk for auditable calibration).
 5. [ ] (Deferred / only if detection warrants) Opt-in link-aware auto-move for stray docs.
