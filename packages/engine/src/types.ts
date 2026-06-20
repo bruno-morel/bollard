@@ -1,4 +1,19 @@
 export type {
+  AuditDocsResult,
+  DocsCheckId,
+  DocsCheckResult,
+} from "./audit-docs.js"
+export {
+  auditDocs,
+  checkAdrLinks,
+  checkMcpToolCount,
+  checkSpecDocLinks,
+  checkTestCountConsistency,
+  countMcpToolsFromSource,
+  listAdrDocFilenames,
+  listSpecDocFilenames,
+} from "./audit-docs.js"
+export type {
   Blueprint,
   BlueprintBranch,
   BlueprintEntry,

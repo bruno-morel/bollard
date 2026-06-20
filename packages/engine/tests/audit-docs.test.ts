@@ -10,7 +10,6 @@ import {
   checkSpecDocLinks,
   checkTestCountConsistency,
   countMcpToolsFromSource,
-  formatAuditDocsResult,
 } from "../src/audit-docs.js"
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
@@ -130,41 +129,6 @@ describe("checkTestCountConsistency", () => {
     const result = checkTestCountConsistency("no stats here", FIXTURE_CLAUDE)
     expect(result.passed).toBe(false)
     expect(result.actual).toContain("claim not found")
-  })
-})
-
-describe("formatAuditDocsResult", () => {
-  it("renders pass lines", () => {
-    const output = formatAuditDocsResult({
-      allPassed: true,
-      checks: [
-        {
-          id: "mcp-tool-count",
-          label: "README MCP tool count matches source",
-          passed: true,
-        },
-      ],
-    })
-    expect(output).toContain("README MCP tool count matches source")
-    expect(output).toContain("✓")
-  })
-
-  it("renders fail lines with expected/actual", () => {
-    const output = formatAuditDocsResult({
-      allPassed: false,
-      checks: [
-        {
-          id: "mcp-tool-count",
-          label: "README MCP tool count matches source",
-          passed: false,
-          expected: "17",
-          actual: "99",
-        },
-      ],
-    })
-    expect(output).toContain("✗")
-    expect(output).toContain("expected: 17")
-    expect(output).toContain("actual: 99")
   })
 })
 
