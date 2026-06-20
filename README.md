@@ -28,7 +28,7 @@ plan → implement → static checks → boundary adversarial → contract adver
 **IDE integrations:** Claude Code, Cursor, Codex, Antigravity (via `bollard init --ide`).
 **MCP server:** 18 tools, 6 resource endpoints, 3 prompt templates.
 
-**Test suite:** 1574 passed / 6 skipped · Adversarial suite: 347 passed.
+**Test suite:** 1598 passed / 6 skipped · Adversarial suite: 347 passed.
 
 ---
 
@@ -136,6 +136,7 @@ All specs live in [`spec/`](spec/):
 | [0003](spec/adr/0003-agent-protocol-compliance.md) | WHY + DO NOT + SELF-CHECK structure for all agent protocol prompts |
 | [0004](spec/adr/0004-determinism-local-frontier-tiers.md) | Determinism-first → local inference → frontier: token economy tier model |
 | [0005](spec/adr/0005-capability-based-model-selection.md) | Capability-based model selection via a versioned model registry; defaults derived, not hardcoded |
+| [0006](spec/adr/0006-docs-curation-scope.md) | Deterministic doc-set resolver, link-graph integrity, rewrite tiers, and docs.homes placement detection |
 
 ---
 

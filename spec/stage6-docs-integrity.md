@@ -6,14 +6,22 @@ Bollard maintains **README.md** and **CLAUDE.md** through two complementary laye
 
 **Detects** numeric and structural drift. Zero LLM.
 
-Four checks:
+Hard checks (fail the build):
 
 1. README MCP tool count vs `packages/mcp/src/tools.ts` (`name: "bollard_"` scan)
 2. All `spec/NN-*.md` files linked in README
 3. All `spec/adr/NNNN-*.md` files linked in README
 4. README ↔ CLAUDE.md test-count consistency
+5. **link-integrity** — every relative link in the eligible doc set resolves on disk (doc→doc and doc→code)
 
-Implementation: `@bollard/engine` (`audit-docs.ts`); CLI shim + `formatAuditDocsResult`. CI: `.github/workflows/bollard-verify.yml`.
+Advisory checks (report only):
+
+6. **link-orphans** — eligible docs unreachable from README / CLAUDE / CONTRIBUTING via `.md` links
+7. **doc-placement** — eligible docs outside `docs.homes` and not at repo root
+
+Eligible set: `resolveCuratableDocs` (exclusion zones, `*-results` denylist, `curate:`/`tier:` front-matter). Config: `docs.homes` in `.bollard.yml` (default `["docs", "spec"]`).
+
+Implementation: `@bollard/engine` (`docs-resolver.ts`, `audit-docs.ts`); CLI shim + `formatAuditDocsResult`. CI: `.github/workflows/bollard-verify.yml`. Design: [adr/0006-docs-curation-scope.md](./adr/0006-docs-curation-scope.md).
 
 ## Layer 2 — `bollard curate-docs` (LLM + fact grounding)
 
