@@ -1,6 +1,6 @@
 # Stage 6 — Docs integrity (two-layer model)
 
-Bollard maintains **README.md** and **CLAUDE.md** through two complementary layers:
+Bollard maintains canonical docs through two complementary layers. Layer 2 edits the **curate tier** (root docs, `docs/`, package READMEs, etc.) — not only README and CLAUDE.
 
 ## Layer 1 — `bollard audit-docs` (deterministic)
 
@@ -31,6 +31,18 @@ Implementation: `@bollard/engine` (`docs-resolver.ts`, `audit-docs.ts`); CLI shi
 
 1. **Fact-token grounding on output:** Every number, path, package name, identifier, and stage/phase token in proposed `newText` must appear in the authoritative corpus (`buildDocsCurationCorpus`). Subjective rewording is free; ungrounded facts drop the entire edit (`ungrounded_fact_token`).
 2. **Human gate mandatory (Phase 1):** All applies go through `apply-docs-trust-gate` regardless of `takeover.docs.trust`. `silent` and `auto-commit` are parsed but deferred with a warning.
+
+### Tier behavior (ADR-0006 increment 3)
+
+`resolveCurateScope` drives Layer 2 scope:
+
+| Tier | LLM action |
+|------|------------|
+| **curate** | Editable — agent receives file contents; `verifyDocsCurationGrounding` enforces runtime allowlist |
+| **detect-only** | Report only — listed by `list-drift`, never sent to the agent; edits targeting these paths drop `file_not_allowed` |
+| **never-touch** | Invisible — excluded from resolver eligible set |
+
+`list-drift` prints editable and detect-only lists separately after audit-docs output.
 
 ### Pipeline (9 nodes)
 

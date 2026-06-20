@@ -2,7 +2,7 @@
 
 ### The immovable post between your AI agents and production.
 
-> *"AI was supposed to replace developers. Turns out you need a bollard to stop it from crashing into the dock."*
+> *"AI was supposed to replace developers. Turns out you need a bollard to stop those ships from crashing into the dock."*
 
 ---
 
@@ -28,7 +28,7 @@ plan → implement → static checks → boundary adversarial → contract adver
 **IDE integrations:** Claude Code, Cursor, Codex, Antigravity (via `bollard init --ide`).
 **MCP server:** 18 tools, 6 resource endpoints, 3 prompt templates.
 
-**Test suite:** 1598 passed / 6 skipped · Adversarial suite: 347 passed.
+**Test suite:** 1603 passed / 6 skipped · Adversarial suite: 347 passed.
 
 ---
 
