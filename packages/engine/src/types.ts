@@ -72,6 +72,7 @@ export {
   isDocAtHome,
   parseDocFrontMatter,
   resolveCuratableDocs,
+  resolveCurateScope,
 } from "./docs-resolver.js"
 export type { BollardErrorCode } from "./errors.js"
 export { BollardError } from "./errors.js"

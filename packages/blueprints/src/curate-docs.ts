@@ -4,10 +4,10 @@ import type { BollardConfig } from "@bollard/engine/src/context.js"
 import {
   buildDocsCurationCorpus,
   type DocsEdit,
-  type DocsEditFile,
   parseDocsCurationPlan,
   verifyDocsCurationGrounding,
 } from "@bollard/engine/src/docs-curation.js"
+import { resolveCurateScope } from "@bollard/engine/src/docs-resolver.js"
 import { detectManagedFileConflicts, FileOwnershipStore } from "@bollard/engine/src/ownership.js"
 import { applyDocsEdits, stageDocsEdits } from "./docs-curation-helpers.js"
 
@@ -26,14 +26,22 @@ async function getHeadSha(workDir: string): Promise<string> {
   }
 }
 
-export async function assessDocsDriftForWorkDir(workDir: string): Promise<{
+export async function assessDocsDriftForWorkDir(
+  workDir: string,
+  docHomes?: string[],
+): Promise<{
   corpus: string
-  readmeContent: string
-  claudeContent: string
+  fileContents: Record<string, string>
+  editable: string[]
+  detectOnly: string[]
+  allowedFiles: Set<string>
   auditResult: Awaited<ReturnType<typeof auditDocs>>
   auditFailures: string[]
 }> {
-  const built = await buildDocsCurationCorpus({ workDir })
+  const built = await buildDocsCurationCorpus({
+    workDir,
+    ...(docHomes !== undefined ? { docHomes } : {}),
+  })
   const auditFailures = built.auditResult.checks.filter((c) => !c.passed).map((c) => c.id)
   return { ...built, auditFailures }
 }
@@ -65,8 +73,10 @@ export function createCurateDocsBlueprint(workDir: string, config: BollardConfig
         | undefined
       const manifest = manifestData ?? (await new FileOwnershipStore(workDir).read())
 
-      const docPaths = ["README.md", "CLAUDE.md"]
-      const managedDocs = manifest.bollardManaged.filter((e) => docPaths.includes(e.path))
+      const scopeOpts =
+        ctx.config.docs?.homes !== undefined ? { homes: ctx.config.docs.homes } : undefined
+      const { editable } = await resolveCurateScope(workDir, scopeOpts)
+      const managedDocs = manifest.bollardManaged.filter((e) => editable.includes(e.path))
       if (managedDocs.length === 0) {
         return { status: "ok", data: { conflicts: [], skipped: true } }
       }
@@ -96,7 +106,7 @@ export function createCurateDocsBlueprint(workDir: string, config: BollardConfig
           trust,
         })
       }
-      const result = await assessDocsDriftForWorkDir(workDir)
+      const result = await assessDocsDriftForWorkDir(workDir, ctx.config.docs?.homes)
       return { status: "ok", data: result }
     },
   }
@@ -137,11 +147,12 @@ export function createCurateDocsBlueprint(workDir: string, config: BollardConfig
         return { status: "ok", data: { kept: [], dropped: [], skipped: true } }
       }
 
-      const fileContents: Record<DocsEditFile, string> = {
-        "README.md": driftData.readmeContent,
-        "CLAUDE.md": driftData.claudeContent,
-      }
-      const result = verifyDocsCurationGrounding(plan, driftData.corpus, fileContents)
+      const result = verifyDocsCurationGrounding(
+        plan,
+        driftData.corpus,
+        driftData.fileContents,
+        driftData.allowedFiles,
+      )
       ctx.log.info("docs_curation_grounding_result", {
         proposed: plan.edits.length,
         grounded: result.kept.length,
@@ -175,11 +186,7 @@ export function createCurateDocsBlueprint(workDir: string, config: BollardConfig
         return { status: "ok", data: { skipped: true, edits: [] } }
       }
 
-      const fileContents: Record<DocsEditFile, string> = {
-        "README.md": driftData.readmeContent,
-        "CLAUDE.md": driftData.claudeContent,
-      }
-      const staged = await stageDocsEdits(workDir, groundingData.kept, fileContents)
+      const staged = await stageDocsEdits(workDir, groundingData.kept, driftData.fileContents)
       return { status: "ok", data: { edits: staged.edits, diffs: staged.diffs } }
     },
   }
@@ -253,7 +260,7 @@ export function createCurateDocsBlueprint(workDir: string, config: BollardConfig
 
       const store = new FileOwnershipStore(workDir)
       const headSha = await getHeadSha(workDir)
-      const filesUpdated = new Set<DocsEditFile>()
+      const filesUpdated = new Set<string>()
       for (const edit of applied) {
         filesUpdated.add(edit.file)
       }

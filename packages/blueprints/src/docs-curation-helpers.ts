@@ -1,13 +1,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
-import type { DocsEdit, DocsEditFile } from "@bollard/engine/src/docs-curation.js"
+import type { DocsEdit } from "@bollard/engine/src/docs-curation.js"
 
 export const DOCS_CURATION_STAGING_DIR = ".bollard/curation/docs"
 export const DOCS_CURATION_PLAN_FILE = join(DOCS_CURATION_STAGING_DIR, "plan.json")
 
 export interface StagedDocsPlan {
   edits: DocsEdit[]
-  diffs: Partial<Record<DocsEditFile, string>>
+  diffs: Partial<Record<string, string>>
 }
 
 export function buildDiffPreview(fileContent: string, edits: DocsEdit[]): string {
@@ -54,20 +54,24 @@ export async function readStagedDocsPlan(workDir: string): Promise<StagedDocsPla
   }
 }
 
+function previewFileName(relPath: string): string {
+  return `${relPath.replace(/\//g, "__")}.preview.md`
+}
+
 export async function stageDocsEdits(
   workDir: string,
   edits: DocsEdit[],
-  fileContents: Record<DocsEditFile, string>,
+  fileContents: Record<string, string>,
 ): Promise<StagedDocsPlan> {
   const stagingRoot = resolve(workDir, DOCS_CURATION_STAGING_DIR)
   await mkdir(stagingRoot, { recursive: true })
 
-  const diffs: Partial<Record<DocsEditFile, string>> = {}
-  for (const file of ["README.md", "CLAUDE.md"] as const) {
-    const content = fileContents[file]
+  const diffs: Partial<Record<string, string>> = {}
+  for (const file of Object.keys(fileContents).sort()) {
+    const content = fileContents[file] ?? ""
     const fileEdits = edits.filter((e) => e.file === file)
     diffs[file] = buildDiffPreview(content, fileEdits)
-    await writeFile(join(stagingRoot, `${file}.preview.md`), diffs[file] ?? "", "utf-8")
+    await writeFile(join(stagingRoot, previewFileName(file)), diffs[file] ?? "", "utf-8")
   }
 
   const plan: StagedDocsPlan = { edits, diffs }
@@ -85,7 +89,7 @@ export async function applyDocsEdits(
   const applied: DocsEdit[] = []
   const skipped: Array<{ id: string; reason: string }> = []
 
-  const byFile = new Map<DocsEditFile, DocsEdit[]>()
+  const byFile = new Map<string, DocsEdit[]>()
   for (const edit of edits) {
     const list = byFile.get(edit.file) ?? []
     list.push(edit)

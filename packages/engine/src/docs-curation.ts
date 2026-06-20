@@ -1,9 +1,10 @@
 import { readdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { auditDocs, listAdrDocFilenames, listSpecDocFilenames } from "./audit-docs.js"
+import { resolveCurateScope } from "./docs-resolver.js"
 import { BollardError } from "./errors.js"
 
-export type DocsEditFile = "README.md" | "CLAUDE.md"
+export type DocsEditFile = string
 
 export interface DocsEdit {
   id: string
@@ -28,8 +29,6 @@ export interface DocsGroundingResult {
   kept: DocsEdit[]
   dropped: Array<{ id: string; reason: DocsGroundingDropReason; detail?: string }>
 }
-
-const ALLOWED_FILES = new Set<DocsEditFile>(["README.md", "CLAUDE.md"])
 
 const CLI_INDEX_REL = "packages/cli/src/index.ts"
 const COMMAND_PATTERN = /if \(command === "([^"]+)"\)/g
@@ -139,13 +138,23 @@ export async function buildDocsCurationCorpus(opts: {
   docHomes?: string[]
 }): Promise<{
   corpus: string
-  readmeContent: string
-  claudeContent: string
+  fileContents: Record<string, string>
+  editable: string[]
+  detectOnly: string[]
+  allowedFiles: Set<string>
   auditResult: Awaited<ReturnType<typeof auditDocs>>
 }> {
   const { workDir, docHomes } = opts
-  const readmeContent = await readFile(join(workDir, "README.md"), "utf-8")
-  const claudeContent = await readFile(join(workDir, "CLAUDE.md"), "utf-8")
+  const scopeOpts = docHomes !== undefined ? { homes: docHomes } : undefined
+  const { editable, detectOnly } = await resolveCurateScope(workDir, scopeOpts)
+
+  const fileContents: Record<string, string> = {}
+  for (const relPath of editable) {
+    fileContents[relPath] = await readFile(join(workDir, relPath), "utf-8")
+  }
+
+  const claudeContent =
+    fileContents["CLAUDE.md"] ?? (await readFile(join(workDir, "CLAUDE.md"), "utf-8"))
   const roadmapContent = await readFile(join(workDir, "spec/ROADMAP.md"), "utf-8")
   const auditResult = await auditDocs(workDir, {
     ...(docHomes !== undefined ? { docHomes } : {}),
@@ -179,14 +188,26 @@ export async function buildDocsCurationCorpus(opts: {
     packageNames.join("\n"),
     "## CLI commands (from packages/cli/src/index.ts)",
     cliCommands.join("\n"),
-    "## README.md",
-    readmeContent,
   ]
+
+  for (const relPath of editable) {
+    if (relPath === "CLAUDE.md") {
+      continue
+    }
+    const content = fileContents[relPath]
+    if (content !== undefined) {
+      sections.push(`## ${relPath}`, content)
+    }
+  }
+
+  const allowedFiles = new Set(editable)
 
   return {
     corpus: sections.join("\n\n"),
-    readmeContent,
-    claudeContent,
+    fileContents,
+    editable,
+    detectOnly,
+    allowedFiles,
     auditResult,
   }
 }
@@ -227,19 +248,20 @@ export function extractFactTokens(text: string): string[] {
 export function verifyDocsCurationGrounding(
   plan: DocsCurationPlan,
   corpus: string,
-  fileContents: Record<DocsEditFile, string>,
+  fileContents: Record<string, string>,
+  allowedFiles: Set<string>,
 ): DocsGroundingResult {
   const kept: DocsEdit[] = []
   const dropped: DocsGroundingResult["dropped"] = []
 
   for (const edit of plan.edits) {
-    if (!ALLOWED_FILES.has(edit.file)) {
+    if (!allowedFiles.has(edit.file)) {
       dropped.push({ id: edit.id, reason: "file_not_allowed", detail: edit.file })
       continue
     }
 
     const fileContent = fileContents[edit.file]
-    if (!fileContent.includes(edit.oldText)) {
+    if (fileContent === undefined || !fileContent.includes(edit.oldText)) {
       dropped.push({ id: edit.id, reason: "old_text_not_in_file" })
       continue
     }
@@ -279,7 +301,7 @@ function isValidDocsEdit(value: unknown): value is DocsEdit {
   if (value === null || typeof value !== "object") return false
   const e = value as Record<string, unknown>
   if (typeof e["id"] !== "string") return false
-  if (e["file"] !== "README.md" && e["file"] !== "CLAUDE.md") return false
+  if (typeof e["file"] !== "string" || e["file"].length === 0) return false
   if (typeof e["oldText"] !== "string") return false
   if (typeof e["newText"] !== "string") return false
   if (typeof e["rationale"] !== "string") return false

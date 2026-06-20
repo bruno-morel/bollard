@@ -585,8 +585,7 @@ function buildDocsCuratorMessage(ctx: PipelineContext): string {
   const driftData = ctx.results["assess-docs-drift"]?.data as
     | {
         corpus?: string
-        readmeContent?: string
-        claudeContent?: string
+        fileContents?: Record<string, string>
         auditFailures?: string[]
       }
     | undefined
@@ -596,17 +595,21 @@ function buildDocsCuratorMessage(ctx: PipelineContext): string {
       ? `Audit failures: ${driftData.auditFailures.join(", ")}`
       : "Audit failures: (none)"
 
+  const fileBlocks: string[] = []
+  const fileContents = driftData?.fileContents ?? {}
+  for (const [path, content] of Object.entries(fileContents).sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    fileBlocks.push(`## ${path} (current)`, content, "")
+  }
+
   return [
     "## Authoritative reality corpus",
     driftData?.corpus ?? "(missing)",
     "",
     auditLine,
     "",
-    "## README.md (current)",
-    driftData?.readmeContent ?? "",
-    "",
-    "## CLAUDE.md (current)",
-    driftData?.claudeContent ?? "",
+    ...fileBlocks,
   ].join("\n")
 }
 

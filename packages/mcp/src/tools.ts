@@ -489,6 +489,8 @@ async function handleCurateDocs(input: Record<string, unknown>, workDir: string)
       dryRun: true,
       auditResult: result.auditResult,
       auditFailures: result.auditFailures,
+      editable: result.editable,
+      detectOnly: result.detectOnly,
       corpusPreview: result.corpus.slice(0, 2000),
       note: "Agent docs edits require dryRun=false with API key",
       edits: [] as unknown[],
@@ -671,7 +673,7 @@ export const tools: McpToolDefinition[] = [
   {
     name: "bollard_curate_docs",
     description:
-      "Run the curate-docs pipeline: assess README/CLAUDE.md drift, propose fact-grounded prose edits, human-gate apply. Set dryRun=true for corpus + audit-docs only (no LLM).",
+      "Run the curate-docs pipeline: assess curate-tier doc drift via resolver, propose fact-grounded prose edits, human-gate apply. Set dryRun=true for corpus + audit-docs only (no LLM).",
     inputSchema: zodToJsonSchema(curateDocsInputSchema),
     handler: handleCurateDocs,
   },

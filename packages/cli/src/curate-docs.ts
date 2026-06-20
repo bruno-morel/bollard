@@ -33,7 +33,8 @@ function printHelp(): void {
 
 export async function runListDrift(workDir: string): Promise<void> {
   header("curate-docs list-drift")
-  const result = await assessDocsDriftForWorkDir(workDir)
+  const { config } = await resolveConfig(undefined, workDir, { requireApiKey: false })
+  const result = await assessDocsDriftForWorkDir(workDir, config.docs?.homes)
 
   log(formatAuditDocsResult(result.auditResult))
   log("")
@@ -41,6 +42,24 @@ export async function runListDrift(workDir: string): Promise<void> {
   log(
     `${DIM}Audit failures:${RESET} ${result.auditFailures.length > 0 ? result.auditFailures.join(", ") : "(none)"}`,
   )
+  log("")
+  log(`${DIM}Editable (curate tier):${RESET}`)
+  if (result.editable.length === 0) {
+    log("  (none)")
+  } else {
+    for (const path of result.editable) {
+      log(`  ${path}`)
+    }
+  }
+  log("")
+  log(`${DIM}Detect-only tier (NOT auto-curated — review manually):${RESET}`)
+  if (result.detectOnly.length === 0) {
+    log("  (none)")
+  } else {
+    for (const path of result.detectOnly) {
+      log(`  ${path}`)
+    }
+  }
   log("")
 }
 

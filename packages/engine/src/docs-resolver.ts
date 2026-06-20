@@ -222,6 +222,7 @@ export async function resolveCuratableDocs(
   workDir: string,
   _opts?: { homes?: string[] },
 ): Promise<DocClassification[]> {
+  void _opts
   const mdPaths = await globMarkdownFiles(workDir)
   const classifications: DocClassification[] = []
 
@@ -239,4 +240,26 @@ export async function resolveCuratableDocs(
   }
 
   return classifications
+}
+
+export async function resolveCurateScope(
+  workDir: string,
+  opts?: { homes?: string[] },
+): Promise<{ editable: string[]; detectOnly: string[] }> {
+  const classifications = await resolveCuratableDocs(workDir, opts)
+  const editable: string[] = []
+  const detectOnly: string[] = []
+
+  for (const c of classifications) {
+    if (!c.eligible) {
+      continue
+    }
+    if (c.tier === "curate") {
+      editable.push(c.path)
+    } else if (c.tier === "detect-only") {
+      detectOnly.push(c.path)
+    }
+  }
+
+  return { editable, detectOnly }
 }

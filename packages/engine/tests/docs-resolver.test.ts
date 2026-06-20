@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -7,6 +7,7 @@ import {
   isDocAtHome,
   parseDocFrontMatter,
   resolveCuratableDocs,
+  resolveCurateScope,
 } from "../src/docs-resolver.js"
 
 let tempDir: string | undefined
@@ -124,5 +125,30 @@ describe("resolveCuratableDocs", () => {
     const optOut = results.find((r) => r.path === "opt-out.md")
     expect(optOut?.eligible).toBe(false)
     expect(optOut?.reason).toBe("front-matter curate: false")
+  })
+})
+
+describe("resolveCurateScope", () => {
+  it("splits editable curate tier from detect-only and excludes never-touch", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "docs-resolver-scope-"))
+    await writeFile(join(tempDir, "README.md"), "# README\n", "utf-8")
+    await writeFile(join(tempDir, "CONTRIBUTING.md"), "# Contributing\n", "utf-8")
+    await mkdir(join(tempDir, "spec/adr"), { recursive: true })
+    await writeFile(join(tempDir, "spec/01-architecture.md"), "# Architecture\n", "utf-8")
+    await writeFile(join(tempDir, "spec/ROADMAP.md"), "# Roadmap\n", "utf-8")
+    await mkdir(join(tempDir, "spec/archive"), { recursive: true })
+    await writeFile(join(tempDir, "spec/archive/old.md"), "# Old\n", "utf-8")
+    await mkdir(join(tempDir, "packages/engine"), { recursive: true })
+    await writeFile(join(tempDir, "packages/engine/README.md"), "# Engine\n", "utf-8")
+
+    const scope = await resolveCurateScope(tempDir)
+    expect(scope.editable).toContain("README.md")
+    expect(scope.editable).toContain("CONTRIBUTING.md")
+    expect(scope.editable).toContain("packages/engine/README.md")
+    expect(scope.detectOnly).toContain("spec/01-architecture.md")
+    expect(scope.detectOnly).toContain("spec/ROADMAP.md")
+    expect(scope.editable).not.toContain("spec/01-architecture.md")
+    expect(scope.editable).not.toContain("spec/archive/old.md")
+    expect(scope.detectOnly).not.toContain("spec/archive/old.md")
   })
 })
