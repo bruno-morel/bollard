@@ -203,11 +203,20 @@ export function parseReviewDocument(raw: string): ReviewDocument {
   return { findings }
 }
 
+export interface BuildReviewCorpusOptions {
+  task?: string
+  sourceContents?: string[]
+}
+
 /**
  * Split unified diff into hunks (each @@ hunk header starts a segment).
  * Falls back to a single corpus entry when no hunks match.
  */
-export function buildReviewCorpus(diff: string, plan: unknown): ReviewCorpus {
+export function buildReviewCorpus(
+  diff: string,
+  plan: unknown,
+  opts?: BuildReviewCorpusOptions,
+): ReviewCorpus {
   const entries: ReviewCorpus["entries"] = []
   const trimmed = diff.trim()
   if (trimmed.length > 0) {
@@ -225,6 +234,11 @@ export function buildReviewCorpus(diff: string, plan: unknown): ReviewCorpus {
     }
   }
 
+  const taskText = opts?.task?.trim()
+  if (taskText) {
+    entries.push({ text: taskText, source: "plan" })
+  }
+
   if (plan && typeof plan === "object") {
     const p = plan as Record<string, unknown>
     if (typeof p["summary"] === "string") {
@@ -236,11 +250,29 @@ export function buildReviewCorpus(diff: string, plan: unknown): ReviewCorpus {
         source: "plan",
       })
     }
+    if (Array.isArray(p["non_goals"])) {
+      entries.push({
+        text: (p["non_goals"] as unknown[]).map(String).join("\n"),
+        source: "plan",
+      })
+    }
+    if (p["affected_files"] !== undefined) {
+      entries.push({ text: JSON.stringify(p["affected_files"], null, 2), source: "plan" })
+    }
     if (Array.isArray(p["steps"])) {
       entries.push({ text: JSON.stringify(p["steps"]), source: "plan" })
     }
+    if (typeof p["notes"] === "string" && p["notes"].trim().length > 0) {
+      entries.push({ text: p["notes"], source: "plan" })
+    }
     if (p["code_metrics"] !== undefined) {
       entries.push({ text: JSON.stringify(p["code_metrics"]), source: "plan" })
+    }
+  }
+
+  for (const content of opts?.sourceContents ?? []) {
+    if (content.trim().length > 0) {
+      entries.push({ text: content, source: "diff" })
     }
   }
 

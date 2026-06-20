@@ -1,10 +1,16 @@
+import { readFile } from "node:fs/promises"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { BollardError } from "@bollard/engine/src/errors.js"
 import { describe, expect, it } from "vitest"
 import {
   buildReviewCorpus,
   parseReviewDocument,
+  type ReviewDocument,
   verifyReviewGrounding,
 } from "../src/review-grounding.js"
+
+const fixtureDir = resolve(dirname(fileURLToPath(import.meta.url)), "fixtures/review-grounding")
 
 describe("parseReviewDocument", () => {
   it("parses a valid document", () => {
@@ -69,6 +75,35 @@ describe("buildReviewCorpus", () => {
     const joined = corpus.entries.map((e) => e.text).join("\n")
     expect(joined).toContain("Do the thing")
     expect(joined).toContain("+new")
+  })
+
+  it("includes task, non_goals, affected_files, and sourceContents when provided", () => {
+    const corpus = buildReviewCorpus(
+      "+foo()\n",
+      {
+        summary: "summary text",
+        non_goals: ["do not touch tests"],
+        affected_files: { modify: ["src/a.ts"], create: ["tests/a.test.ts"] },
+      },
+      {
+        task: "Add foo() method",
+        sourceContents: ["function foo() { return 1 }"],
+      },
+    )
+    const joined = corpus.entries.map((e) => e.text).join("\n")
+    expect(joined).toContain("Add foo() method")
+    expect(joined).toContain("do not touch tests")
+    expect(joined).toContain("tests/a.test.ts")
+    expect(joined).toContain("function foo()")
+    expect(corpus.entries.some((e) => e.source === "diff" && e.text.includes("function foo"))).toBe(
+      true,
+    )
+  })
+
+  it("preserves backward compat when opts omitted", () => {
+    const corpus = buildReviewCorpus("+line\n", { summary: "only summary" })
+    expect(corpus.entries.some((e) => e.text.includes("only summary"))).toBe(true)
+    expect(corpus.entries.length).toBe(2)
   })
 })
 
@@ -263,5 +298,117 @@ describe("verifyReviewGrounding", () => {
     // plan source still requires verbatim — identifier fallback only for diff
     expect(result.kept).toHaveLength(0)
     expect(result.dropped.some((d) => d.reason === "grounding_not_in_corpus")).toBe(true)
+  })
+})
+
+describe("verifyReviewGrounding corpus broadening safety", () => {
+  it("still drops genuinely ungrounded findings after corpus broadening", () => {
+    const doc = parseReviewDocument(
+      JSON.stringify({
+        findings: [
+          {
+            id: "hallucinated",
+            severity: "error",
+            category: "api-compatibility",
+            finding: "CostTracker now deletes persisted run history on every add()",
+            grounding: [{ quote: "deleteAllRunHistory()", source: "diff" }],
+          },
+        ],
+      }),
+    )
+    const corpus = buildReviewCorpus(
+      "+  add(cost: number)\n",
+      {
+        summary: "Add increment helper",
+        non_goals: ["do not touch history"],
+        affected_files: { modify: ["cost-tracker.ts"] },
+      },
+      {
+        task: "Add increment helper to CostTracker",
+        sourceContents: ["add(cost: number) { this._total += cost }"],
+      },
+    )
+    const result = verifyReviewGrounding(doc, corpus)
+    expect(result.kept).toHaveLength(0)
+    expect(result.dropped.some((d) => d.reason === "grounding_not_in_corpus")).toBe(true)
+  })
+
+  it("keeps non_goals plan quote when non_goals are in corpus", () => {
+    const doc: ReviewDocument = {
+      findings: [
+        {
+          id: "r1",
+          severity: "error",
+          category: "plan-divergence",
+          finding: "Modified existing test file against plan",
+          grounding: [
+            {
+              quote:
+                "Do not modify existing test files (cost-tracker.test.ts, cost-tracker-*.test.ts)",
+              source: "plan",
+            },
+          ],
+        },
+      ],
+    }
+    const withoutNonGoals = buildReviewCorpus("diff", { summary: "summary only" })
+    const withNonGoals = buildReviewCorpus("diff", {
+      summary: "summary only",
+      non_goals: [
+        "Do not modify existing test files (cost-tracker.test.ts, cost-tracker-*.test.ts)",
+      ],
+    })
+    expect(verifyReviewGrounding(doc, withoutNonGoals).kept).toHaveLength(0)
+    expect(verifyReviewGrounding(doc, withNonGoals).kept).toHaveLength(1)
+  })
+})
+
+interface CaptureFixture {
+  runId: string
+  task: string
+  diff: string
+  plan: unknown
+  parsedFindings: ReviewDocument["findings"]
+}
+
+interface ClassificationEntry {
+  runId: string
+  id: string
+  label: "FALSE" | "CORRECT"
+}
+
+describe("review grounding fixture replay", () => {
+  it("improves keep-rate on captured runs without admitting CORRECT-labeled drops", async () => {
+    const classification = JSON.parse(
+      await readFile(resolve(fixtureDir, "classification.json"), "utf-8"),
+    ) as { findings: ClassificationEntry[] }
+
+    const fixtureIds = ["20260620-0352-run-1238f9", "20260620-0355-run-3a278e"]
+
+    for (const runId of fixtureIds) {
+      const raw = await readFile(resolve(fixtureDir, `${runId}.json`), "utf-8")
+      const fixture = JSON.parse(raw) as CaptureFixture
+      const doc: ReviewDocument = { findings: fixture.parsedFindings }
+
+      const oldResult = verifyReviewGrounding(doc, buildReviewCorpus(fixture.diff, fixture.plan))
+      const newResult = verifyReviewGrounding(
+        doc,
+        buildReviewCorpus(fixture.diff, fixture.plan, { task: fixture.task }),
+      )
+
+      expect(newResult.kept.length).toBeGreaterThanOrEqual(oldResult.kept.length)
+
+      const labels = classification.findings.filter((f) => f.runId === runId)
+      for (const entry of labels) {
+        const stillDropped = newResult.dropped.some((d) => d.id === entry.id)
+        const nowKept = newResult.kept.some((f) => f.id === entry.id)
+        if (entry.label === "CORRECT") {
+          expect(stillDropped || !nowKept).toBe(true)
+        }
+        if (entry.label === "FALSE") {
+          expect(nowKept).toBe(true)
+        }
+      }
+    }
   })
 })

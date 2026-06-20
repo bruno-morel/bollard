@@ -1714,7 +1714,20 @@ export function createImplementFeatureBlueprint(
                   ...(ctx.plan && typeof ctx.plan === "object" ? ctx.plan : { plan: ctx.plan }),
                   code_metrics: metricsRes.metrics,
                 }
-          const corpus = buildReviewCorpus(diffText, planForCorpus)
+          const sourcePaths = getAffectedSourceFiles(ctx)
+          const sourceContents: string[] = []
+          for (const filePath of sourcePaths) {
+            try {
+              sourceContents.push(await readFile(resolve(workDir, filePath), "utf-8"))
+            } catch {
+              // File may not exist on verification-only runs — skip silently.
+            }
+          }
+
+          const corpus = buildReviewCorpus(diffText, planForCorpus, {
+            task: ctx.task,
+            sourceContents,
+          })
           const result = verifyReviewGrounding(doc, corpus)
 
           const proposed = doc.findings.length

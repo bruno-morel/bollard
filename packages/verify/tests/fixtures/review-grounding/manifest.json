@@ -1,0 +1,21 @@
+{
+  "description": "Captured semantic-review grounding fixtures from implement-feature diagnostic runs (2026-06-20).",
+  "runs": [
+    {
+      "runId": "20260620-0352-run-1238f9",
+      "task": "usedFraction()",
+      "proposed": 3,
+      "keptOld": 1,
+      "droppedOld": 2,
+      "keepRateOld": 0.333
+    },
+    {
+      "runId": "20260620-0355-run-3a278e",
+      "task": "headroom()",
+      "proposed": 5,
+      "keptOld": 1,
+      "droppedOld": 4,
+      "keepRateOld": 0.2
+    }
+  ]
+}

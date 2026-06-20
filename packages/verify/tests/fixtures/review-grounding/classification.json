@@ -1,0 +1,58 @@
+{
+  "methodology": "Conservative labeling: FALSE only when the issue is demonstrably real in diff/plan; ambiguous → CORRECT.",
+  "summary": {
+    "falseDropCount": 6,
+    "correctDropCount": 0,
+    "dominantFalseMode": "plan_non_goals_and_affected_files_not_in_corpus"
+  },
+  "findings": [
+    {
+      "runId": "20260620-0352-run-1238f9",
+      "id": "r1",
+      "label": "FALSE",
+      "falseMode": "plan_non_goals_not_in_corpus",
+      "reason": "grounding_not_in_corpus",
+      "evidence": "Diff rewrites cost-tracker.adversarial.test.ts; plan non_goals forbids modifying cost-tracker-*.test.ts and steps require cost-tracker-usedFraction.test.ts"
+    },
+    {
+      "runId": "20260620-0352-run-1238f9",
+      "id": "r3",
+      "label": "FALSE",
+      "falseMode": "plan_non_goals_not_in_corpus",
+      "reason": "grounding_not_in_corpus",
+      "evidence": "Diff removes breakdown() adversarial tests; plan non_goals quote matches real unintended test-file churn"
+    },
+    {
+      "runId": "20260620-0355-run-3a278e",
+      "id": "r1",
+      "label": "FALSE",
+      "falseMode": "plan_affected_files_not_in_corpus",
+      "reason": "grounding_not_in_corpus",
+      "evidence": "Plan affected_files.create lists cost-tracker-headroom.test.ts; diff only touches cost-tracker.adversarial.test.ts"
+    },
+    {
+      "runId": "20260620-0355-run-3a278e",
+      "id": "r2",
+      "label": "FALSE",
+      "falseMode": "plan_non_goals_not_in_corpus",
+      "reason": "grounding_not_in_corpus",
+      "evidence": "Diff replaces adversarial test file; plan non_goals explicitly forbids modifying existing test files"
+    },
+    {
+      "runId": "20260620-0355-run-3a278e",
+      "id": "r3",
+      "label": "FALSE",
+      "falseMode": "plan_affected_files_not_in_corpus",
+      "reason": "grounding_not_in_corpus",
+      "evidence": "Diagnostic capture block present in diff at implement-feature.ts; plan affected_files.modify lists only cost-tracker.ts — real unintended infra change during capture run"
+    },
+    {
+      "runId": "20260620-0355-run-3a278e",
+      "id": "r4",
+      "label": "FALSE",
+      "falseMode": "plan_affected_files_not_in_corpus",
+      "reason": "grounding_not_in_corpus",
+      "evidence": "Diff adds review-grounding-capture/ to .bollard/.gitignore; plan modify list does not include .bollard paths — real unintended change during capture run"
+    }
+  ]
+}

@@ -1,0 +1,257 @@
+{
+  "runId": "20260620-0352-run-1238f9",
+  "task": "Add a usedFraction(): number method to CostTracker in packages/engine/src/cost-tracker.ts that returns total/limit as a value in [0,1], returning 0 when the limit is Infinity (unlimited) and 0 when the limit is 0 and total is 0",
+  "diff": "diff --git a/.bollard/.gitignore b/.bollard/.gitignore\nindex 56c6e1f..1925d34 100644\n--- a/.bollard/.gitignore\n+++ b/.bollard/.gitignore\n@@ -1,3 +1,4 @@\n+review-grounding-capture/\n runs/history.db\n runs/.history.lock\n runs/.history.lock.*\ndiff --git a/packages/blueprints/src/implement-feature.ts b/packages/blueprints/src/implement-feature.ts\nindex fc671be..bcfa7ab 100644\n--- a/packages/blueprints/src/implement-feature.ts\n+++ b/packages/blueprints/src/implement-feature.ts\n@@ -1717,6 +1717,33 @@ export function createImplementFeatureBlueprint(\n           const corpus = buildReviewCorpus(diffText, planForCorpus)\n           const result = verifyReviewGrounding(doc, corpus)\n \n+          // Temporary capture for review-grounding corpus diagnosis — remove after fixture freeze\n+          try {\n+            const captureDir = resolve(workDir, \".bollard/review-grounding-capture\")\n+            await mkdir(captureDir, { recursive: true })\n+            await writeFile(\n+              resolve(captureDir, `${ctx.runId}.json`),\n+              JSON.stringify(\n+                {\n+                  runId: ctx.runId,\n+                  task: ctx.task,\n+                  diff: diffText,\n+                  plan: planForCorpus,\n+                  rawReviewerOutput: raw,\n+                  parsedFindings: doc.findings,\n+                  kept: result.kept,\n+                  dropped: result.dropped,\n+                  corpusEntries: corpus.entries,\n+                },\n+                null,\n+                2,\n+              ),\n+              \"utf-8\",\n+            )\n+          } catch {\n+            // capture is diagnostic-only — never fail the node\n+          }\n+\n           const proposed = doc.findings.length\n           const keptCount = result.kept.length\n           const droppedCount = result.dropped.length\ndiff --git a/packages/engine/src/cost-tracker.ts b/packages/engine/src/cost-tracker.ts\nindex 169979f..8fd5144 100644\n--- a/packages/engine/src/cost-tracker.ts\n+++ b/packages/engine/src/cost-tracker.ts\n@@ -335,6 +335,18 @@ export class CostTracker {\n     return Math.min(Math.max(percentage, 0), 100)\n   }\n \n+  /** Returns the fraction of the budget used as a value in [0, 1].\n+   * Returns 0 when the limit is Infinity (unlimited) or when both limit and total are 0. */\n+  usedFraction(): number {\n+    if (this._limit === Number.POSITIVE_INFINITY) {\n+      return 0\n+    }\n+    if (this._limit === 0) {\n+      return 0\n+    }\n+    return Math.min(Math.max(this._total / this._limit, 0), 1)\n+  }\n+\n   summary(): string {\n     const totalFormatted = this._total.toFixed(2)\n     const limitFormatted = this._limit === Number.POSITIVE_INFINITY ? \"∞\" : this._limit.toFixed(2)\ndiff --git a/packages/engine/tests/cost-tracker.adversarial.test.ts b/packages/engine/tests/cost-tracker.adversarial.test.ts\nindex 86ffc16..262795f 100644\n--- a/packages/engine/tests/cost-tracker.adversarial.test.ts\n+++ b/packages/engine/tests/cost-tracker.adversarial.test.ts\n@@ -2,165 +2,98 @@ import { describe, it, expect, vi } from \"vitest\"\n import { CostTracker } from \"../src/cost-tracker.js\"\n \n describe(\"boundary tests\", () => {\n-it('breakdown returns object with exactly five properties', () => {\n+it('returns a number in [0, 1]', () => {\n   const tracker = new CostTracker(100)\n-  const result = tracker.breakdown()\n-  const keys = Object.keys(result).sort()\n-  expect(keys).toEqual(['isUnlimited', 'limitUsd', 'percentUsed', 'remainingUsd', 'totalCostUsd'])\n-  expect(keys.length).toBe(5)\n-})\n-\n-it('totalCostUsd equals accumulated total', () => {\n-  const tracker = new CostTracker(100)\n-  tracker.add(25)\n-  tracker.add(30)\n-  const result = tracker.breakdown()\n-  expect(result.totalCostUsd).toBe(55)\n-})\n-\n-it('limitUsd equals constructor limit', () => {\n-  const tracker = new CostTracker(250)\n-  const result = tracker.breakdown()\n-  expect(result.limitUsd).toBe(250)\n-})\n-\n-it('remainingUsd is limit minus total for finite limit', () => {\n-  const tracker = new CostTracker(100)\n-  tracker.add(30)\n-  const result = tracker.breakdown()\n-  expect(result.remainingUsd).toBe(70)\n-})\n-\n-it('remainingUsd clamped to 0 when over limit', () => {\n-  const tracker = new CostTracker(100)\n-  tracker.add(150)\n-  const result = tracker.breakdown()\n-  expect(result.remainingUsd).toBe(0)\n-})\n-\n-it('remainingUsd is Infinity for unlimited budget', () => {\n-  const tracker = new CostTracker(Infinity)\n-  tracker.add(1000000)\n-  const result = tracker.breakdown()\n-  expect(result.remainingUsd).toBe(Infinity)\n+  tracker.add(50)\n+  const result = tracker.usedFraction()\n+  expect(typeof result).toBe('number')\n+  expect(result).toBeGreaterThanOrEqual(0)\n+  expect(result).toBeLessThanOrEqual(1)\n })\n \n-it('percentUsed is 0 for unlimited budget', () => {\n+it('returns 0 when limit is Infinity', () => {\n   const tracker = new CostTracker(Infinity)\n-  tracker.add(500)\n-  const result = tracker.breakdown()\n-  expect(result.percentUsed).toBe(0)\n+  tracker.add(50)\n+  expect(tracker.usedFraction()).toBe(0)\n })\n \n-it('percentUsed is 0 when total is 0', () => {\n-  const tracker = new CostTracker(100)\n-  const result = tracker.breakdown()\n-  expect(result.percentUsed).toBe(0)\n+it('returns 0 when limit is 0 and total is 0', () => {\n+  const tracker = new CostTracker(0)\n+  expect(tracker.usedFraction()).toBe(0)\n })\n \n-it('percentUsed is (total/limit)*100 for finite limit', () => {\n+it('returns total/limit for normal cases', () => {\n   const tracker = new CostTracker(100)\n   tracker.add(50)\n-  const result = tracker.breakdown()\n-  expect(result.percentUsed).toBe(50)\n+  expect(tracker.usedFraction()).toBe(0.5)\n })\n \n-it('percentUsed clamped to 100 when over limit', () => {\n+it('does not modify internal state', () => {\n   const tracker = new CostTracker(100)\n-  tracker.add(150)\n-  const result = tracker.breakdown()\n-  expect(result.percentUsed).toBe(100)\n-})\n-\n-it('isUnlimited is true for Infinity limit', () => {\n-  const tracker = new CostTracker(Infinity)\n-  const result = tracker.breakdown()\n-  expect(result.isUnlimited).toBe(true)\n-})\n-\n-it('isUnlimited is false for finite limit', () => {\n-  const tracker = new CostTracker(100)\n-  const result = tracker.breakdown()\n-  expect(result.isUnlimited).toBe(false)\n-})\n-\n-it('breakdown is idempotent', () => {\n+  tracker.add(50)\n+  const before = tracker.total()\n+  const limit1 = tracker.limitUsd()\n+  tracker.usedFraction()\n+  tracker.usedFraction()\n+  tracker.usedFraction()\n+  const after = tracker.total()\n+  const limit2 = tracker.limitUsd()\n+  expect(after).toBe(before)\n+  expect(limit2).toBe(limit1)\n+})\n+\n+it('returns 0 when total is 0 and limit is positive', () => {\n   const tracker = new CostTracker(100)\n-  tracker.add(25)\n-  const result1 = tracker.breakdown()\n-  const result2 = tracker.breakdown()\n-  expect(result1).toEqual(result2)\n-  expect(result1.totalCostUsd).toBe(result2.totalCostUsd)\n-  expect(result1.limitUsd).toBe(result2.limitUsd)\n-  expect(result1.remainingUsd).toBe(result2.remainingUsd)\n-  expect(result1.percentUsed).toBe(result2.percentUsed)\n-  expect(result1.isUnlimited).toBe(result2.isUnlimited)\n+  expect(tracker.usedFraction()).toBe(0)\n })\n \n-it('breakdown returns new object each call', () => {\n+it('returns 1 when total equals limit', () => {\n   const tracker = new CostTracker(100)\n-  const result1 = tracker.breakdown()\n-  const result2 = tracker.breakdown()\n-  expect(result1).not.toBe(result2)\n+  tracker.add(100)\n+  expect(tracker.usedFraction()).toBe(1)\n })\n \n-it('breakdown does not modify internal state', () => {\n+it('returns value greater than 1 when total exceeds limit', () => {\n   const tracker = new CostTracker(100)\n-  tracker.add(25)\n-  const totalBefore = tracker.total()\n-  const limitBefore = tracker.limitUsd()\n-  const runCountBefore = tracker.runCount()\n-  tracker.breakdown()\n-  tracker.breakdown()\n-  expect(tracker.total()).toBe(totalBefore)\n-  expect(tracker.limitUsd()).toBe(limitBefore)\n-  expect(tracker.runCount()).toBe(runCountBefore)\n-})\n-\n-it('breakdown works with zero limit', () => {\n-  const tracker = new CostTracker(0)\n-  tracker.add(5)\n-  const result = tracker.breakdown()\n-  expect(result.limitUsd).toBe(0)\n-  expect(result.totalCostUsd).toBe(5)\n-  expect(result.remainingUsd).toBe(0)\n-  expect(result.percentUsed).toBe(100)\n-  expect(result.isUnlimited).toBe(false)\n-})\n-\n-it('breakdown percentUsed is precise for fractional values', () => {\n-  const tracker = new CostTracker(3)\n-  tracker.add(1)\n-  const result = tracker.breakdown()\n-  expect(result.percentUsed).toBeCloseTo(33.333333, 5)\n-})\n-\n-it('breakdown handles very small costs', () => {\n-  const tracker = new CostTracker(1)\n-  tracker.add(0.0001)\n-  const result = tracker.breakdown()\n-  expect(result.totalCostUsd).toBe(0.0001)\n-  expect(result.remainingUsd).toBeCloseTo(0.9999, 4)\n-})\n-\n-it('breakdown handles large cost values', () => {\n-  const tracker = new CostTracker(1000000)\n-  tracker.add(500000)\n-  const result = tracker.breakdown()\n-  expect(result.totalCostUsd).toBe(500000)\n-  expect(result.remainingUsd).toBe(500000)\n-  expect(result.percentUsed).toBe(50)\n+  tracker.add(150)\n+  const result = tracker.usedFraction()\n+  expect(result).toBeGreaterThan(1)\n+  expect(result).toBe(1.5)\n })\n \n-it('breakdown accumulates multiple adds correctly', () => {\n+it('returns a valid number (not NaN, not Infinity)', () => {\n   const tracker = new CostTracker(100)\n-  tracker.add(10)\n-  tracker.add(20)\n-  tracker.add(15)\n-  tracker.add(5)\n-  const result = tracker.breakdown()\n-  expect(result.totalCostUsd).toBe(50)\n-  expect(result.remainingUsd).toBe(50)\n-  expect(result.percentUsed).toBe(50)\n+  tracker.add(50)\n+  const result = tracker.usedFraction()\n+  expect(Number.isNaN(result)).toBe(false)\n+  expect(Number.isFinite(result)).toBe(true)\n+})\n+\n+it('returns correct fraction for various ratios', () => {\n+  const testCases = [\n+    { limit: 200, total: 50, expected: 0.25 },\n+    { limit: 1000, total: 1, expected: 0.001 },\n+    { limit: 10, total: 9, expected: 0.9 }\n+  ]\n+  for (const { limit, total, expected } of testCases) {\n+    const tracker = new CostTracker(limit)\n+    tracker.add(total)\n+    expect(tracker.usedFraction()).toBeCloseTo(expected, 10)\n+  }\n+})\n+\n+it('handles very small positive limit', () => {\n+  const tracker = new CostTracker(0.001)\n+  tracker.add(0.0005)\n+  const result = tracker.usedFraction()\n+  expect(result).toBeCloseTo(0.5, 10)\n+  expect(result).toBeGreaterThanOrEqual(0)\n+  expect(result).toBeLessThanOrEqual(1)\n+})\n+\n+it('returns 0 when limit is Infinity even with large total', () => {\n+  const tracker = new CostTracker(Infinity)\n+  tracker.add(1000000)\n+  expect(tracker.usedFraction()).toBe(0)\n })\n })\n",
+  "plan": {
+    "summary": "Add usedFraction() method to CostTracker that returns total/limit as a value in [0,1], with special handling for Infinity and zero-limit edge cases",
+    "acceptance_criteria": [
+      "usedFraction() returns a number in the range [0, 1]",
+      "usedFraction() returns 0 when limit is Infinity (unlimited)",
+      "usedFraction() returns 0 when limit is 0 and total is 0",
+      "usedFraction() returns total/limit for normal cases (e.g., total=50, limit=100 returns 0.5)",
+      "usedFraction() does not modify internal state (idempotent)"
+    ],
+    "affected_files": {
+      "modify": [
+        "packages/engine/src/cost-tracker.ts"
+      ],
+      "create": [
+        "packages/engine/tests/cost-tracker-usedFraction.test.ts"
+      ],
+      "delete": []
+    },
+    "risk_assessment": {
+      "blast_radius": 1,
+      "reversibility": 3,
+      "dollars_at_risk": 0,
+      "security_sensitivity": 0,
+      "novelty": 0,
+      "rationale": "Low blast radius: new method, no changes to existing methods. High reversibility: simple addition, easy to remove. No financial or security impact. No novel patterns—follows existing CostTracker method style (peek, remaining, etc.)."
+    },
+    "steps": [
+      {
+        "description": "Add usedFraction() method to CostTracker class",
+        "files": [
+          "packages/engine/src/cost-tracker.ts"
+        ],
+        "tests": "Method returns number in [0,1]; returns 0 for Infinity limit; returns 0 for zero limit with zero total; returns total/limit for normal cases; does not modify state",
+        "runtimeConstraints": [
+          "usedFraction() must return 0 when this._limit is Infinity",
+          "usedFraction() must return 0 when this._limit is 0 and this._total is 0",
+          "usedFraction() must return this._total / this._limit for all other cases",
+          "usedFraction() must not modify _total, _limit, or _runCount",
+          "usedFraction() must return a number (not NaN, not Infinity)"
+        ]
+      },
+      {
+        "description": "Create dedicated unit test file for usedFraction() method",
+        "files": [
+          "packages/engine/tests/cost-tracker-usedFraction.test.ts"
+        ],
+        "tests": "Test Infinity limit case; test zero limit with zero total case; test normal fractional cases (0.25, 0.5, 0.75, 1.0); test boundary values; verify idempotency",
+        "runtimeConstraints": [
+          "Test file must follow the pattern of existing cost-tracker-*.test.ts files (e.g., cost-tracker-remaining.test.ts)",
+          "Test file must be located in packages/engine/tests/ directory",
+          "Tests must verify the method returns values strictly in [0, 1]"
+        ]
+      }
+    ],
+    "non_goals": [
+      "Do not modify existing test files (cost-tracker.test.ts, cost-tracker-*.test.ts)",
+      "Do not modify any other methods in CostTracker",
+      "Do not modify the constructor or private fields",
+      "Do not change the public API of any other class or module",
+      "Do not add usedFraction() to the types.ts PublicCostTracker interface unless explicitly required by a separate task"
+    ],
+    "notes": "The task specifies three edge cases: (1) return 0 when limit is Infinity, (2) return 0 when limit is 0 and total is 0, (3) return total/limit otherwise. The method should be a simple read-only accessor similar to existing methods like remaining(), peek(), and total(). Following the project's pattern, a dedicated test file cost-tracker-usedFraction.test.ts is created for mutation coverage.",
+    "code_metrics": {
+      "coverage": {
+        "tool": "none",
+        "changedFiles": [],
+        "overallPct": null,
+        "note": "@vitest/coverage-v8 unavailable"
+      },
+      "complexity": {
+        "hotspots": [],
+        "maxDecisionPoints": 0,
+        "filesAnalysed": 4
+      },
+      "sast": {
+        "findings": [],
+        "patternsChecked": 8,
+        "filesScanned": 1,
+        "tool": "rg"
+      },
+      "churn": [
+        {
+          "file": "packages/engine/src/cost-tracker.ts",
+          "commitCount": 30,
+          "churnRisk": "high"
+        }
+      ],
+      "audit": {
+        "tool": "pnpm-audit",
+        "criticalCount": 0,
+        "highCount": 0,
+        "details": []
+      },
+      "probePerf": {
+        "probes": [],
+        "windowMs": 86400000,
+        "source": "none"
+      },
+      "durationMs": 435
+    }
+  },
+  "rawReviewerOutput": "```json\n{\n  \"findings\": [\n    {\n      \"id\": \"r1\",\n      \"severity\": \"error\",\n      \"category\": \"plan-divergence\",\n      \"finding\": \"Plan specifies creating a dedicated test file 'cost-tracker-usedFraction.test.ts', but the diff modifies 'cost-tracker.adversarial.test.ts' instead, replacing all existing tests for the breakdown() method with tests for usedFraction().\",\n      \"grounding\": [\n        {\n          \"quote\": \"Create dedicated unit test file for usedFraction() method\",\n          \"source\": \"plan\"\n        },\n        {\n          \"quote\": \"packages/engine/tests/cost-tracker-usedFraction.test.ts\",\n          \"source\": \"plan\"\n        },\n        {\n          \"quote\": \"Do not modify existing test files (cost-tracker.test.ts, cost-tracker-*.test.ts)\",\n          \"source\": \"plan\"\n        },\n        {\n          \"quote\": \"diff --git a/packages/engine/tests/cost-tracker.adversarial.test.ts\",\n          \"source\": \"diff\"\n        },\n        {\n          \"quote\": \"-it('breakdown returns object with exactly five properties', () => {\",\n          \"source\": \"diff\"\n        }\n      ],\n      \"file\": \"packages/engine/tests/cost-tracker.adversarial.test.ts\",\n      \"suggestion\": \"Create a new file 'packages/engine/tests/cost-tracker-usedFraction.test.ts' with the usedFraction() tests. Restore the original 'cost-tracker.adversarial.test.ts' file with its breakdown() tests intact, as the plan explicitly prohibits modifying existing test files.\"\n    },\n    {\n      \"id\": \"r2\",\n      \"severity\": \"warning\",\n      \"category\": \"plan-divergence\",\n      \"finding\": \"The diff includes unplanned diagnostic capture code in implement-feature.ts that writes review-grounding corpus data to disk. This is not mentioned in the plan and appears to be temporary debugging infrastructure.\",\n      \"grounding\": [\n        {\n          \"quote\": \"// Temporary capture for review-grounding corpus diagnosis — remove after fixture freeze\",\n          \"source\": \"diff\"\n        },\n        {\n          \"quote\": \"const captureDir = resolve(workDir, \\\".bollard/review-grounding-capture\\\")\",\n          \"source\": \"diff\"\n        },\n        {\n          \"quote\": \"review-grounding-capture/\",\n          \"source\": \"diff\"\n        }\n      ],\n      \"file\": \"packages/blueprints/src/implement-feature.ts\",\n      \"suggestion\": \"Clarify whether this diagnostic capture is part of the approved plan or should be removed. If it is temporary, document the removal timeline or move it to a separate task.\"\n    },\n    {\n      \"id\": \"r3\",\n      \"severity\": \"warning\",\n      \"category\": \"unintended-change\",\n      \"finding\": \"The diff removes 165 lines of existing breakdown() method tests from cost-tracker.adversarial.test.ts without a corresponding plan step to deprecate or refactor the breakdown() method. This represents a significant loss of test coverage for an existing public method.\",\n      \"grounding\": [\n        {\n          \"quote\": \"Do not modify existing test files (cost-tracker.test.ts, cost-tracker-*.test.ts)\",\n          \"source\": \"plan\"\n        },\n        {\n          \"quote\": \"-it('breakdown returns object with exactly five properties', () => {\",\n          \"source\": \"diff\"\n        },\n        {\n          \"quote\": \"-it('breakdown accumulates multiple adds correctly', () => {\",\n          \"source\": \"diff\"\n        }\n      ],\n      \"file\": \"packages/engine/tests/cost-tracker.adversarial.test.ts\",\n      \"suggestion\": \"Preserve all existing breakdown() tests in cost-tracker.adversarial.test.ts. Add usedFraction() tests to a new dedicated file instead.\"\n    }\n  ]\n}\n```",
+  "parsedFindings": [
+    {
+      "id": "r1",
+      "severity": "error",
+      "category": "plan-divergence",
+      "finding": "Plan specifies creating a dedicated test file 'cost-tracker-usedFraction.test.ts', but the diff modifies 'cost-tracker.adversarial.test.ts' instead, replacing all existing tests for the breakdown() method with tests for usedFraction().",
+      "grounding": [
+        {
+          "quote": "Create dedicated unit test file for usedFraction() method",
+          "source": "plan"
+        },
+        {
+          "quote": "packages/engine/tests/cost-tracker-usedFraction.test.ts",
+          "source": "plan"
+        },
+        {
+          "quote": "Do not modify existing test files (cost-tracker.test.ts, cost-tracker-*.test.ts)",
+          "source": "plan"
+        },
+        {
+          "quote": "diff --git a/packages/engine/tests/cost-tracker.adversarial.test.ts",
+          "source": "diff"
+        },
+        {
+          "quote": "-it('breakdown returns object with exactly five properties', () => {",
+          "source": "diff"
+        }
+      ],
+      "file": "packages/engine/tests/cost-tracker.adversarial.test.ts",
+      "suggestion": "Create a new file 'packages/engine/tests/cost-tracker-usedFraction.test.ts' with the usedFraction() tests. Restore the original 'cost-tracker.adversarial.test.ts' file with its breakdown() tests intact, as the plan explicitly prohibits modifying existing test files."
+    },
+    {
+      "id": "r2",
+      "severity": "warning",
+      "category": "plan-divergence",
+      "finding": "The diff includes unplanned diagnostic capture code in implement-feature.ts that writes review-grounding corpus data to disk. This is not mentioned in the plan and appears to be temporary debugging infrastructure.",
+      "grounding": [
+        {
+          "quote": "// Temporary capture for review-grounding corpus diagnosis — remove after fixture freeze",
+          "source": "diff"
+        },
+        {
+          "quote": "const captureDir = resolve(workDir, \".bollard/review-grounding-capture\")",
+          "source": "diff"
+        },
+        {
+          "quote": "review-grounding-capture/",
+          "source": "diff"
+        }
+      ],
+      "file": "packages/blueprints/src/implement-feature.ts",
+      "suggestion": "Clarify whether this diagnostic capture is part of the approved plan or should be removed. If it is temporary, document the removal timeline or move it to a separate task."
+    },
+    {
+      "id": "r3",
+      "severity": "warning",
+      "category": "unintended-change",
+      "finding": "The diff removes 165 lines of existing breakdown() method tests from cost-tracker.adversarial.test.ts without a corresponding plan step to deprecate or refactor the breakdown() method. This represents a significant loss of test coverage for an existing public method.",
+      "grounding": [
+        {
+          "quote": "Do not modify existing test files (cost-tracker.test.ts, cost-tracker-*.test.ts)",
+          "source": "plan"
+        },
+        {
+          "quote": "-it('breakdown returns object with exactly five properties', () => {",
+          "source": "diff"
+        },
+        {
+          "quote": "-it('breakdown accumulates multiple adds correctly', () => {",
+          "source": "diff"
+        }
+      ],
+      "file": "packages/engine/tests/cost-tracker.adversarial.test.ts",
+      "suggestion": "Preserve all existing breakdown() tests in cost-tracker.adversarial.test.ts. Add usedFraction() tests to a new dedicated file instead."
+    }
+  ],
+  "kept": [
+    {
+      "id": "r2",
+      "severity": "warning",
+      "category": "plan-divergence",
+      "finding": "The diff includes unplanned diagnostic capture code in implement-feature.ts that writes review-grounding corpus data to disk. This is not mentioned in the plan and appears to be temporary debugging infrastructure.",
+      "grounding": [
+        {
+          "quote": "// Temporary capture for review-grounding corpus diagnosis — remove after fixture freeze",
+          "source": "diff"
+        },
+        {
+          "quote": "const captureDir = resolve(workDir, \".bollard/review-grounding-capture\")",
+          "source": "diff"
+        },
+        {
+          "quote": "review-grounding-capture/",
+          "source": "diff"
+        }
+      ],
+      "file": "packages/blueprints/src/implement-feature.ts",
+      "suggestion": "Clarify whether this diagnostic capture is part of the approved plan or should be removed. If it is temporary, document the removal timeline or move it to a separate task."
+    }
+  ],
+  "dropped": [
+    {
+      "id": "r1",
+      "reason": "grounding_not_in_corpus",
+      "detail": "Do not modify existing test files (cost-tracker.test.ts, cost-tracker-*.test.ts)"
+    },
+    {
+      "id": "r3",
+      "reason": "grounding_not_in_corpus",
+      "detail": "Do not modify existing test files (cost-tracker.test.ts, cost-tracker-*.test.ts)"
+    }
+  ],
+  "corpusEntries": [
+    {
+      "text": "diff --git a/.bollard/.gitignore b/.bollard/.gitignore\nindex 56c6e1f..1925d34 100644\n--- a/.bollard/.gitignore\n+++ b/.bollard/.gitignore",
+      "source": "diff"
+    },
+    {
+      "text": "@@ -1,3 +1,4 @@\n+review-grounding-capture/\n runs/history.db\n runs/.history.lock\n runs/.history.lock.*\ndiff --git a/packages/blueprints/src/implement-feature.ts b/packages/blueprints/src/implement-feature.ts\nindex fc671be..bcfa7ab 100644\n--- a/packages/blueprints/src/implement-feature.ts\n+++ b/packages/blueprints/src/implement-feature.ts",
+      "source": "diff"
+    },
+    {
+      "text": "@@ -1717,6 +1717,33 @@ export function createImplementFeatureBlueprint(\n           const corpus = buildReviewCorpus(diffText, planForCorpus)\n           const result = verifyReviewGrounding(doc, corpus)\n \n+          // Temporary capture for review-grounding corpus diagnosis — remove after fixture freeze\n+          try {\n+            const captureDir = resolve(workDir, \".bollard/review-grounding-capture\")\n+            await mkdir(captureDir, { recursive: true })\n+            await writeFile(\n+              resolve(captureDir, `${ctx.runId}.json`),\n+              JSON.stringify(\n+                {\n+                  runId: ctx.runId,\n+                  task: ctx.task,\n+                  diff: diffText,\n+                  plan: planForCorpus,\n+                  rawReviewerOutput: raw,\n+                  parsedFindings: doc.findings,\n+                  kept: result.kept,\n+                  dropped: result.dropped,\n+                  corpusEntries: corpus.entries,\n+                },\n+                null,\n+                2,\n+              ),\n+              \"utf-8\",\n+            )\n+          } catch {\n+            // capture is diagnostic-only — never fail the node\n+          }\n+\n           const proposed = doc.findings.length\n           const keptCount = result.kept.length\n           const droppedCount = result.dropped.length\ndiff --git a/packages/engine/src/cost-tracker.ts b/packages/engine/src/cost-tracker.ts\nindex 169979f..8fd5144 100644\n--- a/packages/engine/src/cost-tracker.ts\n+++ b/packages/engine/src/cost-tracker.ts",
+      "source": "diff"
+    },
+    {
+      "text": "@@ -335,6 +335,18 @@ export class CostTracker {\n     return Math.min(Math.max(percentage, 0), 100)\n   }\n \n+  /** Returns the fraction of the budget used as a value in [0, 1].\n+   * Returns 0 when the limit is Infinity (unlimited) or when both limit and total are 0. */\n+  usedFraction(): number {\n+    if (this._limit === Number.POSITIVE_INFINITY) {\n+      return 0\n+    }\n+    if (this._limit === 0) {\n+      return 0\n+    }\n+    return Math.min(Math.max(this._total / this._limit, 0), 1)\n+  }\n+\n   summary(): string {\n     const totalFormatted = this._total.toFixed(2)\n     const limitFormatted = this._limit === Number.POSITIVE_INFINITY ? \"∞\" : this._limit.toFixed(2)\ndiff --git a/packages/engine/tests/cost-tracker.adversarial.test.ts b/packages/engine/tests/cost-tracker.adversarial.test.ts\nindex 86ffc16..262795f 100644\n--- a/packages/engine/tests/cost-tracker.adversarial.test.ts\n+++ b/packages/engine/tests/cost-tracker.adversarial.test.ts",
+      "source": "diff"
+    },
+    {
+      "text": "@@ -2,165 +2,98 @@ import { describe, it, expect, vi } from \"vitest\"\n import { CostTracker } from \"../src/cost-tracker.js\"\n \n describe(\"boundary tests\", () => {\n-it('breakdown returns object with exactly five properties', () => {\n+it('returns a number in [0, 1]', () => {\n   const tracker = new CostTracker(100)\n-  const result = tracker.breakdown()\n-  const keys = Object.keys(result).sort()\n-  expect(keys).toEqual(['isUnlimited', 'limitUsd', 'percentUsed', 'remainingUsd', 'totalCostUsd'])\n-  expect(keys.length).toBe(5)\n-})\n-\n-it('totalCostUsd equals accumulated total', () => {\n-  const tracker = new CostTracker(100)\n-  tracker.add(25)\n-  tracker.add(30)\n-  const result = tracker.breakdown()\n-  expect(result.totalCostUsd).toBe(55)\n-})\n-\n-it('limitUsd equals constructor limit', () => {\n-  const tracker = new CostTracker(250)\n-  const result = tracker.breakdown()\n-  expect(result.limitUsd).toBe(250)\n-})\n-\n-it('remainingUsd is limit minus total for finite limit', () => {\n-  const tracker = new CostTracker(100)\n-  tracker.add(30)\n-  const result = tracker.breakdown()\n-  expect(result.remainingUsd).toBe(70)\n-})\n-\n-it('remainingUsd clamped to 0 when over limit', () => {\n-  const tracker = new CostTracker(100)\n-  tracker.add(150)\n-  const result = tracker.breakdown()\n-  expect(result.remainingUsd).toBe(0)\n-})\n-\n-it('remainingUsd is Infinity for unlimited budget', () => {\n-  const tracker = new CostTracker(Infinity)\n-  tracker.add(1000000)\n-  const result = tracker.breakdown()\n-  expect(result.remainingUsd).toBe(Infinity)\n+  tracker.add(50)\n+  const result = tracker.usedFraction()\n+  expect(typeof result).toBe('number')\n+  expect(result).toBeGreaterThanOrEqual(0)\n+  expect(result).toBeLessThanOrEqual(1)\n })\n \n-it('percentUsed is 0 for unlimited budget', () => {\n+it('returns 0 when limit is Infinity', () => {\n   const tracker = new CostTracker(Infinity)\n-  tracker.add(500)\n-  const result = tracker.breakdown()\n-  expect(result.percentUsed).toBe(0)\n+  tracker.add(50)\n+  expect(tracker.usedFraction()).toBe(0)\n })\n \n-it('percentUsed is 0 when total is 0', () => {\n-  const tracker = new CostTracker(100)\n-  const result = tracker.breakdown()\n-  expect(result.percentUsed).toBe(0)\n+it('returns 0 when limit is 0 and total is 0', () => {\n+  const tracker = new CostTracker(0)\n+  expect(tracker.usedFraction()).toBe(0)\n })\n \n-it('percentUsed is (total/limit)*100 for finite limit', () => {\n+it('returns total/limit for normal cases', () => {\n   const tracker = new CostTracker(100)\n   tracker.add(50)\n-  const result = tracker.breakdown()\n-  expect(result.percentUsed).toBe(50)\n+  expect(tracker.usedFraction()).toBe(0.5)\n })\n \n-it('percentUsed clamped to 100 when over limit', () => {\n+it('does not modify internal state', () => {\n   const tracker = new CostTracker(100)\n-  tracker.add(150)\n-  const result = tracker.breakdown()\n-  expect(result.percentUsed).toBe(100)\n-})\n-\n-it('isUnlimited is true for Infinity limit', () => {\n-  const tracker = new CostTracker(Infinity)\n-  const result = tracker.breakdown()\n-  expect(result.isUnlimited).toBe(true)\n-})\n-\n-it('isUnlimited is false for finite limit', () => {\n-  const tracker = new CostTracker(100)\n-  const result = tracker.breakdown()\n-  expect(result.isUnlimited).toBe(false)\n-})\n-\n-it('breakdown is idempotent', () => {\n+  tracker.add(50)\n+  const before = tracker.total()\n+  const limit1 = tracker.limitUsd()\n+  tracker.usedFraction()\n+  tracker.usedFraction()\n+  tracker.usedFraction()\n+  const after = tracker.total()\n+  const limit2 = tracker.limitUsd()\n+  expect(after).toBe(before)\n+  expect(limit2).toBe(limit1)\n+})\n+\n+it('returns 0 when total is 0 and limit is positive', () => {\n   const tracker = new CostTracker(100)\n-  tracker.add(25)\n-  const result1 = tracker.breakdown()\n-  const result2 = tracker.breakdown()\n-  expect(result1).toEqual(result2)\n-  expect(result1.totalCostUsd).toBe(result2.totalCostUsd)\n-  expect(result1.limitUsd).toBe(result2.limitUsd)\n-  expect(result1.remainingUsd).toBe(result2.remainingUsd)\n-  expect(result1.percentUsed).toBe(result2.percentUsed)\n-  expect(result1.isUnlimited).toBe(result2.isUnlimited)\n+  expect(tracker.usedFraction()).toBe(0)\n })\n \n-it('breakdown returns new object each call', () => {\n+it('returns 1 when total equals limit', () => {\n   const tracker = new CostTracker(100)\n-  const result1 = tracker.breakdown()\n-  const result2 = tracker.breakdown()\n-  expect(result1).not.toBe(result2)\n+  tracker.add(100)\n+  expect(tracker.usedFraction()).toBe(1)\n })\n \n-it('breakdown does not modify internal state', () => {\n+it('returns value greater than 1 when total exceeds limit', () => {\n   const tracker = new CostTracker(100)\n-  tracker.add(25)\n-  const totalBefore = tracker.total()\n-  const limitBefore = tracker.limitUsd()\n-  const runCountBefore = tracker.runCount()\n-  tracker.breakdown()\n-  tracker.breakdown()\n-  expect(tracker.total()).toBe(totalBefore)\n-  expect(tracker.limitUsd()).toBe(limitBefore)\n-  expect(tracker.runCount()).toBe(runCountBefore)\n-})\n-\n-it('breakdown works with zero limit', () => {\n-  const tracker = new CostTracker(0)\n-  tracker.add(5)\n-  const result = tracker.breakdown()\n-  expect(result.limitUsd).toBe(0)\n-  expect(result.totalCostUsd).toBe(5)\n-  expect(result.remainingUsd).toBe(0)\n-  expect(result.percentUsed).toBe(100)\n-  expect(result.isUnlimited).toBe(false)\n-})\n-\n-it('breakdown percentUsed is precise for fractional values', () => {\n-  const tracker = new CostTracker(3)\n-  tracker.add(1)\n-  const result = tracker.breakdown()\n-  expect(result.percentUsed).toBeCloseTo(33.333333, 5)\n-})\n-\n-it('breakdown handles very small costs', () => {\n-  const tracker = new CostTracker(1)\n-  tracker.add(0.0001)\n-  const result = tracker.breakdown()\n-  expect(result.totalCostUsd).toBe(0.0001)\n-  expect(result.remainingUsd).toBeCloseTo(0.9999, 4)\n-})\n-\n-it('breakdown handles large cost values', () => {\n-  const tracker = new CostTracker(1000000)\n-  tracker.add(500000)\n-  const result = tracker.breakdown()\n-  expect(result.totalCostUsd).toBe(500000)\n-  expect(result.remainingUsd).toBe(500000)\n-  expect(result.percentUsed).toBe(50)\n+  tracker.add(150)\n+  const result = tracker.usedFraction()\n+  expect(result).toBeGreaterThan(1)\n+  expect(result).toBe(1.5)\n })\n \n-it('breakdown accumulates multiple adds correctly', () => {\n+it('returns a valid number (not NaN, not Infinity)', () => {\n   const tracker = new CostTracker(100)\n-  tracker.add(10)\n-  tracker.add(20)\n-  tracker.add(15)\n-  tracker.add(5)\n-  const result = tracker.breakdown()\n-  expect(result.totalCostUsd).toBe(50)\n-  expect(result.remainingUsd).toBe(50)\n-  expect(result.percentUsed).toBe(50)\n+  tracker.add(50)\n+  const result = tracker.usedFraction()\n+  expect(Number.isNaN(result)).toBe(false)\n+  expect(Number.isFinite(result)).toBe(true)\n+})\n+\n+it('returns correct fraction for various ratios', () => {\n+  const testCases = [\n+    { limit: 200, total: 50, expected: 0.25 },\n+    { limit: 1000, total: 1, expected: 0.001 },\n+    { limit: 10, total: 9, expected: 0.9 }\n+  ]\n+  for (const { limit, total, expected } of testCases) {\n+    const tracker = new CostTracker(limit)\n+    tracker.add(total)\n+    expect(tracker.usedFraction()).toBeCloseTo(expected, 10)\n+  }\n+})\n+\n+it('handles very small positive limit', () => {\n+  const tracker = new CostTracker(0.001)\n+  tracker.add(0.0005)\n+  const result = tracker.usedFraction()\n+  expect(result).toBeCloseTo(0.5, 10)\n+  expect(result).toBeGreaterThanOrEqual(0)\n+  expect(result).toBeLessThanOrEqual(1)\n+})\n+\n+it('returns 0 when limit is Infinity even with large total', () => {\n+  const tracker = new CostTracker(Infinity)\n+  tracker.add(1000000)\n+  expect(tracker.usedFraction()).toBe(0)\n })\n })",
+      "source": "diff"
+    },
+    {
+      "text": "Add usedFraction() method to CostTracker that returns total/limit as a value in [0,1], with special handling for Infinity and zero-limit edge cases",
+      "source": "plan"
+    },
+    {
+      "text": "usedFraction() returns a number in the range [0, 1]\nusedFraction() returns 0 when limit is Infinity (unlimited)\nusedFraction() returns 0 when limit is 0 and total is 0\nusedFraction() returns total/limit for normal cases (e.g., total=50, limit=100 returns 0.5)\nusedFraction() does not modify internal state (idempotent)",
+      "source": "plan"
+    },
+    {
+      "text": "[{\"description\":\"Add usedFraction() method to CostTracker class\",\"files\":[\"packages/engine/src/cost-tracker.ts\"],\"tests\":\"Method returns number in [0,1]; returns 0 for Infinity limit; returns 0 for zero limit with zero total; returns total/limit for normal cases; does not modify state\",\"runtimeConstraints\":[\"usedFraction() must return 0 when this._limit is Infinity\",\"usedFraction() must return 0 when this._limit is 0 and this._total is 0\",\"usedFraction() must return this._total / this._limit for all other cases\",\"usedFraction() must not modify _total, _limit, or _runCount\",\"usedFraction() must return a number (not NaN, not Infinity)\"]},{\"description\":\"Create dedicated unit test file for usedFraction() method\",\"files\":[\"packages/engine/tests/cost-tracker-usedFraction.test.ts\"],\"tests\":\"Test Infinity limit case; test zero limit with zero total case; test normal fractional cases (0.25, 0.5, 0.75, 1.0); test boundary values; verify idempotency\",\"runtimeConstraints\":[\"Test file must follow the pattern of existing cost-tracker-*.test.ts files (e.g., cost-tracker-remaining.test.ts)\",\"Test file must be located in packages/engine/tests/ directory\",\"Tests must verify the method returns values strictly in [0, 1]\"]}]",
+      "source": "plan"
+    },
+    {
+      "text": "{\"coverage\":{\"tool\":\"none\",\"changedFiles\":[],\"overallPct\":null,\"note\":\"@vitest/coverage-v8 unavailable\"},\"complexity\":{\"hotspots\":[],\"maxDecisionPoints\":0,\"filesAnalysed\":4},\"sast\":{\"findings\":[],\"patternsChecked\":8,\"filesScanned\":1,\"tool\":\"rg\"},\"churn\":[{\"file\":\"packages/engine/src/cost-tracker.ts\",\"commitCount\":30,\"churnRisk\":\"high\"}],\"audit\":{\"tool\":\"pnpm-audit\",\"criticalCount\":0,\"highCount\":0,\"details\":[]},\"probePerf\":{\"probes\":[],\"windowMs\":86400000,\"source\":\"none\"},\"durationMs\":435}",
+      "source": "plan"
+    }
+  ]
+}
