@@ -7,6 +7,8 @@ import {
   parseDocsCurationPlan,
   verifyDocsCurationGrounding,
 } from "@bollard/engine/src/docs-curation.js"
+import type { DriftCandidate } from "@bollard/engine/src/docs-drift-signals.js"
+import { selectDriftCandidates } from "@bollard/engine/src/docs-drift-signals.js"
 import { resolveCurateScope } from "@bollard/engine/src/docs-resolver.js"
 import { detectManagedFileConflicts, FileOwnershipStore } from "@bollard/engine/src/ownership.js"
 import { applyDocsEdits, stageDocsEdits } from "./docs-curation-helpers.js"
@@ -29,6 +31,7 @@ async function getHeadSha(workDir: string): Promise<string> {
 export async function assessDocsDriftForWorkDir(
   workDir: string,
   docHomes?: string[],
+  opts?: { all?: boolean },
 ): Promise<{
   corpus: string
   fileContents: Record<string, string>
@@ -37,16 +40,45 @@ export async function assessDocsDriftForWorkDir(
   allowedFiles: Set<string>
   auditResult: Awaited<ReturnType<typeof auditDocs>>
   auditFailures: string[]
+  candidates: DriftCandidate[]
+  candidatePaths: string[]
 }> {
+  const scopeOpts = docHomes !== undefined ? { homes: docHomes } : undefined
+  const { editable, detectOnly } = await resolveCurateScope(workDir, scopeOpts)
+  const auditResult = await auditDocs(workDir, {
+    ...(docHomes !== undefined ? { docHomes } : {}),
+  })
+
+  const candidates = await selectDriftCandidates(workDir, editable, {
+    auditResult,
+    ...(opts?.all === true ? { all: true } : {}),
+  })
+  const candidatePaths = candidates.map((c) => c.path)
+
   const built = await buildDocsCurationCorpus({
     workDir,
     ...(docHomes !== undefined ? { docHomes } : {}),
+    contentPaths: candidatePaths,
+    auditResult,
+    scope: { editable, detectOnly },
   })
-  const auditFailures = built.auditResult.checks.filter((c) => !c.passed).map((c) => c.id)
-  return { ...built, auditFailures }
+
+  const auditFailures = auditResult.checks.filter((c) => !c.passed).map((c) => c.id)
+  return {
+    ...built,
+    editable,
+    detectOnly,
+    auditFailures,
+    candidates,
+    candidatePaths,
+  }
 }
 
-export function createCurateDocsBlueprint(workDir: string, config: BollardConfig): Blueprint {
+export function createCurateDocsBlueprint(
+  workDir: string,
+  config: BollardConfig,
+  opts?: { all?: boolean },
+): Blueprint {
   const trust = config.takeover?.docs?.trust ?? "review"
   const deferSilentApply = trust === "silent" || trust === "auto-commit"
 
@@ -106,7 +138,9 @@ export function createCurateDocsBlueprint(workDir: string, config: BollardConfig
           trust,
         })
       }
-      const result = await assessDocsDriftForWorkDir(workDir, ctx.config.docs?.homes)
+      const result = await assessDocsDriftForWorkDir(workDir, ctx.config.docs?.homes, {
+        ...(opts?.all === true ? { all: true } : {}),
+      })
       return { status: "ok", data: result }
     },
   }

@@ -65,6 +65,16 @@ export {
   parseDocsCurationPlan,
   verifyDocsCurationGrounding,
 } from "./docs-curation.js"
+export type { DriftCandidate, GitLastCommitTimeFn } from "./docs-drift-signals.js"
+export {
+  collectAuditImplicatedDocs,
+  defaultGetLastCommitTime,
+  effectiveDocCommitTime,
+  extractCodeReferences,
+  formatCommitDate,
+  isDocStaleVsRefs,
+  selectDriftCandidates,
+} from "./docs-drift-signals.js"
 export type { DocClassification, DocFrontMatter, DocTier } from "./docs-resolver.js"
 export {
   classifyDocPath,

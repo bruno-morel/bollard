@@ -823,6 +823,18 @@ export async function createAgenticHandler(
     }
 
     if (agentRole === "docs-curator") {
+      const driftData = ctx.results["assess-docs-drift"]?.data as
+        | { candidatePaths?: string[] }
+        | undefined
+      if (!driftData?.candidatePaths?.length) {
+        ctx.log.info("docs_curation_no_candidates", { code: "CURATION_NO_PROGRESS" })
+        return {
+          status: "ok",
+          data: { skipped: true, code: "CURATION_NO_PROGRESS" },
+          cost_usd: 0,
+          duration_ms: 0,
+        }
+      }
       userMessage = buildDocsCuratorMessage(ctx)
     }
 

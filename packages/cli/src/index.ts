@@ -582,12 +582,18 @@ async function runRunCommand(args: string[]): Promise<void> {
 
   if (blueprintName === "curate-docs") {
     const workDir = configCwd
+    const curateAll = args.includes("--all")
     const { handler } = await createAgenticHandler(config, workDir, profile)
-    const blueprint = createCurateDocsBlueprint(workDir, config)
+    const blueprint = createCurateDocsBlueprint(workDir, config, {
+      ...(curateAll ? { all: true } : {}),
+    })
 
     header("run curate-docs")
     log(`${DIM}Task:${RESET}      ${task}`)
     log(`${DIM}Work dir:${RESET}  ${workDir}`)
+    if (curateAll) {
+      log(`${YELLOW}Warning: --all forces full curate-tier sweep — high token cost.${RESET}`)
+    }
     log("")
 
     const result = await runBlueprint(

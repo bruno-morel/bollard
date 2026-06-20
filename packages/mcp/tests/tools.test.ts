@@ -241,11 +241,13 @@ describe("MCP tool definitions", () => {
       dryRun: boolean
       auditResult: { checks: unknown[] }
       corpusPreview: string
+      candidates: Array<{ path: string; reasons: string[] }>
     }
     expect(result.dryRun).toBe(true)
     expect(result.auditResult.checks.length).toBe(7)
     expect(result.corpusPreview.length).toBeGreaterThan(100)
-  }, 60_000)
+    expect(Array.isArray(result.candidates)).toBe(true)
+  }, 120_000)
 
   it("includes bollard_history_summary tool", () => {
     expect(tools.find((t) => t.name === "bollard_history_summary")).toBeDefined()

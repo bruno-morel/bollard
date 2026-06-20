@@ -312,4 +312,20 @@ describe("buildDocsCurationCorpus", () => {
     expect(result.detectOnly.length).toBeGreaterThan(0)
     expect(result.auditResult.checks.length).toBe(7)
   }, 90_000)
+
+  it("loads only contentPaths into fileContents and allowedFiles", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "docs-corpus-subset-"))
+    await writeMinimalCorpusFixture(tempDir)
+
+    const result = await buildDocsCurationCorpus({
+      workDir: tempDir,
+      contentPaths: ["README.md"],
+    })
+    expect(Object.keys(result.fileContents)).toEqual(["README.md"])
+    expect(result.allowedFiles.has("README.md")).toBe(true)
+    expect(result.allowedFiles.has("CONTRIBUTING.md")).toBe(false)
+    expect(result.corpus).toContain("## README.md")
+    expect(result.corpus).not.toContain("## CONTRIBUTING.md")
+    expect(result.editable).toContain("CONTRIBUTING.md")
+  })
 })

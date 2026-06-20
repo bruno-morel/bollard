@@ -44,6 +44,7 @@ const curateTestsInputSchema = z.object({
 const curateDocsInputSchema = z.object({
   workDir: z.string().optional(),
   dryRun: z.boolean().optional(),
+  all: z.boolean().optional(),
 })
 
 async function handleVerify(input: Record<string, unknown>, workDir: string): Promise<unknown> {
@@ -483,14 +484,19 @@ async function handleCurateDocs(input: Record<string, unknown>, workDir: string)
   const dir = parsed.workDir ?? workDir
 
   if (parsed.dryRun === true) {
+    const { resolveConfig } = await import("@bollard/cli/src/config.js")
+    const { config } = await resolveConfig(undefined, dir, { requireApiKey: false })
     const { assessDocsDriftForWorkDir } = await import("@bollard/blueprints/src/curate-docs.js")
-    const result = await assessDocsDriftForWorkDir(dir)
+    const result = await assessDocsDriftForWorkDir(dir, config.docs?.homes, {
+      ...(parsed.all === true ? { all: true } : {}),
+    })
     return {
       dryRun: true,
       auditResult: result.auditResult,
       auditFailures: result.auditFailures,
       editable: result.editable,
       detectOnly: result.detectOnly,
+      candidates: result.candidates,
       corpusPreview: result.corpus.slice(0, 2000),
       note: "Agent docs edits require dryRun=false with API key",
       edits: [] as unknown[],
@@ -499,7 +505,9 @@ async function handleCurateDocs(input: Record<string, unknown>, workDir: string)
   }
 
   const { runCurateDocsPipeline } = await import("@bollard/cli/src/curate-docs.js")
-  const pipelineResult = (await runCurateDocsPipeline(dir)) as {
+  const pipelineResult = (await runCurateDocsPipeline(dir, {
+    ...(parsed.all === true ? { all: true } : {}),
+  })) as {
     status?: string
     nodeResults?: Record<string, { data?: unknown }>
   }

@@ -136,6 +136,12 @@ function buildAuditDocsFactsSection(auditResult: Awaited<ReturnType<typeof audit
 export async function buildDocsCurationCorpus(opts: {
   workDir: string
   docHomes?: string[]
+  /** Which editable docs to read into fileContents and append to corpus. Defaults to full editable tier. */
+  contentPaths?: string[]
+  /** Pre-computed audit result — when omitted, auditDocs runs inside this function. */
+  auditResult?: Awaited<ReturnType<typeof auditDocs>>
+  /** Pre-resolved scope — skips a second resolveCurateScope pass when provided. */
+  scope?: { editable: string[]; detectOnly: string[] }
 }): Promise<{
   corpus: string
   fileContents: Record<string, string>
@@ -144,21 +150,25 @@ export async function buildDocsCurationCorpus(opts: {
   allowedFiles: Set<string>
   auditResult: Awaited<ReturnType<typeof auditDocs>>
 }> {
-  const { workDir, docHomes } = opts
+  const { workDir, docHomes, contentPaths, auditResult: auditResultIn, scope } = opts
   const scopeOpts = docHomes !== undefined ? { homes: docHomes } : undefined
-  const { editable, detectOnly } = await resolveCurateScope(workDir, scopeOpts)
+  const { editable, detectOnly } = scope ?? (await resolveCurateScope(workDir, scopeOpts))
+
+  const pathsToLoad = contentPaths ?? editable
 
   const fileContents: Record<string, string> = {}
-  for (const relPath of editable) {
+  for (const relPath of pathsToLoad) {
     fileContents[relPath] = await readFile(join(workDir, relPath), "utf-8")
   }
 
   const claudeContent =
     fileContents["CLAUDE.md"] ?? (await readFile(join(workDir, "CLAUDE.md"), "utf-8"))
   const roadmapContent = await readFile(join(workDir, "spec/ROADMAP.md"), "utf-8")
-  const auditResult = await auditDocs(workDir, {
-    ...(docHomes !== undefined ? { docHomes } : {}),
-  })
+  const auditResult =
+    auditResultIn ??
+    (await auditDocs(workDir, {
+      ...(docHomes !== undefined ? { docHomes } : {}),
+    }))
   const specFilenames = await listSpecDocFilenames(workDir)
   const adrFilenames = await listAdrDocFilenames(workDir)
   const packageNames = await listPackageNames(workDir)
@@ -190,7 +200,7 @@ export async function buildDocsCurationCorpus(opts: {
     cliCommands.join("\n"),
   ]
 
-  for (const relPath of editable) {
+  for (const relPath of pathsToLoad) {
     if (relPath === "CLAUDE.md") {
       continue
     }
@@ -200,7 +210,7 @@ export async function buildDocsCurationCorpus(opts: {
     }
   }
 
-  const allowedFiles = new Set(editable)
+  const allowedFiles = new Set(pathsToLoad)
 
   return {
     corpus: sections.join("\n\n"),

@@ -58,6 +58,10 @@ vi.mock("@bollard/agents/src/test-curator.js", () => ({
   createTestCuratorAgent: vi.fn().mockResolvedValue(mockAgentResolved),
 }))
 
+vi.mock("@bollard/agents/src/docs-curator.js", () => ({
+  createDocsCuratorAgent: vi.fn().mockResolvedValue(mockAgentResolved),
+}))
+
 vi.mock("@bollard/llm/src/client.js", () => ({
   LLMClient: class MockLLMClient {
     forAgent() {
@@ -281,5 +285,48 @@ describe("createAgenticHandler agentBudgets", () => {
     await handler(plannerNode, ctx)
 
     expect(lastExecutorOptions()?.maxCostUsd).toBeUndefined()
+  })
+})
+
+describe("createAgenticHandler docs-curator", () => {
+  const workDir = "/tmp/w"
+  const profile = makeProfile()
+
+  const docsCuratorNode: BlueprintNode = {
+    id: "generate-docs-edits",
+    name: "Generate Docs Edits",
+    type: "agentic",
+    agent: "docs-curator",
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("skips LLM when assess-docs-drift has empty candidatePaths", async () => {
+    const config: BollardConfig = {
+      llm: { default: { provider: "mock", model: "m" } },
+      agent: { max_cost_usd: 10, max_duration_minutes: 30 },
+    }
+    const ctx = createContext("curate docs", "curate-docs", config)
+    ctx.results = {
+      "assess-docs-drift": {
+        status: "ok",
+        data: {
+          candidatePaths: [],
+          corpus: "x",
+          fileContents: {},
+          auditFailures: [],
+        },
+      },
+    }
+
+    const { handler } = await createAgenticHandler(config, workDir, profile)
+    const result = await handler(docsCuratorNode, ctx)
+
+    expect(executeAgent).not.toHaveBeenCalled()
+    expect(result.status).toBe("ok")
+    expect(result.data).toEqual({ skipped: true, code: "CURATION_NO_PROGRESS" })
+    expect(result.cost_usd).toBe(0)
   })
 })
