@@ -28,7 +28,7 @@ plan → implement → static checks → boundary adversarial → contract adver
 **IDE integrations:** Claude Code, Cursor, Codex, Antigravity (via `bollard init --ide`).
 **MCP server:** 18 tools, 6 resource endpoints, 3 prompt templates.
 
-**Test suite:** 1603 passed / 6 skipped · Adversarial suite: 347 passed.
+**Test suite:** 1622 passed / 6 skipped · Adversarial suite: 347 passed.
 
 ---
 

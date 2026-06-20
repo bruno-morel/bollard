@@ -135,6 +135,6 @@ Build increments (deterministic first, agent last — ADR-0004 ordering):
 1. [x] `resolveCuratableDocs` + `DocClassification` (zones + `*-results` denylist + `curate:`/`tier:` front-matter) — pure, unit-tested.
 2. [x] `docs:` config block (`homes`, defaulted) + `audit-docs` `link-integrity` check (doc→doc + doc→code dangling-link detection; orphan advisory) + `doc-placement` check (eligible-set docs outside `homes`/root; advisory default) — all wired into CI; zero LLM.
 3. [x] `curate-docs` consumes the resolver + tiers: rewrite `curate` tier (runtime allowlist), report `detect-only` tier, exclude `never-touch`. **(increment 3)**
-3b. [ ] `selectDriftCandidates` — deterministic candidate selection (audit-implication + git staleness vs referenced code) gates which curate-tier docs the LLM reviews and whether it runs at all; `--all` escape hatch. The scaling fix so "curate all docs" is not a ~100K-token firehose. **(Decision §5)**
+3b. [x] `selectDriftCandidates` — deterministic candidate selection (audit-implication + git staleness vs referenced code) gates which curate-tier docs the LLM reviews and whether it runs at all; `--all` escape hatch. **(increment 3b, 2026-06-20)**
 4. [ ] Persist dropped-edit detail (follow-up from the Phase 1 live run — `d2` drop reason was unrecoverable; the grounding-result dropped array should be written to disk for auditable calibration).
 5. [ ] (Deferred / only if detection warrants) Opt-in link-aware auto-move for stray docs.

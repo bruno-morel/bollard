@@ -42,7 +42,16 @@ Implementation: `@bollard/engine` (`docs-resolver.ts`, `audit-docs.ts`); CLI shi
 | **detect-only** | Report only — listed by `list-drift`, never sent to the agent; edits targeting these paths drop `file_not_allowed` |
 | **never-touch** | Invisible — excluded from resolver eligible set |
 
-`list-drift` prints editable and detect-only lists separately after audit-docs output.
+### Drift-targeted selection (ADR-0006 increment 3b)
+
+`selectDriftCandidates` chooses which **curate-tier** docs the agent receives (not the full tier every run):
+
+- **Audit implication:** failing content-drift checks (`link-integrity` owners, README/CLAUDE for test-count, README for MCP/spec/ADR link checks). `doc-placement` stays advisory-only in `list-drift` — not an LLM candidate.
+- **Git staleness:** doc last-commit older than newest referenced code (markdown doc→code links; package README also checks `packages/<name>/src/`).
+- **Empty candidates** → `CURATION_NO_PROGRESS` (agent skipped, zero LLM cost).
+- **`--all`** — deliberate full curate-tier sweep (high token cost).
+
+`list-drift` prints **drift candidates** (paths + reasons), then full editable and detect-only lists.
 
 ### Pipeline (9 nodes)
 
@@ -50,8 +59,8 @@ Implementation: `@bollard/engine` (`docs-resolver.ts`, `audit-docs.ts`); CLI shi
 
 ### Surfaces
 
-- CLI: `bollard curate-docs list-drift|run`
-- MCP: `bollard_curate_docs` (`dryRun` for corpus + audit only)
+- CLI: `bollard curate-docs list-drift|run [--all]`
+- MCP: `bollard_curate_docs` (`dryRun` for corpus + audit + candidates; `all` for full tier)
 - Blueprint: `curate-docs`
 
 See [archive/stage6-curate-docs.md](./archive/stage6-curate-docs.md) for the original implementation prompt.
