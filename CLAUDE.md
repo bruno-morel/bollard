@@ -638,7 +638,7 @@ All tools enforce path-traversal protection: resolved path must start with `work
 ### Agents
 
 - **Planner** (`createPlannerAgent(profile?)`): read-only tools, temperature 0.2, max 25 turns. Produces structured JSON plan with summary, acceptance criteria, affected files, risk assessment, steps.
-- **Coder** (`createCoderAgent(profile?)`): all 6 tools, temperature 0.3, max 80 turns. Implements plans, writes tests. Prefers `edit_file` for existing files, `write_file` for new files. Verification hook skipped after 80% of turns to prevent budget exhaustion.
+- **Coder** (`createCoderAgent(profile?)`): all 6 tools, temperature 0.3, max 60 turns. Implements plans, writes tests. Prefers `edit_file` for existing files, `write_file` for new files. Verification hook deferred above 80% of turn budget (`deferPostCompletionVerifyFromTurn`). Runtime forced-completion injected at `maxTurns - 8` if no `end_turn` seen.
 - **Boundary tester** (`createBoundaryTesterAgent(profile?)`): no tools, temperature 0.3, max 5 turns. Generates boundary-scope adversarial tests from type signatures and referenced type definitions; prompt includes four concern lenses when weights are not `off`.
 - **Contract tester** (`createContractTesterAgent(profile?)`): no tools, temperature 0.4, max 10 turns. Generates contract-scope tests from `ContractContext` (module graph + edges); language/framework via profile.
 - **Behavioral tester** (`createBehavioralTesterAgent(profile?)`): no tools, temperature 0.5, max 15 turns. Generates behavioral-scope tests from `BehavioralContext` (endpoints, config, dependencies, failure modes); concern lenses via profile.
@@ -659,7 +659,7 @@ When `profile?.checks.test` is provided, uses its `cmd`/`args`. When omitted, fa
 
 ### implement-feature blueprint (packages/blueprints/src/implement-feature.ts)
 
-28-node pipeline:
+31-node pipeline (17 top-level steps — 6 sequential + 2 parallel groups + 9 sequential tail):
 
 1. **create-branch** (deterministic) — `git checkout -b bollard/{runId}`; sets `ctx.rollbackSha` (`git rev-parse HEAD`) best-effort
 2. **generate-plan** (agentic/planner) — planner agent explores codebase, produces JSON plan
@@ -829,7 +829,7 @@ Every resolved value has a `source` annotation: `"auto-detected"`, `"env:BOLLARD
 - `LLMClient` resolves `"openai"` and `"google"` providers via env vars
 - `promote-test` CLI command — copy adversarial tests to project test directory
 - `bollard init` generates `.bollard.yml` and `.bollard/mcp.json`
-- Blueprint now has **28 nodes** (risk gate + contract + behavioral + probe extraction + mutation + semantic review + review grounding before `docker-verify`)
+- Blueprint now has **31 nodes** (17 top-level steps: risk gate + contract + behavioral + probe extraction + mutation + semantic review + review grounding before `docker-verify`; Stage 5c added parallel scope execution)
 
 ### Stage 3a (DONE) — Contract scope bundle
 - `AdversarialConfig` per scope + `concerns.ts` defaults and YAML merge (`CONCERN_CONFIG_INVALID` on bad config)
@@ -1086,4 +1086,6 @@ If you need deeper context, refer to these (they are the source of truth) in the
 - `05-risk-model.md` — Risk scoring dimensions and gating behavior
 - `06-toolchain-profiles.md` — Language-agnostic verification: three-layer model, toolchain detection, Docker isolation, adversarial test lifecycle
 - `07-adversarial-scopes.md` — **Multi-scope adversarial verification: boundary/contract/behavioral scopes × correctness/security/performance/resilience concerns. Forward roadmap (Stages 3 → 4 → 5). Source of truth for adversarial testing design.**
+- `08-contract-tester-grounding.md` — Contract-tester grounding architecture: deterministic filters, corpus construction, claim lifecycle
+- `09-model-selection.md` — Capability-based model selection: versioned model registry, per-role requirements, deterministic resolver
 - `archive/` — Historical prompts used to drive Cursor during each build stage. Not current guidance.

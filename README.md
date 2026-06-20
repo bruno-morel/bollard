@@ -143,7 +143,7 @@ All specs live in [`spec/`](spec/):
 
 **Required:** Docker (all tooling runs in containers — nothing installed locally except Docker).
 
-**Inside the container:** Node.js 22+, pnpm workspaces, TypeScript 5.x strict, Vitest, fast-check, Biome, Zod, tsx.
+**Inside the container:** Node.js 24 LTS, pnpm workspaces, TypeScript 6.x strict, Vitest, fast-check, Biome, Zod, tsx.
 
 **Mutation testing:** Stryker (TS/JS), mutmut (Python), cargo-mutants (Rust), PIT (Java/Kotlin).
 
