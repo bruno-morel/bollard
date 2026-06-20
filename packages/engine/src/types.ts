@@ -41,6 +41,21 @@ export { createContext } from "./context.js"
 export type { CostBaseline, CostBaselineComparison } from "./cost-baseline.js"
 export { compareToBaseline, readBaseline, writeBaseline } from "./cost-baseline.js"
 export { CostTracker } from "./cost-tracker.js"
+export type {
+  DocsCurationPlan,
+  DocsEdit,
+  DocsEditFile,
+  DocsGroundingDropReason,
+  DocsGroundingResult,
+} from "./docs-curation.js"
+export {
+  buildDocsCurationCorpus,
+  extractCliCommands,
+  extractFactTokens,
+  listPackageNames,
+  parseDocsCurationPlan,
+  verifyDocsCurationGrounding,
+} from "./docs-curation.js"
 export type { BollardErrorCode } from "./errors.js"
 export { BollardError } from "./errors.js"
 export type {
