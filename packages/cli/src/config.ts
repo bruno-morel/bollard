@@ -217,6 +217,12 @@ const metricsYamlSchema = z
   })
   .strict()
 
+const docsYamlSchema = z
+  .object({
+    homes: z.array(z.string()).optional(),
+  })
+  .strict()
+
 const bollardYamlSchema = z
   .object({
     llm: z
@@ -252,6 +258,7 @@ const bollardYamlSchema = z
     observe: observeYamlSchema.optional(),
     localModels: localModelsYamlSchema.optional(),
     takeover: takeoverYamlSchema.optional(),
+    docs: docsYamlSchema.optional(),
   })
   .strict()
 
@@ -319,6 +326,7 @@ export async function resolveConfig(
   }
   applyMetricsConfig(profile, yamlResult?.metrics)
   applyTakeoverConfig(config, yamlResult?.takeover, sources)
+  applyDocsConfig(config, yamlResult?.docs, sources)
 
   applyEnvVars(config, sources)
 
@@ -513,6 +521,7 @@ interface LoadedBollardYaml {
   observe?: ObserveProviderConfig
   metrics?: z.infer<typeof metricsYamlSchema>
   takeover?: z.infer<typeof takeoverYamlSchema>
+  docs?: z.infer<typeof docsYamlSchema>
   /** Roles whose `llm.agents.<role>` came from `.bollard.yml` (keys of parsed `llm.agents`, not post-merge). */
   overriddenAgentRoles?: Set<string>
 }
@@ -605,6 +614,25 @@ function applyTakeoverConfig(
   sources["takeover"] = { value: takeover, source: "file", detail: "file:.bollard.yml" }
 }
 
+function applyDocsConfig(
+  config: BollardConfig,
+  docsYaml: z.infer<typeof docsYamlSchema> | undefined,
+  sources: Record<string, AnnotatedValue<unknown>>,
+): void {
+  if (docsYaml === undefined) return
+
+  config.docs = {
+    ...(docsYaml.homes !== undefined ? { homes: docsYaml.homes } : {}),
+  }
+  if (docsYaml.homes !== undefined) {
+    sources["docs.homes"] = {
+      value: docsYaml.homes,
+      source: "file",
+      detail: "file:.bollard.yml",
+    }
+  }
+}
+
 function loadBollardYaml(
   cwd: string,
   config: BollardConfig,
@@ -692,6 +720,7 @@ function loadBollardYaml(
     ...(data.observe !== undefined ? { observe: data.observe as ObserveProviderConfig } : {}),
     ...(data.metrics !== undefined ? { metrics: data.metrics } : {}),
     ...(data.takeover !== undefined ? { takeover: data.takeover } : {}),
+    ...(data.docs !== undefined ? { docs: data.docs } : {}),
     ...(overriddenAgentRoles !== undefined ? { overriddenAgentRoles } : {}),
   }
 }

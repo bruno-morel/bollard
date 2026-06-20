@@ -989,7 +989,10 @@ async function main(): Promise<void> {
   if (command === "audit-docs") {
     const workDir = resolveWorkspaceDirFromArgs(rest)
     header("audit-docs")
-    const result = await auditDocs(workDir)
+    const { config } = await resolveConfig(undefined, workDir, { requireApiKey: false })
+    const result = await auditDocs(workDir, {
+      ...(config.docs?.homes !== undefined ? { docHomes: config.docs.homes } : {}),
+    })
     log(formatAuditDocsResult(result))
     process.exit(result.allPassed ? 0 : 1)
   }

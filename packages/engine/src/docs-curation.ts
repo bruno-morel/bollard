@@ -134,17 +134,22 @@ function buildAuditDocsFactsSection(auditResult: Awaited<ReturnType<typeof audit
   return lines.join("\n")
 }
 
-export async function buildDocsCurationCorpus(opts: { workDir: string }): Promise<{
+export async function buildDocsCurationCorpus(opts: {
+  workDir: string
+  docHomes?: string[]
+}): Promise<{
   corpus: string
   readmeContent: string
   claudeContent: string
   auditResult: Awaited<ReturnType<typeof auditDocs>>
 }> {
-  const { workDir } = opts
+  const { workDir, docHomes } = opts
   const readmeContent = await readFile(join(workDir, "README.md"), "utf-8")
   const claudeContent = await readFile(join(workDir, "CLAUDE.md"), "utf-8")
   const roadmapContent = await readFile(join(workDir, "spec/ROADMAP.md"), "utf-8")
-  const auditResult = await auditDocs(workDir)
+  const auditResult = await auditDocs(workDir, {
+    ...(docHomes !== undefined ? { docHomes } : {}),
+  })
   const specFilenames = await listSpecDocFilenames(workDir)
   const adrFilenames = await listAdrDocFilenames(workDir)
   const packageNames = await listPackageNames(workDir)

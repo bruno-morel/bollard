@@ -236,7 +236,9 @@ export function createCurateDocsBlueprint(workDir: string, config: BollardConfig
         return { status: "ok", data: { skipped: true, reason: "nothing applied" } }
       }
 
-      const auditResult = await auditDocs(workDir)
+      const auditResult = await auditDocs(workDir, {
+        ...(ctx.config.docs?.homes !== undefined ? { docHomes: ctx.config.docs.homes } : {}),
+      })
       if (!auditResult.allPassed) {
         const failing = auditResult.checks.filter((c) => !c.passed).map((c) => c.id)
         return {

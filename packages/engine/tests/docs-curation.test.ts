@@ -189,6 +189,6 @@ describe("buildDocsCurationCorpus", () => {
     const { corpus, auditResult } = await buildDocsCurationCorpus({ workDir: REPO_ROOT })
     expect(corpus.length).toBeGreaterThan(10_000)
     expect(corpus).toContain("## CLAUDE.md (canonical state-of-truth)")
-    expect(auditResult.checks.length).toBe(4)
-  })
+    expect(auditResult.checks.length).toBe(7)
+  }, 60_000)
 })

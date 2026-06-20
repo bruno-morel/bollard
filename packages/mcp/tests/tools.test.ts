@@ -243,9 +243,9 @@ describe("MCP tool definitions", () => {
       corpusPreview: string
     }
     expect(result.dryRun).toBe(true)
-    expect(result.auditResult.checks.length).toBe(4)
+    expect(result.auditResult.checks.length).toBe(7)
     expect(result.corpusPreview.length).toBeGreaterThan(100)
-  })
+  }, 60_000)
 
   it("includes bollard_history_summary tool", () => {
     expect(tools.find((t) => t.name === "bollard_history_summary")).toBeDefined()

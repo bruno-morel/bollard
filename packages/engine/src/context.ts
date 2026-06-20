@@ -121,6 +121,11 @@ export interface TakeoverModeConfig {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface DocsConfig {
+  /** Directories where docs are expected; repo root is always allowed. */
+  homes?: string[]
+}
+
 export interface BollardConfig {
   llm: {
     default: { provider: string; model: string }
@@ -142,6 +147,8 @@ export interface BollardConfig {
    * Each domain defaults to disabled. Opt in per-domain via `.bollard.yml` `takeover:`.
    */
   takeover?: TakeoverModeConfig
+  /** Doc curation / audit placement config (ADR-0006). */
+  docs?: DocsConfig
 }
 
 export interface PipelineContext {

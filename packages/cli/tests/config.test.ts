@@ -390,4 +390,18 @@ describe("resolveConfig", () => {
       expect(BollardError.hasCode(err, "CONFIG_INVALID")).toBe(true)
     }
   })
+
+  it("parses docs.homes from .bollard.yml", async () => {
+    const yaml = ["docs:", "  homes:", "    - docs", "    - spec", "    - guides"].join("\n")
+    writeFileSync(join(tempDir, ".bollard.yml"), yaml)
+
+    const { config, sources } = await resolveConfig(undefined, tempDir, { requireApiKey: false })
+    expect(config.docs?.homes).toEqual(["docs", "spec", "guides"])
+    expect(sources["docs.homes"]?.source).toBe("file")
+  })
+
+  it("leaves docs unset when .bollard.yml omits docs block", async () => {
+    const { config } = await resolveConfig(undefined, tempDir, { requireApiKey: false })
+    expect(config.docs).toBeUndefined()
+  })
 })

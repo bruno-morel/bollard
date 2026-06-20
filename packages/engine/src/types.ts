@@ -2,16 +2,24 @@ export type {
   AuditDocsResult,
   DocsCheckId,
   DocsCheckResult,
+  LinkIntegrityFinding,
 } from "./audit-docs.js"
 export {
   auditDocs,
   checkAdrLinks,
+  checkDocPlacement,
+  checkLinkIntegrity,
+  checkLinkOrphans,
   checkMcpToolCount,
   checkSpecDocLinks,
   checkTestCountConsistency,
   countMcpToolsFromSource,
+  extractRelativeMarkdownLinks,
+  findDanglingLinks,
+  findLinkOrphans,
   listAdrDocFilenames,
   listSpecDocFilenames,
+  resolveRelativeLink,
 } from "./audit-docs.js"
 export type {
   Blueprint,
@@ -32,6 +40,7 @@ export {
 } from "./blueprint.js"
 export type {
   BollardConfig,
+  DocsConfig,
   LocalModelsConfig,
   LogEntry,
   LogLevel,
@@ -56,6 +65,14 @@ export {
   parseDocsCurationPlan,
   verifyDocsCurationGrounding,
 } from "./docs-curation.js"
+export type { DocClassification, DocFrontMatter, DocTier } from "./docs-resolver.js"
+export {
+  classifyDocPath,
+  DEFAULT_DOC_HOMES,
+  isDocAtHome,
+  parseDocFrontMatter,
+  resolveCuratableDocs,
+} from "./docs-resolver.js"
 export type { BollardErrorCode } from "./errors.js"
 export { BollardError } from "./errors.js"
 export type {

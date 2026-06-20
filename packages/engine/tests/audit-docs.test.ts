@@ -6,11 +6,17 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   auditDocs,
   checkAdrLinks,
+  checkLinkIntegrity,
+  checkLinkOrphans,
   checkMcpToolCount,
   checkSpecDocLinks,
   checkTestCountConsistency,
   countMcpToolsFromSource,
+  extractRelativeMarkdownLinks,
+  findDanglingLinks,
+  findLinkOrphans,
 } from "../src/audit-docs.js"
+import { classifyDocPath } from "../src/docs-resolver.js"
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 
@@ -132,14 +138,50 @@ describe("checkTestCountConsistency", () => {
   })
 })
 
+describe("extractRelativeMarkdownLinks", () => {
+  it("skips external URLs and anchor-only links", () => {
+    const content = "[ext](https://example.com) [anchor](#section) [rel](spec/foo.md)"
+    expect(extractRelativeMarkdownLinks(content)).toEqual(["spec/foo.md"])
+  })
+})
+
+describe("link integrity helpers", () => {
+  it("detects dangling links", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "audit-link-dangle-"))
+    await writeFile(join(tempDir, "README.md"), "[bad](packages/does-not-exist.ts)\n", "utf-8")
+    await writeFile(join(tempDir, "CLAUDE.md"), "# claude\n", "utf-8")
+    const classifications = [classifyDocPath("README.md")]
+    const docContents = new Map([["README.md", "[bad](packages/does-not-exist.ts)\n"]])
+    const dangling = await findDanglingLinks({ classifications, docContents, workDir: tempDir })
+    expect(dangling).toHaveLength(1)
+    expect(checkLinkIntegrity(dangling).passed).toBe(false)
+  })
+
+  it("lists orphan eligible docs not reachable from roots", () => {
+    const classifications = [classifyDocPath("README.md"), classifyDocPath("spec/adr/orphan.md")]
+    const docContents = new Map([
+      ["README.md", "# root\n"],
+      ["spec/adr/orphan.md", "# orphan\n"],
+    ])
+    const orphans = findLinkOrphans({
+      classifications,
+      docContents,
+      workDir: "/tmp/unused",
+    })
+    expect(orphans).toContain("spec/adr/orphan.md")
+    const advisory = checkLinkOrphans(orphans)
+    expect(advisory.advisory).toBe(true)
+    expect(advisory.passed).toBe(true)
+  })
+})
+
 describe("auditDocs", () => {
-  it("passes all four checks on a consistent fixture", async () => {
+  it("passes all hard checks on a consistent fixture", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "audit-docs-pass-"))
     await writeMinimalDocFixture(tempDir, FIXTURE_README, FIXTURE_CLAUDE)
     const result = await auditDocs(tempDir, { toolCount: 17 })
-    expect(result.allPassed).toBe(true)
-    expect(result.checks).toHaveLength(4)
-    expect(result.checks.every((c) => c.passed)).toBe(true)
+    expect(result.checks.filter((c) => !c.advisory).every((c) => c.passed)).toBe(true)
+    expect(result.checks).toHaveLength(7)
   })
 
   it("fails when README MCP count mismatches injected toolCount", async () => {
@@ -181,8 +223,19 @@ describe("auditDocs", () => {
     expect(adr?.actual).toContain("9999-fake.md")
   })
 
+  it("advisory checks do not flip allPassed when orphans exist", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "audit-docs-orphan-"))
+    await writeMinimalDocFixture(tempDir, FIXTURE_README, FIXTURE_CLAUDE)
+    await writeFile(join(tempDir, "spec/adr/unlinked.md"), "# orphan adr\n", "utf-8")
+    const result = await auditDocs(tempDir, { toolCount: 17 })
+    const orphans = result.checks.find((c) => c.id === "link-orphans")
+    expect(orphans?.advisory).toBe(true)
+    expect(orphans?.actual).toContain("unlinked.md")
+    expect(result.allPassed).toBe(result.checks.filter((c) => !c.advisory).every((c) => c.passed))
+  })
+
   it("passes on the real repo reading tools.ts from disk", async () => {
     const result = await auditDocs(REPO_ROOT)
     expect(result.allPassed).toBe(true)
-  })
+  }, 60_000)
 })

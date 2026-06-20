@@ -78,3 +78,7 @@ mutation:
 #   monitoring:
 #     enabled: false
 #     trust: review
+
+# Doc homes for audit-docs doc-placement check (ADR-0006). Root-level docs are always allowed.
+# docs:
+#   homes: ["docs", "spec"]
