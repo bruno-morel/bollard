@@ -26,9 +26,9 @@ plan → implement → static checks → boundary adversarial → contract adver
 **Languages supported:** TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin.
 **LLM providers:** Anthropic (Claude), OpenAI, Google (Gemini). Local inference via llama.cpp (opt-in). Per-agent model assignment via a versioned model registry (Haiku for testers/planner/reviewer, Sonnet for the coder).
 **IDE integrations:** Claude Code, Cursor, Codex, Antigravity (via `bollard init --ide`).
-**MCP server:** 17 tools, 6 resource endpoints, 3 prompt templates.
+**MCP server:** 18 tools, 6 resource endpoints, 3 prompt templates.
 
-**Test suite:** 1555 passed / 6 skipped · Adversarial suite: 347 passed.
+**Test suite:** 1574 passed / 6 skipped · Adversarial suite: 347 passed.
 
 ---
 
