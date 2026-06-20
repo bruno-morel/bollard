@@ -7,6 +7,7 @@ import { createBehavioralTesterAgent } from "@bollard/agents/src/behavioral-test
 import { createBoundaryTesterAgent } from "@bollard/agents/src/boundary-tester.js"
 import { createCoderAgent } from "@bollard/agents/src/coder.js"
 import { createContractTesterAgent } from "@bollard/agents/src/contract-tester.js"
+import { createDocsCuratorAgent } from "@bollard/agents/src/docs-curator.js"
 import { executeAgent } from "@bollard/agents/src/executor.js"
 import { createPlannerAgent } from "@bollard/agents/src/planner.js"
 import { createSemanticReviewerAgent } from "@bollard/agents/src/semantic-reviewer.js"
@@ -580,6 +581,35 @@ export interface CreateAgenticHandlerOptions {
   metrics?: boolean
 }
 
+function buildDocsCuratorMessage(ctx: PipelineContext): string {
+  const driftData = ctx.results["assess-docs-drift"]?.data as
+    | {
+        corpus?: string
+        readmeContent?: string
+        claudeContent?: string
+        auditFailures?: string[]
+      }
+    | undefined
+
+  const auditLine =
+    driftData?.auditFailures !== undefined && driftData.auditFailures.length > 0
+      ? `Audit failures: ${driftData.auditFailures.join(", ")}`
+      : "Audit failures: (none)"
+
+  return [
+    "## Authoritative reality corpus",
+    driftData?.corpus ?? "(missing)",
+    "",
+    auditLine,
+    "",
+    "## README.md (current)",
+    driftData?.readmeContent ?? "",
+    "",
+    "## CLAUDE.md (current)",
+    driftData?.claudeContent ?? "",
+  ].join("\n")
+}
+
 function buildTestCuratorMessage(ctx: PipelineContext): string {
   const assessData = ctx.results["assess-test-quality"]?.data as
     | {
@@ -637,6 +667,7 @@ export async function createAgenticHandler(
     "behavioral-tester": await createBehavioralTesterAgent(profile),
     "semantic-reviewer": await createSemanticReviewerAgent(profile),
     "test-curator": await createTestCuratorAgent(profile),
+    "docs-curator": await createDocsCuratorAgent(profile),
   }
 
   const extractionLlm = llmClient.forAgent("boundary-tester")
@@ -786,6 +817,10 @@ export async function createAgenticHandler(
 
     if (agentRole === "test-curator") {
       userMessage = buildTestCuratorMessage(ctx)
+    }
+
+    if (agentRole === "docs-curator") {
+      userMessage = buildDocsCuratorMessage(ctx)
     }
 
     if (agentRole !== "coder" && resolvedMaxCostUsd !== undefined) {

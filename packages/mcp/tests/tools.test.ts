@@ -8,8 +8,8 @@ import { tools } from "../src/tools.js"
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 
 describe("MCP tool definitions", () => {
-  it("registers exactly 17 tools", () => {
-    expect(tools).toHaveLength(17)
+  it("registers exactly 18 tools", () => {
+    expect(tools).toHaveLength(18)
   })
 
   it("all tools have name, description, inputSchema, and handler", () => {
@@ -227,6 +227,24 @@ describe("MCP tool definitions", () => {
     }
     expect(result.record).toBeNull()
     expect(result.runId).toBe("nonexistent")
+  })
+
+  it("includes bollard_curate_docs tool", () => {
+    const tool = tools.find((t) => t.name === "bollard_curate_docs")
+    expect(tool).toBeDefined()
+    expect(tool?.description).toContain("curate-docs")
+  })
+
+  it("bollard_curate_docs dryRun returns audit result without LLM", async () => {
+    const tool = tools.find((t) => t.name === "bollard_curate_docs")
+    const result = (await tool?.handler({ dryRun: true }, REPO_ROOT)) as {
+      dryRun: boolean
+      auditResult: { checks: unknown[] }
+      corpusPreview: string
+    }
+    expect(result.dryRun).toBe(true)
+    expect(result.auditResult.checks.length).toBe(4)
+    expect(result.corpusPreview.length).toBeGreaterThan(100)
   })
 
   it("includes bollard_history_summary tool", () => {

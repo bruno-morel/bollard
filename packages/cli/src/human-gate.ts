@@ -6,6 +6,10 @@ import {
   CURATION_PLAN_FILE,
   type StagedCurationPlan,
 } from "@bollard/blueprints/src/curation-helpers.js"
+import {
+  DOCS_CURATION_PLAN_FILE,
+  type StagedDocsPlan,
+} from "@bollard/blueprints/src/docs-curation-helpers.js"
 import type { BlueprintNode, NodeResult } from "@bollard/engine/src/blueprint.js"
 import type { PipelineContext } from "@bollard/engine/src/context.js"
 import type { ReviewFinding } from "@bollard/verify/src/review-grounding.js"
@@ -98,12 +102,35 @@ export async function humanGateHandler(
     prompt = "Apply the staged curation changes above?"
   }
 
+  if (node.id === "apply-docs-trust-gate") {
+    const workDir = findWorkspaceRoot(process.cwd())
+    try {
+      const raw = await readFile(resolve(workDir, DOCS_CURATION_PLAN_FILE), "utf-8")
+      const plan = JSON.parse(raw) as StagedDocsPlan
+      process.stderr.write("\n--- Staged Docs Curation Plan ---\n")
+      for (const edit of plan.edits) {
+        process.stderr.write(`  [${edit.id}] ${edit.file}: ${edit.rationale}\n`)
+      }
+      process.stderr.write("\n--- Diff Previews ---\n")
+      for (const [file, diff] of Object.entries(plan.diffs ?? {})) {
+        process.stderr.write(`\n### ${file}\n${diff ?? ""}`)
+      }
+      process.stderr.write("--- End Staged Docs Plan ---\n")
+    } catch {
+      process.stderr.write("\n  (no staged docs curation plan found)\n")
+    }
+    prompt = "Apply the staged docs edits above?"
+  }
+
   if (process.env["BOLLARD_AUTO_APPROVE"] === "1") {
     process.stderr.write(`\nHUMAN GATE: ${prompt}\n  Auto-approved (BOLLARD_AUTO_APPROVE=1)\n`)
     if (node.id === "apply-curation-trust-gate") {
       const workDir = findWorkspaceRoot(process.cwd())
       const { applied } = await applyStagedCurationChanges(workDir)
       return { status: "ok", data: { applied, autoApproved: true } }
+    }
+    if (node.id === "apply-docs-trust-gate") {
+      return { status: "ok", data: { approved: true, autoApproved: true } }
     }
     return { status: "ok", data: `Auto-approved at gate "${node.id}"` }
   }
@@ -112,6 +139,9 @@ export async function humanGateHandler(
 
   if (!approved) {
     if (node.id === "apply-curation-trust-gate") {
+      return { status: "ok", data: { rejected: true, applied: [] } }
+    }
+    if (node.id === "apply-docs-trust-gate") {
       return { status: "ok", data: { rejected: true, applied: [] } }
     }
     return {
@@ -124,6 +154,10 @@ export async function humanGateHandler(
     const workDir = findWorkspaceRoot(process.cwd())
     const { applied } = await applyStagedCurationChanges(workDir)
     return { status: "ok", data: { applied } }
+  }
+
+  if (node.id === "apply-docs-trust-gate") {
+    return { status: "ok", data: { approved: true } }
   }
 
   return { status: "ok", data: `Approved by human at gate "${node.id}"` }

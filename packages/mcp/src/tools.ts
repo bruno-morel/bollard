@@ -41,6 +41,11 @@ const curateTestsInputSchema = z.object({
   dryRun: z.boolean().optional(),
 })
 
+const curateDocsInputSchema = z.object({
+  workDir: z.string().optional(),
+  dryRun: z.boolean().optional(),
+})
+
 async function handleVerify(input: Record<string, unknown>, workDir: string): Promise<unknown> {
   const startedAt = Date.now()
   const parsed = verifyInputSchema.parse(input)
@@ -473,6 +478,42 @@ async function handleCurateTests(
   }
 }
 
+async function handleCurateDocs(input: Record<string, unknown>, workDir: string): Promise<unknown> {
+  const parsed = curateDocsInputSchema.parse(input)
+  const dir = parsed.workDir ?? workDir
+
+  if (parsed.dryRun === true) {
+    const { assessDocsDriftForWorkDir } = await import("@bollard/blueprints/src/curate-docs.js")
+    const result = await assessDocsDriftForWorkDir(dir)
+    return {
+      dryRun: true,
+      auditResult: result.auditResult,
+      auditFailures: result.auditFailures,
+      corpusPreview: result.corpus.slice(0, 2000),
+      note: "Agent docs edits require dryRun=false with API key",
+      edits: [] as unknown[],
+      applied: [] as unknown[],
+    }
+  }
+
+  const { runCurateDocsPipeline } = await import("@bollard/cli/src/curate-docs.js")
+  const pipelineResult = (await runCurateDocsPipeline(dir)) as {
+    status?: string
+    nodeResults?: Record<string, { data?: unknown }>
+  }
+  const nodeResults = pipelineResult.nodeResults ?? {}
+
+  return {
+    dryRun: false,
+    status: pipelineResult.status,
+    drift: nodeResults["assess-docs-drift"]?.data,
+    edits: (nodeResults["verify-docs-grounding"]?.data as { kept?: unknown[] } | undefined)?.kept,
+    applied: (nodeResults["apply-docs-changes"]?.data as { applied?: unknown[] } | undefined)
+      ?.applied,
+    pipeline: pipelineResult,
+  }
+}
+
 function zodToJsonSchema(schema: z.ZodObject<z.ZodRawShape>): Record<string, unknown> {
   const shape = schema.shape
   const properties: Record<string, unknown> = {}
@@ -626,5 +667,12 @@ export const tools: McpToolDefinition[] = [
       "Run the curate-tests pipeline: score test quality, propose curation actions (promote/prune/rewrite), apply with trust gate. Returns quality scores and proposed candidates. Set dryRun=true to score and list deterministic candidates without staging changes.",
     inputSchema: zodToJsonSchema(curateTestsInputSchema),
     handler: handleCurateTests,
+  },
+  {
+    name: "bollard_curate_docs",
+    description:
+      "Run the curate-docs pipeline: assess README/CLAUDE.md drift, propose fact-grounded prose edits, human-gate apply. Set dryRun=true for corpus + audit-docs only (no LLM).",
+    inputSchema: zodToJsonSchema(curateDocsInputSchema),
+    handler: handleCurateDocs,
   },
 ]
