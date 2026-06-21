@@ -46,10 +46,10 @@ Each eligible doc is assigned a tier by path rule (overridable by front-matter `
 | Tier | Files | LLM action | Ground truth / corpus |
 |------|-------|-----------|------------------------|
 | **curate** | README, CLAUDE, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, `docs/`, package READMEs | propose `oldText→newText` edits (as today) | code reality + CLAUDE.md + audit facts |
-| **detect-only** | `spec/01-09`, `spec/adr/*`, ROADMAP | emit a drift **report**, never an edit | code + CLAUDE.md, advisory |
+| **detect-only** | **all eligible docs under `spec/`** (design specs `spec/0N-*`, `spec/adr/*`, ROADMAP, the `spec/stage*` design docs, `spec/README.md`) | emit a drift **report**, never an edit | code + CLAUDE.md, advisory |
 | **never-touch** | `spec/archive`, `*-results`, generated configs | excluded entirely (not in eligible set) | — |
 
-The **curate vs detect-only** split is the core safety decision: rewriting is reserved for *descriptive* docs whose ground truth is unambiguous; *intent* docs (specs/ADRs) are only flagged, because their divergence from code is often correct and an auto-rewrite would destroy rationale.
+The **curate vs detect-only** split is the core safety decision: rewriting is reserved for *descriptive* docs whose ground truth is unambiguous; *intent* docs are only flagged, because their divergence from code is often correct and an auto-rewrite would destroy rationale. **`spec/` is the intent-doc home: every eligible doc under `spec/` is detect-only** (a simple, robust equivalence — `detect-only ⟺ under spec/`), so design docs added later (`spec/stageN-*.md`) are protected automatically rather than slipping into the editable tier by missing a regex. Descriptive docs (root README/CLAUDE/CONTRIBUTING/SECURITY, `docs/`, package READMEs) are curate.
 
 ### 3. Doc-home config + deterministic placement detection (detect, never auto-move)
 
@@ -136,5 +136,7 @@ Build increments (deterministic first, agent last — ADR-0004 ordering):
 2. [x] `docs:` config block (`homes`, defaulted) + `audit-docs` `link-integrity` check (doc→doc + doc→code dangling-link detection; orphan advisory) + `doc-placement` check (eligible-set docs outside `homes`/root; advisory default) — all wired into CI; zero LLM.
 3. [x] `curate-docs` consumes the resolver + tiers: rewrite `curate` tier (runtime allowlist), report `detect-only` tier, exclude `never-touch`. **(increment 3)**
 3b. [x] `selectDriftCandidates` — deterministic candidate selection (audit-implication + git staleness vs referenced code) gates which curate-tier docs the LLM reviews and whether it runs at all; `--all` escape hatch. **(increment 3b, 2026-06-20)**
-4. [ ] Persist dropped-edit detail (follow-up from the Phase 1 live run — `d2` drop reason was unrecoverable; the grounding-result dropped array should be written to disk for auditable calibration).
+3c. [x] Path-class tier default: all eligible docs under `spec/` → detect-only (generalizes regex list; protects `spec/stage*` design docs). **(increment 3c, 2026-06-20)**
+3d. [x] Detect-only drift report (`detectOnlyDrift` via second `selectDriftCandidates` pass, shared `gitTimeCache`) + persist grounding dropped-edit detail to `.bollard/curation/docs/grounding-report.json`. **(increment 3d, 2026-06-20)**
+4. [x] Persist dropped-edit detail — `grounding-report.json` after `verify-docs-grounding` (kept/dropped + candidate reasons). **(increment 3d, 2026-06-20)**
 5. [ ] (Deferred / only if detection warrants) Opt-in link-aware auto-move for stray docs.

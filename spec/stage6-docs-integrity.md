@@ -39,8 +39,10 @@ Implementation: `@bollard/engine` (`docs-resolver.ts`, `audit-docs.ts`); CLI shi
 | Tier | LLM action |
 |------|------------|
 | **curate** | Editable — agent receives file contents; `verifyDocsCurationGrounding` enforces runtime allowlist |
-| **detect-only** | Report only — listed by `list-drift`, never sent to the agent; edits targeting these paths drop `file_not_allowed` |
+| **detect-only** | Report only — listed by `list-drift` with drift signals when stale; never sent to the agent; edits targeting these paths drop `file_not_allowed` |
 | **never-touch** | Invisible — excluded from resolver eligible set |
+
+**Path-class default (increment 3c):** any eligible doc whose path is under `spec/` → detect-only; everything else eligible → curate. Exclusion zones (`spec/archive`, `spec/prompts`) and the `*-results` denylist still run before tier assignment. Front-matter `tier:` overrides the default.
 
 ### Drift-targeted selection (ADR-0006 increment 3b)
 
@@ -51,7 +53,15 @@ Implementation: `@bollard/engine` (`docs-resolver.ts`, `audit-docs.ts`); CLI shi
 - **Empty candidates** → `CURATION_NO_PROGRESS` (agent skipped, zero LLM cost).
 - **`--all`** — deliberate full curate-tier sweep (high token cost).
 
-`list-drift` prints **drift candidates** (paths + reasons), then full editable and detect-only lists.
+`list-drift` prints **drift candidates** (paths + reasons), **detect-only docs with drift signals** (subset with reasons only), then full editable and detect-only lists.
+
+### Detect-only drift report (ADR-0006 increment 3d)
+
+The same `selectDriftCandidates` signals (audit-implication + git staleness) run over the **detect-only** tier in a second pass with a shared `gitTimeCache` — no duplicate `git log` for paths already timed in the curate pass. Results surface as `detectOnlyDrift` in `list-drift`, MCP dryRun, and `assess-docs-drift` node data. Only docs with at least one signal are listed (not the full detect-only tier). Zero LLM.
+
+### Grounding audit trail (ADR-0006 increment 3d / item 4)
+
+After `verify-docs-grounding`, the pipeline writes `.bollard/curation/docs/grounding-report.json`: `runId`, `timestamp`, `kept`, `dropped` (with `file`, `reason`, `detail`), and `candidates` from assess-docs-drift. Non-fatal write (warn on failure). Enables post-run calibration without console logs.
 
 ### Pipeline (9 nodes)
 
@@ -60,7 +70,8 @@ Implementation: `@bollard/engine` (`docs-resolver.ts`, `audit-docs.ts`); CLI shi
 ### Surfaces
 
 - CLI: `bollard curate-docs list-drift|run [--all]`
-- MCP: `bollard_curate_docs` (`dryRun` for corpus + audit + candidates; `all` for full tier)
+- MCP: `bollard_curate_docs` (`dryRun` for corpus + audit + candidates + `detectOnlyDrift`; `all` for full tier)
 - Blueprint: `curate-docs`
+- Artifacts: `.bollard/curation/docs/plan.json`, `*.preview.md`, `grounding-report.json`
 
 See [archive/stage6-curate-docs.md](./archive/stage6-curate-docs.md) for the original implementation prompt.
