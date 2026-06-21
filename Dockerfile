@@ -60,13 +60,23 @@ RUN mkdir -p /out \
 FROM node:24-slim AS dev
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        git ca-certificates python3 procps ripgrep \
+        git ca-certificates curl python3 procps ripgrep \
     && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@11.5.2 --activate
 COPY --from=go-helper-builder   /out/bollard-extract-go /usr/local/bin/bollard-extract-go
 COPY --from=rust-helper-builder /out/bollard-extract-rs /usr/local/bin/bollard-extract-rs
 COPY --from=java-helper-builder /out/bollard-extract-java /usr/local/bin/bollard-extract-java
 RUN bollard-extract-go --version && bollard-extract-rs --version && bollard-extract-java --version
+ARG OSV_SCANNER_VERSION=2.3.5
+RUN set -eux \
+  && (curl -fsSL \
+        "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64" \
+        -o /usr/local/bin/osv-scanner \
+      || curl -fsSL \
+        "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_${OSV_SCANNER_VERSION}_linux_amd64" \
+        -o /usr/local/bin/osv-scanner) \
+  && chmod +x /usr/local/bin/osv-scanner \
+  && osv-scanner --version
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/engine/package.json packages/engine/package.json

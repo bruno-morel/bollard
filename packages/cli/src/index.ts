@@ -14,6 +14,7 @@ import { runBlueprint } from "@bollard/engine/src/runner.js"
 import { LLMClient } from "@bollard/llm/src/client.js"
 import { runStaticChecks } from "@bollard/verify/src/static.js"
 import { buildProjectTree, createAgenticHandler } from "./agent-handler.js"
+import { auditDeps, formatAuditDepsResult } from "./audit-deps.js"
 import { auditDocs, formatAuditDocsResult } from "./audit-docs.js"
 import { auditProtocol, formatAuditResult } from "./audit-protocol.js"
 import { formatSkippedChecksNotice, resolveSkipChecks } from "./ci-passed.js"
@@ -1003,6 +1004,15 @@ async function main(): Promise<void> {
     process.exit(result.allPassed ? 0 : 1)
   }
 
+  if (command === "audit-deps") {
+    const workDir = resolveWorkspaceDirFromArgs(rest)
+    header("audit-deps")
+    await resolveConfig(undefined, workDir, { requireApiKey: false })
+    const result = await auditDeps(workDir)
+    log(formatAuditDepsResult(result))
+    process.exit(result.allPassed ? 0 : 1)
+  }
+
   if (command === "eval") {
     const sub = rest[0]
     if (sub === "tag" || sub === "show" || sub === "diff") {
@@ -1101,6 +1111,9 @@ async function main(): Promise<void> {
   )
   log(
     `  ${BOLD}audit-docs${RESET}                      Deterministic README/CLAUDE.md doc-stats audit (exits 1 on failure)`,
+  )
+  log(
+    `  ${BOLD}audit-deps${RESET}                      Deterministic OSV dependency audit — npm + helper manifests (exits 1 on failure)`,
   )
   log(
     `  ${BOLD}promote-test${RESET} <path>             Promote adversarial test to project test dir`,

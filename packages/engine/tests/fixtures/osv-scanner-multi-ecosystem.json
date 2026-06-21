@@ -1,0 +1,82 @@
+{
+  "results": [
+    {
+      "source": {
+        "path": "/app/pnpm-lock.yaml",
+        "type": "lockfile"
+      },
+      "packages": [
+        {
+          "package": {
+            "name": "lodash",
+            "version": "4.17.20",
+            "ecosystem": "npm"
+          },
+          "vulnerabilities": [
+            {
+              "id": "GHSA-npm-high-001",
+              "summary": "Prototype pollution in lodash",
+              "database_specific": {
+                "severity": "HIGH"
+              }
+            }
+          ],
+          "groups": [
+            {
+              "ids": ["GHSA-npm-high-001"],
+              "max_fixed_version": "4.17.21"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/app/scripts/extract_java/pom.xml",
+        "type": "lockfile"
+      },
+      "packages": [
+        {
+          "package": {
+            "name": "com.github.javaparser:javaparser-core",
+            "version": "3.26.4",
+            "ecosystem": "Maven"
+          },
+          "vulnerabilities": [
+            {
+              "id": "GHSA-java-high-001",
+              "summary": "Example Java helper vuln",
+              "database_specific": {
+                "severity": "HIGH"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/app/pnpm-lock.yaml",
+        "type": "lockfile"
+      },
+      "packages": [
+        {
+          "package": {
+            "name": "qs",
+            "version": "6.15.1",
+            "ecosystem": "npm"
+          },
+          "vulnerabilities": [
+            {
+              "id": "GHSA-npm-mod-001",
+              "summary": "Moderate qs issue",
+              "database_specific": {
+                "severity": "MODERATE"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

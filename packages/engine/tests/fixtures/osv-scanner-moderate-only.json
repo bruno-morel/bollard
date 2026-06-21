@@ -1,0 +1,28 @@
+{
+  "results": [
+    {
+      "source": {
+        "path": "/app/pnpm-lock.yaml",
+        "type": "lockfile"
+      },
+      "packages": [
+        {
+          "package": {
+            "name": "qs",
+            "version": "6.15.1",
+            "ecosystem": "npm"
+          },
+          "vulnerabilities": [
+            {
+              "id": "GHSA-npm-mod-only",
+              "summary": "Moderate only",
+              "database_specific": {
+                "severity": "MODERATE"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

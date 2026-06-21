@@ -1,4 +1,26 @@
 export type {
+  AuditDepsOptions,
+  AuditDepsResult,
+  DepsCheckId,
+  DepsCheckResult,
+  DepsSeverity,
+  DepsVulnerability,
+  OsvRunner,
+  OsvScanOutcome,
+} from "./audit-deps.js"
+export {
+  auditDeps,
+  checkHelperManifestVulnerabilities,
+  checkNpmVulnerabilities,
+  checkOsvScannerUnavailable,
+  defaultOsvRunner,
+  goModHasExternalRequires,
+  normalizeSeverity,
+  parseOsvJson,
+  resolveManifestTargets,
+  runOsvScanner,
+} from "./audit-deps.js"
+export type {
   AuditDocsResult,
   DocsCheckId,
   DocsCheckResult,
