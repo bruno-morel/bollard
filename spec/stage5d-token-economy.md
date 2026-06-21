@@ -1,6 +1,6 @@
 # Stage 5d — Token Economy
 
-**Status:** Phases 1, 2, 3, 3b, 4, 4b, 5, 7, 8, 9, 10 DONE. Phase 6 pending (gates on Phases 7+8 validated — both are now validated; Phase 6 is next).
+**Status:** All phases DONE as of 2026-05-19. The pipeline now runs at $0.88–$1.63 per bounded single-method `implement-feature` run (19–32 coder turns, 31/31 nodes), down from $16.17 (159 turns + rollback) at the Stage 5d start.
 **Owner:** Bruno (maintainer)
 **Related:** [ROADMAP.md](./ROADMAP.md), [01-architecture.md](./01-architecture.md), [06-toolchain-profiles.md](./06-toolchain-profiles.md), [adr/0004-determinism-local-frontier-tiers.md](./adr/0004-determinism-local-frontier-tiers.md)
 
@@ -281,7 +281,7 @@ Phase 3b ✅ (code metrics+k6)
 Phase 4  ✅ (local runtime) ── Phase 4b ✅ (opt-in) ── Phase 2 ✅ (patcher)
 Phase 5  ✅ (per-agent routing)
 Phase 7  ✅ (coder turn reduction + cost-cap)  ──┐
-Phase 8  ✅ (context window management)          ──┼── Phase 6 (cost regression CI)  ← NEXT
+Phase 8  ✅ (context window management)          ──┼── Phase 6 ✅ (cost regression CI)
 Phase 9  ✅ (runtime enforcement + per-attempt cap)
 Phase 10 ✅ (planner plan compression)
 ```
