@@ -1,7 +1,10 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { flattenBlueprintNodes } from "@bollard/engine/src/blueprint.js"
 import type { BollardConfig } from "@bollard/engine/src/context.js"
-import { describe, expect, it } from "vitest"
-import { createCurateDocsBlueprint } from "../src/curate-docs.js"
+import { afterEach, describe, expect, it } from "vitest"
+import { assessDocsDriftForWorkDir, createCurateDocsBlueprint } from "../src/curate-docs.js"
 
 const baseConfig: BollardConfig = {
   llm: { default: { provider: "anthropic", model: "claude-sonnet-4-6" } },
@@ -57,5 +60,36 @@ describe("createCurateDocsBlueprint", () => {
     const bp = createCurateDocsBlueprint("/tmp", config)
     const nodes = flattenBlueprintNodes(bp.nodes)
     expect(nodes[6]?.type).toBe("human_gate")
+  })
+})
+
+describe("assessDocsDriftForWorkDir", () => {
+  let workDir: string
+
+  afterEach(async () => {
+    if (workDir !== undefined) {
+      await rm(workDir, { recursive: true, force: true })
+    }
+  })
+
+  it("returns detectOnlyDrift separate from curate candidates", async () => {
+    workDir = await mkdtemp(join(tmpdir(), "curate-drift-assess-"))
+    await writeFile(join(workDir, "README.md"), "# README\n", "utf-8")
+    await writeFile(join(workDir, "CLAUDE.md"), "# Claude\n", "utf-8")
+    await mkdir(join(workDir, "spec/adr"), { recursive: true })
+    await writeFile(join(workDir, "spec/ROADMAP.md"), "# Roadmap\n", "utf-8")
+    await mkdir(join(workDir, "packages/engine/src"), { recursive: true })
+    await writeFile(
+      join(workDir, "spec/stage5d-token-economy.md"),
+      "# Stage 5d\n\nSee [engine](../packages/engine/src/index.ts)\n",
+      "utf-8",
+    )
+    await writeFile(join(workDir, "packages/engine/src/index.ts"), "export {}\n", "utf-8")
+
+    const result = await assessDocsDriftForWorkDir(workDir)
+    expect(result.editable).toContain("README.md")
+    expect(result.detectOnly).toContain("spec/stage5d-token-economy.md")
+    expect(result.candidates.map((c) => c.path)).not.toContain("spec/stage5d-token-economy.md")
+    expect(Array.isArray(result.detectOnlyDrift)).toBe(true)
   })
 })

@@ -276,4 +276,100 @@ describe("selectDriftCandidates", () => {
     expect(result[0]?.reasons.some((r) => r.startsWith("audit:"))).toBe(true)
     expect(result[0]?.reasons.some((r) => r.startsWith("code newer than doc:"))).toBe(true)
   })
+
+  it("scores detect-only spec doc when linked code is newer", async () => {
+    workDir = join(tmpdir(), `drift-detectonly-${Date.now()}`)
+    await mkdir(join(workDir, "spec"), { recursive: true })
+    await mkdir(join(workDir, "packages/engine/src"), { recursive: true })
+    await writeFile(
+      join(workDir, "spec/stage5d-token-economy.md"),
+      "# Stage 5d\n\nSee [engine](../packages/engine/src/index.ts)\n",
+      "utf-8",
+    )
+    await writeFile(join(workDir, "packages/engine/src/index.ts"), "export {}\n", "utf-8")
+
+    const times: Record<string, number> = {
+      "spec/stage5d-token-economy.md": 100,
+      "packages/engine/src/index.ts": 200,
+    }
+
+    const result = await selectDriftCandidates(workDir, ["spec/stage5d-token-economy.md"], {
+      getLastCommitTime: async (_wd, path) => times[path] ?? null,
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]?.path).toBe("spec/stage5d-token-economy.md")
+    expect(result[0]?.reasons[0]).toContain("code newer than doc")
+  })
+
+  it("omits fresh detect-only spec doc with no signals", async () => {
+    workDir = join(tmpdir(), `drift-detectonly-fresh-${Date.now()}`)
+    await mkdir(join(workDir, "spec"), { recursive: true })
+    await writeFile(join(workDir, "spec/README.md"), "# Spec index\n", "utf-8")
+
+    const result = await selectDriftCandidates(workDir, ["spec/README.md"], {
+      getLastCommitTime: async () => 200,
+    })
+    expect(result).toHaveLength(0)
+  })
+
+  it("implicates detect-only doc for link-integrity audit failure", async () => {
+    workDir = join(tmpdir(), `drift-detectonly-audit-${Date.now()}`)
+    await mkdir(workDir, { recursive: true })
+    const auditResult: AuditDocsResult = {
+      allPassed: false,
+      checks: [
+        {
+          id: "link-integrity",
+          label: "links",
+          passed: false,
+          actual: "spec/stage6-docs-integrity.md: missing.ts",
+        },
+      ],
+    }
+    const result = await selectDriftCandidates(workDir, ["spec/stage6-docs-integrity.md"], {
+      auditResult,
+      getLastCommitTime: async () => null,
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]?.reasons).toContain("audit: link-integrity (dangling link)")
+  })
+
+  it("shares gitTimeCache across two calls — each path queried once", async () => {
+    workDir = join(tmpdir(), `drift-shared-cache-${Date.now()}`)
+    await mkdir(join(workDir, "spec"), { recursive: true })
+    await mkdir(join(workDir, "packages/cli/src"), { recursive: true })
+    await writeFile(
+      join(workDir, "README.md"),
+      "# Readme\n\n[cli](packages/cli/src/index.ts)\n",
+      "utf-8",
+    )
+    await writeFile(
+      join(workDir, "spec/stage5d-token-economy.md"),
+      "# Stage 5d\n\n[cli](../packages/cli/src/index.ts)\n",
+      "utf-8",
+    )
+    await writeFile(join(workDir, "packages/cli/src/index.ts"), "export {}\n", "utf-8")
+
+    const queryCounts = new Map<string, number>()
+    const times: Record<string, number> = {
+      "README.md": 100,
+      "spec/stage5d-token-economy.md": 100,
+      "packages/cli/src/index.ts": 200,
+      "packages/cli/src": 200,
+    }
+    const getLastCommitTime = async (_wd: string, path: string): Promise<number | null> => {
+      queryCounts.set(path, (queryCounts.get(path) ?? 0) + 1)
+      return times[path] ?? null
+    }
+
+    const gitTimeCache = new Map<string, number | null>()
+    const driftOpts = { getLastCommitTime, gitTimeCache }
+
+    await selectDriftCandidates(workDir, ["README.md"], driftOpts)
+    await selectDriftCandidates(workDir, ["spec/stage5d-token-economy.md"], driftOpts)
+
+    expect(queryCounts.get("packages/cli/src/index.ts")).toBe(1)
+    expect(queryCounts.get("README.md")).toBe(1)
+    expect(queryCounts.get("spec/stage5d-token-economy.md")).toBe(1)
+  })
 })

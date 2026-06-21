@@ -146,23 +146,24 @@ export function buildStaleReason(refPath: string, refTime: number, docTime: numb
 
 export async function selectDriftCandidates(
   workDir: string,
-  editable: string[],
+  docPaths: string[],
   opts?: {
     auditResult?: AuditDocsResult
     all?: boolean
     getLastCommitTime?: GitLastCommitTimeFn
     readFileFn?: (absPath: string) => Promise<string>
+    gitTimeCache?: Map<string, number | null>
   },
 ): Promise<DriftCandidate[]> {
   if (opts?.all === true) {
-    return editable.map((path) => ({ path, reasons: ["--all"] }))
+    return docPaths.map((path) => ({ path, reasons: ["--all"] }))
   }
 
   const getTime = opts?.getLastCommitTime ?? defaultGetLastCommitTime
   const readDoc = opts?.readFileFn ?? ((absPath: string) => readFile(absPath, "utf-8"))
-  const editableSet = new Set(editable)
+  const docPathSet = new Set(docPaths)
   const candidateMap = new Map<string, string[]>()
-  const timeCache = new Map<string, number | null>()
+  const timeCache = opts?.gitTimeCache ?? new Map<string, number | null>()
 
   const getTimeCached = async (relPath: string): Promise<number | null> => {
     if (!timeCache.has(relPath)) {
@@ -172,7 +173,7 @@ export async function selectDriftCandidates(
   }
 
   const mergeReasons = (path: string, reasons: string[]): void => {
-    if (!editableSet.has(path)) {
+    if (!docPathSet.has(path)) {
       return
     }
     const existing = candidateMap.get(path) ?? []
@@ -190,7 +191,7 @@ export async function selectDriftCandidates(
     }
   }
 
-  for (const docPath of editable) {
+  for (const docPath of docPaths) {
     let content: string
     try {
       content = await readDoc(join(workDir, docPath))

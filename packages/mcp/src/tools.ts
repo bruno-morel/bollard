@@ -497,6 +497,7 @@ async function handleCurateDocs(input: Record<string, unknown>, workDir: string)
       editable: result.editable,
       detectOnly: result.detectOnly,
       candidates: result.candidates,
+      detectOnlyDrift: result.detectOnlyDrift,
       corpusPreview: result.corpus.slice(0, 2000),
       note: "Agent docs edits require dryRun=false with API key",
       edits: [] as unknown[],

@@ -85,6 +85,18 @@ export async function runListDrift(workDir: string, opts?: CurateDocsCliOptions)
     }
   }
   log("")
+  log(`${DIM}Detect-only docs WITH drift signals (review manually — not auto-rewritten):${RESET}`)
+  if (result.detectOnlyDrift.length === 0) {
+    log("  (none)")
+  } else {
+    for (const entry of result.detectOnlyDrift) {
+      log(`  ${entry.path}`)
+      for (const reason of entry.reasons) {
+        log(`    ${DIM}-${RESET} ${reason}`)
+      }
+    }
+  }
+  log("")
   log(`${DIM}Editable (curate tier):${RESET} ${result.editable.length} doc(s)`)
   if (result.editable.length === 0) {
     log("  (none)")

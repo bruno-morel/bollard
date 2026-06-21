@@ -74,6 +74,42 @@ describe("classifyDocPath", () => {
     expect(result.tier).toBe("detect-only")
   })
 
+  it("classifies spec/stage5d-token-economy.md as detect-only", () => {
+    const result = classifyDocPath("spec/stage5d-token-economy.md")
+    expect(result.eligible).toBe(true)
+    expect(result.tier).toBe("detect-only")
+  })
+
+  it("classifies spec/README.md as detect-only", () => {
+    const result = classifyDocPath("spec/README.md")
+    expect(result.eligible).toBe(true)
+    expect(result.tier).toBe("detect-only")
+  })
+
+  it("classifies spec/archive docs as never-touch (zone runs before tier)", () => {
+    const result = classifyDocPath("spec/archive/x.md")
+    expect(result.eligible).toBe(false)
+    expect(result.tier).toBe("never-touch")
+  })
+
+  it("classifies spec/self-test-foo-results.md as never-touch (denylist)", () => {
+    const result = classifyDocPath("spec/self-test-foo-results.md")
+    expect(result.eligible).toBe(false)
+    expect(result.tier).toBe("never-touch")
+  })
+
+  it("classifies package README as curate", () => {
+    const result = classifyDocPath("packages/engine/README.md")
+    expect(result.eligible).toBe(true)
+    expect(result.tier).toBe("curate")
+  })
+
+  it("classifies CONTRIBUTING.md as curate", () => {
+    const result = classifyDocPath("CONTRIBUTING.md")
+    expect(result.eligible).toBe(true)
+    expect(result.tier).toBe("curate")
+  })
+
   it("classifies README.md as curate", () => {
     const result = classifyDocPath("README.md")
     expect(result.eligible).toBe(true)
@@ -135,6 +171,7 @@ describe("resolveCurateScope", () => {
     await writeFile(join(tempDir, "CONTRIBUTING.md"), "# Contributing\n", "utf-8")
     await mkdir(join(tempDir, "spec/adr"), { recursive: true })
     await writeFile(join(tempDir, "spec/01-architecture.md"), "# Architecture\n", "utf-8")
+    await writeFile(join(tempDir, "spec/stage5d-token-economy.md"), "# Stage 5d\n", "utf-8")
     await writeFile(join(tempDir, "spec/ROADMAP.md"), "# Roadmap\n", "utf-8")
     await mkdir(join(tempDir, "spec/archive"), { recursive: true })
     await writeFile(join(tempDir, "spec/archive/old.md"), "# Old\n", "utf-8")
@@ -146,8 +183,10 @@ describe("resolveCurateScope", () => {
     expect(scope.editable).toContain("CONTRIBUTING.md")
     expect(scope.editable).toContain("packages/engine/README.md")
     expect(scope.detectOnly).toContain("spec/01-architecture.md")
+    expect(scope.detectOnly).toContain("spec/stage5d-token-economy.md")
     expect(scope.detectOnly).toContain("spec/ROADMAP.md")
     expect(scope.editable).not.toContain("spec/01-architecture.md")
+    expect(scope.editable).not.toContain("spec/stage5d-token-economy.md")
     expect(scope.editable).not.toContain("spec/archive/old.md")
     expect(scope.detectOnly).not.toContain("spec/archive/old.md")
   })

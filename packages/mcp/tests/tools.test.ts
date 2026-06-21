@@ -242,11 +242,13 @@ describe("MCP tool definitions", () => {
       auditResult: { checks: unknown[] }
       corpusPreview: string
       candidates: Array<{ path: string; reasons: string[] }>
+      detectOnlyDrift: Array<{ path: string; reasons: string[] }>
     }
     expect(result.dryRun).toBe(true)
     expect(result.auditResult.checks.length).toBe(7)
     expect(result.corpusPreview.length).toBeGreaterThan(100)
     expect(Array.isArray(result.candidates)).toBe(true)
+    expect(Array.isArray(result.detectOnlyDrift)).toBe(true)
   }, 120_000)
 
   it("includes bollard_history_summary tool", () => {

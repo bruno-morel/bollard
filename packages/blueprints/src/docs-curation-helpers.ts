@@ -1,9 +1,62 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
-import type { DocsEdit } from "@bollard/engine/src/docs-curation.js"
+import type { DocsEdit, DocsGroundingResult } from "@bollard/engine/src/docs-curation.js"
+import type { DriftCandidate } from "@bollard/engine/src/docs-drift-signals.js"
 
 export const DOCS_CURATION_STAGING_DIR = ".bollard/curation/docs"
 export const DOCS_CURATION_PLAN_FILE = join(DOCS_CURATION_STAGING_DIR, "plan.json")
+export const DOCS_GROUNDING_REPORT_FILE = join(DOCS_CURATION_STAGING_DIR, "grounding-report.json")
+
+export interface DocsGroundingReport {
+  runId: string
+  timestamp: string
+  kept: Array<{ id: string; file: string }>
+  dropped: Array<{ id: string; file: string; reason: string; detail?: string }>
+  candidates: DriftCandidate[]
+}
+
+export function buildDocsGroundingReport(
+  runId: string,
+  candidates: DriftCandidate[],
+  planEdits: DocsEdit[],
+  result: DocsGroundingResult,
+): DocsGroundingReport {
+  const fileById = new Map(planEdits.map((e) => [e.id, e.file]))
+
+  return {
+    runId,
+    timestamp: new Date().toISOString(),
+    kept: result.kept.map((e) => ({ id: e.id, file: e.file })),
+    dropped: result.dropped.map((d) => {
+      const file =
+        fileById.get(d.id) ??
+        (d.reason === "file_not_allowed" && d.detail !== undefined ? d.detail : "unknown")
+      const entry: DocsGroundingReport["dropped"][number] = {
+        id: d.id,
+        file,
+        reason: d.reason,
+      }
+      if (d.detail !== undefined && d.reason !== "file_not_allowed") {
+        entry.detail = d.detail
+      }
+      return entry
+    }),
+    candidates,
+  }
+}
+
+export async function writeDocsGroundingReport(
+  workDir: string,
+  report: DocsGroundingReport,
+): Promise<void> {
+  const stagingRoot = resolve(workDir, DOCS_CURATION_STAGING_DIR)
+  await mkdir(stagingRoot, { recursive: true })
+  await writeFile(
+    resolve(workDir, DOCS_GROUNDING_REPORT_FILE),
+    JSON.stringify(report, null, 2),
+    "utf-8",
+  )
+}
 
 export interface StagedDocsPlan {
   edits: DocsEdit[]

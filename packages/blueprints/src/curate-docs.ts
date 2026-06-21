@@ -11,7 +11,12 @@ import type { DriftCandidate } from "@bollard/engine/src/docs-drift-signals.js"
 import { selectDriftCandidates } from "@bollard/engine/src/docs-drift-signals.js"
 import { resolveCurateScope } from "@bollard/engine/src/docs-resolver.js"
 import { detectManagedFileConflicts, FileOwnershipStore } from "@bollard/engine/src/ownership.js"
-import { applyDocsEdits, stageDocsEdits } from "./docs-curation-helpers.js"
+import {
+  applyDocsEdits,
+  buildDocsGroundingReport,
+  stageDocsEdits,
+  writeDocsGroundingReport,
+} from "./docs-curation-helpers.js"
 
 async function getHeadSha(workDir: string): Promise<string> {
   try {
@@ -42,6 +47,7 @@ export async function assessDocsDriftForWorkDir(
   auditFailures: string[]
   candidates: DriftCandidate[]
   candidatePaths: string[]
+  detectOnlyDrift: DriftCandidate[]
 }> {
   const scopeOpts = docHomes !== undefined ? { homes: docHomes } : undefined
   const { editable, detectOnly } = await resolveCurateScope(workDir, scopeOpts)
@@ -49,10 +55,14 @@ export async function assessDocsDriftForWorkDir(
     ...(docHomes !== undefined ? { docHomes } : {}),
   })
 
+  const gitTimeCache = new Map<string, number | null>()
+  const driftOpts = { auditResult, gitTimeCache }
+
   const candidates = await selectDriftCandidates(workDir, editable, {
-    auditResult,
+    ...driftOpts,
     ...(opts?.all === true ? { all: true } : {}),
   })
+  const detectOnlyDrift = await selectDriftCandidates(workDir, detectOnly, driftOpts)
   const candidatePaths = candidates.map((c) => c.path)
 
   const built = await buildDocsCurationCorpus({
@@ -71,6 +81,7 @@ export async function assessDocsDriftForWorkDir(
     auditFailures,
     candidates,
     candidatePaths,
+    detectOnlyDrift,
   }
 }
 
@@ -192,6 +203,15 @@ export function createCurateDocsBlueprint(
         grounded: result.kept.length,
         dropped: result.dropped.length,
       })
+
+      try {
+        const report = buildDocsGroundingReport(ctx.runId, driftData.candidates, plan.edits, result)
+        await writeDocsGroundingReport(workDir, report)
+      } catch (err: unknown) {
+        ctx.log.warn("failed to write docs grounding report", {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
 
       if (result.kept.length === 0) {
         return {

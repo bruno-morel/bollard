@@ -36,12 +36,6 @@ const DENYLIST_BASENAMES = [
   (name: string) => name.startsWith("self-test-") && name.endsWith(".md"),
 ] as const
 
-const DETECT_ONLY_PATTERNS = [
-  /^spec\/0\d-.*\.md$/,
-  /^spec\/adr\/.*\.md$/,
-  /^spec\/ROADMAP\.md$/,
-] as const
-
 function normalizeRelPath(relPath: string): string {
   return relPath.split("\\").join("/")
 }
@@ -66,10 +60,8 @@ function isDenylistedBasename(name: string): boolean {
 
 function defaultTierForPath(relPath: string): DocTier {
   const normalized = normalizeRelPath(relPath)
-  for (const pattern of DETECT_ONLY_PATTERNS) {
-    if (pattern.test(normalized)) {
-      return "detect-only"
-    }
+  if (normalized === "spec" || normalized.startsWith("spec/")) {
+    return "detect-only"
   }
   return "curate"
 }
